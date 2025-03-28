@@ -175,4 +175,4 @@ cython_debug/
 
 *.owl
 *.csv
-*.txt
+output.txt
