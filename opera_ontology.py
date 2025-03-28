@@ -450,16 +450,6 @@ with onto:
 
     # --- Data Properties (Attributes) ---
 
-    # Generic Identifiers/Names (Functional)
-    class identifier(owl.DataProperty, owl.FunctionalProperty):
-        range = [str]
-
-    class name(owl.DataProperty, owl.FunctionalProperty):
-        range = [str]
-
-    class description(owl.DataProperty):
-        range = [str]  # Descriptions might not always be functional if multiple exist
-
     # TimeInterval Properties (Functional)
     class startTime(owl.DataProperty, owl.FunctionalProperty):
         domain = [TimeInterval]
@@ -469,15 +459,14 @@ with onto:
         domain = [TimeInterval]
         range = [datetime]
 
-    # Plant Properties (Functional where applicable)
-    class plantId(identifier):
+    # Plant Properties (Define Directly)
+    class plantId(owl.DataProperty, owl.FunctionalProperty):
         domain = [Plant]
+        range = [str]
 
-    class plantName(name):
-        domain = [Plant]  # Use PLANT_DESCRIPTION?
-
-    class plantDescription(description):
+    class plantDescription(owl.DataProperty):
         domain = [Plant]
+        range = [str]  # Keep non-functional if multiple descriptions possible
 
     class latitude(owl.DataProperty, owl.FunctionalProperty):
         domain = [Plant]
@@ -487,76 +476,79 @@ with onto:
         domain = [Plant]
         range = [float]
 
-    class countryCode(identifier):
-        domain = [Country]  # From PLANT_COUNTRY
+    # Country Properties (Define Directly)
+    class countryCode(owl.DataProperty, owl.FunctionalProperty):
+        domain = [Country]
+        range = [str]
 
-    class countryName(name):
-        domain = [Country]  # From PLANT_COUNTRY_DESCRIPTION
+    class countryName(owl.DataProperty, owl.FunctionalProperty):
+        domain = [Country]
+        range = [str]  # Assuming name is unique/functional
 
-    # Add other PLANT_ fields as needed (facilityType, postalCode, etc.)
-
-    # Line Properties (Functional)
-    class lineId(identifier):
-        domain = [Line]  # Use LINE_NAME?
-
-    class lineName(name):
+    # Line Properties
+    class lineName(owl.DataProperty, owl.FunctionalProperty):
         domain = [Line]
+        range = [str]
 
-    # Equipment Properties (Functional where applicable)
-    class equipmentId(identifier):
-        domain = [Equipment]  # From EQUIPMENT_ID
+    # Equipment Properties
+    class equipmentId(owl.DataProperty, owl.FunctionalProperty):
+        domain = [Equipment]
+        range = [str]
 
-    class equipmentName(name):
-        domain = [Equipment]  # From EQUIPMENT_NAME
+    class equipmentName(owl.DataProperty, owl.FunctionalProperty):
+        domain = [Equipment]
+        range = [str]
 
     class equipmentBaseType(owl.DataProperty, owl.FunctionalProperty):
         domain = [Equipment]
-        range = [str]  # Parsed type: Filler, Cartoner etc.
+        range = [str]
 
     class equipmentModel(owl.DataProperty):
         domain = [Equipment]
-        range = [
-            str
-        ]  # From EQUIPMENT_MODEL, might not be functional if multiple models?
+        range = [str]  # Non-functional?
 
     class sequenceOrder(owl.DataProperty, owl.FunctionalProperty):
         domain = [Equipment]
         range = [int]
 
-    # Add other equipment fields: COMPLEXITY, MODEL (second one?)
-
-    # FocusFactory, Area, Org Properties (Functional)
-    class focusFactoryName(name):
+    # FocusFactory, Area, Org Properties
+    class focusFactoryName(owl.DataProperty, owl.FunctionalProperty):
         domain = [FocusFactory]
+        range = [str]
 
-    class areaName(name):
+    class areaName(owl.DataProperty, owl.FunctionalProperty):
         domain = [PhysicalArea]
+        range = [str]
 
-    class divisionName(name):
+    class divisionName(owl.DataProperty, owl.FunctionalProperty):
         domain = [Division]
+        range = [str]
 
-    class subdivisionName(name):
+    class subdivisionName(owl.DataProperty, owl.FunctionalProperty):
         domain = [SubDivision]
+        range = [str]
 
-    # Material Properties (Functional where applicable)
-    class materialId(identifier):
+    # Material Properties
+    class materialId(owl.DataProperty, owl.FunctionalProperty):
         domain = [Material]
+        range = [str]
 
-    class materialDescription(description):
+    class materialDescription(owl.DataProperty):
         domain = [Material]
+        range = [str]  # Non-functional?
 
     class materialUOM(owl.DataProperty, owl.FunctionalProperty):
         domain = [Material]
         range = [str]
 
-    # Add SIZE_TYPE, UOM_ST, PRIMARY_CONV_FACTOR etc.
-
-    # Production Order Properties (Functional)
-    class orderId(identifier):
+    # Production Order Properties
+    class orderId(owl.DataProperty, owl.FunctionalProperty):
         domain = [ProductionOrder]
+        range = [str]
 
-    class orderDescription(description):
+    class orderDescription(owl.DataProperty):
         domain = [ProductionOrder]
+        range = [str]  # Non-functional?
 
     class orderRate(owl.DataProperty, owl.FunctionalProperty):
         domain = [ProductionOrder]
@@ -566,23 +558,25 @@ with onto:
         domain = [ProductionOrder]
         range = [str]
 
-    # Shift/Crew Properties (Functional)
-    class shiftName(name):
+    # Shift/Crew Properties
+    class shiftName(owl.DataProperty, owl.FunctionalProperty):
         domain = [Shift]
+        range = [str]
 
-    class crewId(identifier):
+    class crewId(owl.DataProperty, owl.FunctionalProperty):
         domain = [Crew]
+        range = [str]
 
-    # EventRecord Properties (Functional where applicable)
+    # EventRecord Properties
     class calculatedDurationSeconds(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # Calculated from start/end timestamps
+        range = [float]
 
     class reportedDurationMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # From TOTAL_TIME column
+        range = [float]
 
-    # AE Model Time Components (All in Minutes from source data - Functional Floats)
+    # AE Model Time Components (All Functional Floats)
     class businessExternalTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
         range = [float]
@@ -605,78 +599,79 @@ with onto:
 
     class downtimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # DOWNTIME column
+        range = [float]
 
     class runTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # RUN_TIME column
+        range = [float]
 
     class notEnteredTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # NOT_ENTERED column
+        range = [float]
 
     class waitingTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # WAITING_TIME column
+        range = [float]
 
     class plantExperimentationTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # PLANT_EXPERIMENTATION column
+        range = [float]
 
     class allMaintenanceTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # ALL_MAINTENANCE column
+        range = [float]
 
     class autonomousMaintenanceTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # AUTONOMOUS_MAINTENANCE column
+        range = [float]
 
     class plannedMaintenanceTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # PLANNED_MAINTENANCE column
+        range = [float]
 
     class changeoverDurationMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # CHANGEOVER_DURATION column
+        range = [float]
 
     class cleaningSanitizationTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # CLEANING_AND_SANITIZATION column
+        range = [float]
 
     class lunchBreakTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # LUNCH_AND_BREAK column (or LUNCH + BREAK)
+        range = [float]
 
     class meetingTrainingTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # MEETING_AND_TRAINING column
+        range = [float]
 
     class noDemandTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # NO_DEMAND column
+        range = [float]
 
-    # Production Quantities (Functional Floats/Ints)
+    # Production Quantities (Functional Floats)
     class goodProductionQty(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]  # Use float for safety
+        range = [float]
 
     class rejectProductionQty(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
         range = [float]
 
-    # Utilization State/Reason Descriptions (Functional)
-    class stateDescription(description):
-        domain = [UtilizationState]  # Keep original description on the state type
+    # Utilization State/Reason Descriptions (Define Directly)
+    class stateDescription(owl.DataProperty):
+        domain = [UtilizationState]
+        range = [str]  # Usually functional per state type instance
 
-    class reasonDescription(description):
-        domain = [UtilizationReason]  # Keep original description on the reason type
+    class reasonDescription(owl.DataProperty):
+        domain = [UtilizationReason]
+        range = [str]  # Usually functional per reason type instance
 
-    # Other potential properties
+    # Other properties
     class rampUpFlag(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
         range = [bool]
 
-    # Add properties for CO_TYPE, SOURCE_DATASET etc. if needed
 
 # =============================================================================
 # Utility Functions
@@ -900,45 +895,25 @@ def get_or_create_instance(
     Get existing instance by identifier or create a new one.
     Handles functional properties by overwriting, non-functional by appending unique.
     Uses a cache for specific classes (like states/reasons) if use_cache=True.
-
-    Args:
-        cls: The owlready2 class to create an instance of.
-        instance_id: Unique identifier string for the instance (will be sanitized).
-        properties: Dictionary of property names and values to set/update.
-        namespace: The ontology namespace to use.
-        use_cache: If True, use the _shared_instances_cache for this class.
-
-    Returns:
-        The existing or newly created instance.
     """
     if not instance_id or not isinstance(instance_id, str):
         raise ValueError(
             f"Invalid instance_id provided for class {cls.__name__}: {instance_id}"
         )
 
-    # Sanitize the instance name for OWL (replace invalid characters)
-    # Basic sanitization, might need refinement based on IRI rules
     sanitized_id = re.sub(r"[^\w\-]+", "_", instance_id)
     instance_iri = f"{namespace.base_iri}{sanitized_id}"
 
     instance = None
     cache_key = (cls, sanitized_id)
 
-    # Check cache first if requested
     if use_cache and cache_key in _shared_instances_cache:
         instance = _shared_instances_cache[cache_key]
         logger.debug(f"Retrieved '{sanitized_id}' of class {cls.__name__} from cache.")
-        # Still update properties even if from cache? Yes, ensure consistency.
     else:
-        # Check if instance already exists in the ontology by IRI
         instance = namespace.world.search_one(iri=instance_iri)
         if instance is not None:
-            # Verify it's the correct type (or a subclass)
             if not isinstance(instance, cls):
-                logger.error(
-                    f"IRI conflict: Found existing instance <{instance_iri}> but it is not of type {cls.__name__} (it's {type(instance).__name__}). Returning None."
-                )
-                # Or raise an error? Returning None might hide issues. Let's raise.
                 raise TypeError(
                     f"IRI conflict: Found existing instance <{instance_iri}> but it is not of type {cls.__name__} (it's {type(instance).__name__})."
                 )
@@ -947,7 +922,6 @@ def get_or_create_instance(
                     f"Retrieved existing instance '{sanitized_id}' of class {cls.__name__} from ontology."
                 )
         else:
-            # Create new instance
             logger.debug(
                 f"Creating new instance '{sanitized_id}' of class {cls.__name__}."
             )
@@ -958,105 +932,104 @@ def get_or_create_instance(
                     f"Added '{sanitized_id}' of class {cls.__name__} to cache."
                 )
 
-    # Set/Update properties if provided
     if properties:
         for prop_name, value in properties.items():
-            # Skip None values entirely - don't set properties to None
-            if value is None:
+            if value is None:  # Skip None values
                 continue
 
             try:
-                prop = getattr(
-                    instance.__class__, prop_name, None
-                )  # Get property object from class
+                prop = getattr(instance.__class__, prop_name, None)
+                if prop is None:
+                    # Check if it's defined in a superclass if direct getattr fails
+                    # This might help with the initial warnings, though direct defs are better
+                    for base_cls in instance.__class__.__mro__:
+                        prop = getattr(base_cls, prop_name, None)
+                        if prop is not None:
+                            break
+
                 if prop is None:
                     logger.warning(
-                        f"Property '{prop_name}' not defined for class {instance.__class__.__name__}. Skipping."
+                        f"Property '{prop_name}' not found for class {instance.__class__.__name__} or its bases. Skipping."
                     )
                     continue
 
                 is_functional = hasattr(prop, "functional") and prop.functional
                 is_object_prop = isinstance(prop, owl.ObjectProperty)
 
-                current_value = getattr(instance, prop_name, None)
+                current_value_owl = getattr(
+                    instance, prop_name
+                )  # Get current value via Owlready
 
                 if is_functional:
-                    # Functional Property: Overwrite existing value or set if None
-                    # We need to handle both DataProperty and ObjectProperty
+                    # --- Functional Property Assignment ---
+                    actual_value_to_set = None
+                    is_different = True  # Assume different unless proven otherwise
+
                     if is_object_prop:
-                        # Ensure value is an instance, not a list
+                        # Ensure value is a single instance
                         if isinstance(value, list):
                             if len(value) > 1:
                                 logger.warning(
-                                    f"Attempting to set functional object property '{prop_name}' on {instance.name} with multiple values: {value}. Using only the first."
+                                    f"Assigning only first value to functional object property '{prop_name}' on {instance.name}"
                                 )
-                            value = value[0] if value else None
+                            actual_value_to_set = value[0] if value else None
+                        else:
+                            actual_value_to_set = value
 
-                        if value is None:  # Don't unset if new value is None
-                            continue
-
-                        if current_value != [value]:  # Check if different
-                            setattr(
-                                instance, prop_name, [value]
-                            )  # Owlready2 object properties are lists even if functional
-                            logger.debug(
-                                f"Set functional object property '{prop_name}' on {instance.name} to {value.name if hasattr(value,'name') else value}"
-                            )
+                        # Check if different from current value (which might be None or a list from Owlready)
+                        current_single_value = (
+                            current_value_owl[0] if current_value_owl else None
+                        )
+                        is_different = current_single_value != actual_value_to_set
 
                     else:  # Functional Data Property
-                        # Ensure value is not a list
                         if isinstance(value, list):
                             if len(value) > 1:
                                 logger.warning(
-                                    f"Attempting to set functional data property '{prop_name}' on {instance.name} with multiple values: {value}. Using only the first."
+                                    f"Assigning only first value to functional data property '{prop_name}' on {instance.name}"
                                 )
-                            value = value[0] if value else None
+                            actual_value_to_set = value[0] if value else None
+                        else:
+                            actual_value_to_set = value
 
-                        if value is None:  # Don't unset if new value is None
-                            continue
+                        # Owlready stores data properties directly, not always in lists
+                        is_different = current_value_owl != actual_value_to_set
 
-                        # Special check for datetime - direct comparison might fail with TZ awareness
-                        is_datetime_prop = datetime in prop.range
-                        needs_update = False
-                        if (
-                            is_datetime_prop
-                            and isinstance(current_value, datetime)
-                            and isinstance(value, datetime)
-                        ):
-                            needs_update = (
-                                current_value != value
-                            )  # Simple comparison works if both have TZ or both naive
-                        elif current_value != value:
-                            needs_update = True
-
-                        if needs_update:
-                            setattr(instance, prop_name, value)
-                            logger.debug(
-                                f"Set functional data property '{prop_name}' on {instance.name} to {value}"
-                            )
+                    if actual_value_to_set is not None and is_different:
+                        # ***MODIFIED ASSIGNMENT*** Assign the value directly
+                        setattr(instance, prop_name, actual_value_to_set)
+                        logger.debug(
+                            f"Set functional property '{prop_name}' on {instance.name}"
+                        )
+                    elif actual_value_to_set is None:
+                        logger.debug(
+                            f"Skipping functional property '{prop_name}' on {instance.name} due to None value."
+                        )
+                    elif not is_different:
+                        logger.debug(
+                            f"Skipping functional property '{prop_name}' on {instance.name}, value is already set."
+                        )
 
                 else:
-                    # Non-Functional Property: Append value if not already present
-                    if current_value is None:
-                        current_value = []
+                    # --- Non-Functional Property Assignment ---
+                    # Ensure current_value_owl is a list for appending checks
+                    current_list = list(current_value_owl) if current_value_owl else []
 
-                    # Ensure the value to add is not None
-                    if value is None:
-                        continue
-
-                    # If the incoming value is a list itself, iterate and add unique items
                     values_to_add = value if isinstance(value, list) else [value]
 
-                    updated = False
+                    newly_added = []
                     for val_item in values_to_add:
-                        if val_item not in current_value:
-                            current_value.append(val_item)
-                            updated = True
+                        # Add only if not None and not already present
+                        if val_item is not None and val_item not in current_list:
+                            current_list.append(val_item)
+                            newly_added.append(val_item)
 
-                    if updated:
-                        setattr(instance, prop_name, current_value)
+                    if newly_added:
+                        setattr(
+                            instance, prop_name, current_list
+                        )  # Assign the updated list
                         logger.debug(
-                            f"Updated non-functional property '{prop_name}' on {instance.name}"
+                            f"Added {len(newly_added)} item(s) to non-functional property '{prop_name}' on {instance.name}"
                         )
 
             except Exception as e:
@@ -1429,9 +1402,9 @@ def map_row_to_ontology(
                     "countryName": row_data.get("PLANT_COUNTRY_DESCRIPTION"),
                 },
             )
-            plant.locatedInCountry = [
-                country
-            ]  # Functional property update handled by helper
+            plant.locatedInCountry = (
+                country  # Functional property update handled by helper
+            )
 
         # Create Strategic Location and link to Plant
         strat_loc_code = row_data.get("PLANT_STRATEGIC_LOCATION")
@@ -1445,7 +1418,7 @@ def map_row_to_ontology(
                     )  # Assuming name property exists
                 },
             )
-            plant.hasStrategicLocation = [strat_loc]  # Functional
+            plant.hasStrategicLocation = strat_loc  # Functional
 
         # Create Focus Factory and link to Plant
         focus_factory_name = row_data.get("GH_FOCUSFACTORY")
@@ -1458,7 +1431,7 @@ def map_row_to_ontology(
             )
             # Ensure relationship (helper handles appending unique for non-functional 'hasFocusFactory')
             plant.hasFocusFactory = [focus_factory]
-            focus_factory.locatedInPlant = [plant]  # Functional inverse
+            focus_factory.locatedInPlant = plant  # Functional inverse
 
         # Create Physical Area and link to Focus Factory (if exists) and Plant
         physical_area_name = row_data.get("PHYSICAL_AREA")
@@ -1470,13 +1443,13 @@ def map_row_to_ontology(
                 {"areaName": physical_area_name},
             )
             if focus_factory:
-                physical_area.partOfFocusFactory = [focus_factory]  # Functional
+                physical_area.partOfFocusFactory = focus_factory  # Functional
                 focus_factory.hasArea = [
                     physical_area
                 ]  # Non-functional inverse (append unique)
             else:
                 # If no focus factory, maybe link area directly to plant? Depends on model needs.
-                # physical_area.locatedInPlant = [plant] # Example
+                # physical_area.locatedInPlant = plant # Example
                 pass
 
         # Create Line and link to Plant, FocusFactory, Area
@@ -1486,9 +1459,9 @@ def map_row_to_ontology(
         }
         line = get_or_create_instance(Line, f"Line_{line_name}", line_props)
         if focus_factory:
-            line.partOfFocusFactory = [focus_factory]  # Functional
+            line.partOfFocusFactory = focus_factory  # Functional
         if physical_area:
-            line.locatedInArea = [physical_area]  # Functional
+            line.locatedInArea = physical_area  # Functional
             physical_area.hasLine = [line]  # Non-functional inverse (append unique)
 
         # Create Equipment - Use EQUIPMENT_ID as primary identifier if available
@@ -1650,7 +1623,7 @@ def map_row_to_ontology(
                 interval_id,
                 {"startTime": start_time, "endTime": end_time},
             )
-            event_record.occursDuring = [interval]  # Functional
+            event_record.occursDuring = interval  # Functional
 
             # Calculate duration in seconds
             duration_seconds = (end_time - start_time).total_seconds()
@@ -1677,7 +1650,7 @@ def map_row_to_ontology(
 
             state_instance = get_state_reason_instance(StateClass, state_desc_raw)
             if state_instance:
-                event_record.hasState = [state_instance]  # Functional
+                event_record.hasState = state_instance  # Functional
 
         reason_instance = None
         if reason_desc_raw:
@@ -1741,14 +1714,14 @@ def map_row_to_ontology(
             shift = get_or_create_instance(
                 Shift, f"Shift_{shift_name}", {"shiftName": shift_name}
             )
-            event_record.duringShift = [shift]  # Functional
+            event_record.duringShift = shift  # Functional
 
             crew_id = row_data.get("CREW_ID")
             if crew_id:
                 crew = get_or_create_instance(
                     Crew, f"Crew_{crew_id}", {"crewId": crew_id}
                 )
-                event_record.operatedByCrew = [crew]  # Functional
+                event_record.operatedByCrew = crew  # Functional
 
         logger.debug(f"--- Successfully mapped row {record_id_str} ---")
 
@@ -1836,6 +1809,96 @@ def find_events_by_reason_description(reason_desc_substring: str) -> List[EventR
     return matching_events
 
 
+def link_equipment_by_sequence(ontology: owl.Ontology):
+    """
+    Iterates through all lines and links equipment instances based on their
+    sequenceOrder property (n is upstream of n+1).
+
+    Args:
+        ontology: The ontology instance containing the populated data.
+    """
+    logger.info("Starting post-processing step: Linking equipment by sequence order...")
+    link_count = 0
+    processed_lines = 0
+
+    # Use the ontology context
+    with ontology:
+        all_lines = list(ontology.Line.instances())
+        logger.info(
+            f"Found {len(all_lines)} lines to process for equipment sequencing."
+        )
+
+        for line in all_lines:
+            processed_lines += 1
+            logger.debug(f"Processing line: {line.name}")
+
+            # Get equipment associated with this line that have a sequence order
+            equipment_on_line = []
+            if hasattr(line, "hasEquipment"):
+                for equip in line.hasEquipment:
+                    # Ensure sequenceOrder exists and is an integer
+                    if hasattr(equip, "sequenceOrder") and isinstance(
+                        equip.sequenceOrder, int
+                    ):
+                        equipment_on_line.append(equip)
+                    elif hasattr(equip, "sequenceOrder"):
+                        logger.warning(
+                            f"Equipment {equip.name} on line {line.name} has non-integer sequenceOrder '{equip.sequenceOrder}'. Skipping for linking."
+                        )
+
+            if not equipment_on_line:
+                logger.debug(
+                    f"No equipment with sequenceOrder found for line {line.name}."
+                )
+                continue
+
+            # Sort equipment by sequenceOrder
+            sorted_equipment = sorted(equipment_on_line, key=lambda e: e.sequenceOrder)
+            logger.debug(
+                f"Sorted equipment on line {line.name}: {[e.name for e in sorted_equipment]}"
+            )
+
+            # Iterate through sorted equipment and link adjacent sequences (n to n+1)
+            for i in range(len(sorted_equipment) - 1):
+                upstream_eq = sorted_equipment[i]
+                downstream_eq = sorted_equipment[i + 1]
+
+                # Check if sequence order is consecutive
+                if downstream_eq.sequenceOrder == upstream_eq.sequenceOrder + 1:
+                    # Add links (helper function handles duplicates for non-functional props)
+                    # Using direct property access and relying on owlready's list nature for non-functional props
+
+                    # Check and add downstream link to upstream_eq
+                    if downstream_eq not in upstream_eq.isImmediatelyUpstreamOf:
+                        upstream_eq.isImmediatelyUpstreamOf.append(downstream_eq)
+                        logger.debug(
+                            f"Linking {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name}"
+                        )
+                        link_count += 1
+
+                    # Check and add upstream link to downstream_eq
+                    if upstream_eq not in downstream_eq.isImmediatelyDownstreamOf:
+                        downstream_eq.isImmediatelyDownstreamOf.append(upstream_eq)
+                        logger.debug(
+                            f"Linking {downstream_eq.name} --isImmediatelyDownstreamOf--> {upstream_eq.name}"
+                        )
+                        # Link count incremented above for the pair
+
+                elif downstream_eq.sequenceOrder > upstream_eq.sequenceOrder + 1:
+                    logger.debug(
+                        f"Gap in sequence order detected on line {line.name} between {upstream_eq.name} (Order {upstream_eq.sequenceOrder}) and {downstream_eq.name} (Order {downstream_eq.sequenceOrder}). No direct link created."
+                    )
+
+            if processed_lines % 50 == 0:  # Log progress every 50 lines
+                logger.info(
+                    f"Processed {processed_lines}/{len(all_lines)} lines for sequencing."
+                )
+
+    logger.info(
+        f"Finished linking equipment by sequence. Created {link_count} directional links."
+    )
+
+
 # =============================================================================
 # Main Execution Block
 # =============================================================================
@@ -1904,6 +1967,10 @@ def main():
                     logger.info(
                         f"Mapped {i + 1}/{row_count} rows ({(i + 1) / row_count:.1%})"
                     )
+
+        # Post-process: Link equipment by sequence order
+        logger.info("Running post-processing operations...")
+        link_equipment_by_sequence(onto)
 
         # Save ontology
         output_path = args.output
