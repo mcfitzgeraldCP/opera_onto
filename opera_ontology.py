@@ -510,6 +510,11 @@ with onto:
         domain = [Country]
         range = [str]
 
+    # StrategicLocation Property (NEW)
+    class strategicLocationName(owl.DataProperty, owl.FunctionalProperty):
+        domain = [StrategicLocation]
+        range = [str]
+
     # Line Properties
     class lineName(owl.DataProperty, owl.FunctionalProperty):
         domain = [Line]
@@ -1348,7 +1353,7 @@ def map_row_to_ontology(
                 onto.StrategicLocation,
                 f"StratLoc_{strat_loc_code}",
                 {
-                    "name": row_data.get(
+                    "strategicLocationName": row_data.get(
                         "PLANT_STRATEGIC_LOCATION_DESCRIPTION", strat_loc_code
                     )
                 },
@@ -1787,59 +1792,123 @@ def link_equipment_by_sequence(ontology: owl.Ontology):
 
     for line in all_lines:
         processed_lines += 1
-        # logger.debug(f"Processing line: {line.name}")
+        logger.debug(f"--- Processing line: {line.name} ---")  # Line marker
 
-        equipment_on_line = []
+        equipment_on_line_with_order = []
         # Access hasEquipment property safely
         equip_list = list(getattr(line, "hasEquipment", []))
+        logger.debug(
+            f"Line {line.name}: Found {len(equip_list)} equipment instances total."
+        )
 
+        # Collect equipment that has a valid sequenceOrder
         for equip in equip_list:
             seq_order_val = getattr(equip, "sequenceOrder", None)
             if seq_order_val is not None:
                 try:
                     # Ensure it's a valid integer
                     seq_order_int = int(seq_order_val)
-                    equipment_on_line.append(equip)
+                    # Store tuple (order, equipment instance) for sorting
+                    equipment_on_line_with_order.append((seq_order_int, equip))
+                    logger.debug(
+                        f"  Equipment {equip.name} (Type: {getattr(equip,'equipmentBaseType','N/A')}) has sequenceOrder: {seq_order_int}"
+                    )
                 except (ValueError, TypeError):
                     logger.warning(
-                        f"Equipment {equip.name} on line {line.name} has non-integer sequenceOrder '{seq_order_val}'. Skipping for linking."
+                        f"  Equipment {equip.name} on line {line.name} has non-integer sequenceOrder '{seq_order_val}'. Skipping for linking."
                     )
+            # else: # Optional: Log equipment without order
+            #    logger.debug(f"  Equipment {equip.name} (Type: {getattr(equip,'equipmentBaseType','N/A')}) has NO sequenceOrder.")
 
-        if not equipment_on_line:
-            # logger.debug(f"No equipment with sequenceOrder found for line {line.name}.")
+        if (
+            len(equipment_on_line_with_order) < 2
+        ):  # Need at least two pieces of equipment with order to potentially link
+            logger.debug(
+                f"Line {line.name}: Found only {len(equipment_on_line_with_order)} equipment with sequenceOrder. Need at least 2 to link. Skipping line."
+            )
             continue
 
-        # Sort equipment by sequenceOrder
-        sorted_equipment = sorted(equipment_on_line, key=lambda e: int(e.sequenceOrder))
-        # logger.debug(
-        #     f"Sorted equipment on line {line.name}: {[e.name for e in sorted_equipment]}"
-        # )
+        # Sort equipment by sequenceOrder (first element of tuple)
+        sorted_equipment_pairs = sorted(
+            equipment_on_line_with_order, key=lambda item: item[0]
+        )
+        # Extract sorted equipment instances
+        sorted_equipment = [pair[1] for pair in sorted_equipment_pairs]
+        sorted_orders = [
+            pair[0] for pair in sorted_equipment_pairs
+        ]  # Get the orders for logging
+        logger.debug(
+            f"Line {line.name}: Sorted equipment with order: {[f'{e.name}({o})' for e, o in zip(sorted_equipment, sorted_orders)]}"
+        )
 
         # Link adjacent sequences (n to n+1)
+        line_links_made = 0
         for i in range(len(sorted_equipment) - 1):
             upstream_eq = sorted_equipment[i]
             downstream_eq = sorted_equipment[i + 1]
+            # Use the sorted orders directly
+            upstream_order = sorted_orders[i]
+            downstream_order = sorted_orders[i + 1]
+
+            logger.debug(
+                f"  Checking pair: {upstream_eq.name}({upstream_order}) -> {downstream_eq.name}({downstream_order})"
+            )
 
             # Check if sequence order is consecutive
-            if int(downstream_eq.sequenceOrder) == int(upstream_eq.sequenceOrder) + 1:
-                # Add links - Owlready list properties handle uniqueness implicitly on append? Check docs.
-                # Safest is to check membership before append for non-functional.
+            if downstream_order == upstream_order + 1:
+                logger.debug(f"    Orders are consecutive. Attempting to link.")
+                pair_linked = False  # Flag to count pairs once
 
-                # Check and add downstream link to upstream_eq
-                if downstream_eq not in list(upstream_eq.isImmediatelyUpstreamOf):
-                    upstream_eq.isImmediatelyUpstreamOf.append(downstream_eq)
-                    # logger.debug(f"Linking {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name}")
-                    link_count += 1  # Count pairs once
-
-                # Check and add upstream link to downstream_eq
-                if upstream_eq not in list(downstream_eq.isImmediatelyDownstreamOf):
-                    downstream_eq.isImmediatelyDownstreamOf.append(upstream_eq)
-                    # logger.debug(f"Linking {downstream_eq.name} --isImmediatelyDownstreamOf--> {upstream_eq.name}")
-
-            elif int(downstream_eq.sequenceOrder) > int(upstream_eq.sequenceOrder) + 1:
-                logger.debug(
-                    f"Gap in sequence order detected on line {line.name} between {upstream_eq.name} (Order {upstream_eq.sequenceOrder}) and {downstream_eq.name} (Order {downstream_eq.sequenceOrder}). No direct link created."
+                # Add downstream link to upstream_eq (isImmediatelyUpstreamOf)
+                current_downstream = list(
+                    getattr(upstream_eq, "isImmediatelyUpstreamOf", [])
                 )
+                if downstream_eq not in current_downstream:
+                    current_downstream.append(downstream_eq)
+                    setattr(upstream_eq, "isImmediatelyUpstreamOf", current_downstream)
+                    logger.info(
+                        f"    LINKED: {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name}"
+                    )
+                    pair_linked = True
+                else:
+                    logger.debug(
+                        f"    Link {upstream_eq.name} -> {downstream_eq.name} already exists."
+                    )
+
+                # Add upstream link to downstream_eq (isImmediatelyDownstreamOf)
+                current_upstream = list(
+                    getattr(downstream_eq, "isImmediatelyDownstreamOf", [])
+                )
+                if upstream_eq not in current_upstream:
+                    current_upstream.append(upstream_eq)
+                    setattr(
+                        downstream_eq, "isImmediatelyDownstreamOf", current_upstream
+                    )
+                    logger.debug(
+                        f"    LINKED (inverse): {downstream_eq.name} --isImmediatelyDownstreamOf--> {upstream_eq.name}"
+                    )
+                    # No need to set pair_linked again
+                else:
+                    logger.debug(
+                        f"    Link (inverse) {downstream_eq.name} -> {upstream_eq.name} already exists."
+                    )
+
+                if pair_linked:
+                    link_count += 1
+                    line_links_made += 1
+
+            elif downstream_order > upstream_order + 1:
+                logger.debug(
+                    f"    Gap in sequence order detected between {upstream_eq.name} ({upstream_order}) and {downstream_eq.name} ({downstream_order}). No direct link created."
+                )
+            elif downstream_order <= upstream_order:
+                logger.warning(
+                    f"    Non-increasing or duplicate sequence order detected between {upstream_eq.name} ({upstream_order}) and {downstream_eq.name} ({downstream_order}). Check configuration/data. No link created."
+                )
+
+        logger.debug(
+            f"--- Finished processing line: {line.name}. Links created on this line: {line_links_made} ---"
+        )  # Line end marker
 
         if processed_lines % 100 == 0:  # Log progress every 100 lines
             logger.info(
