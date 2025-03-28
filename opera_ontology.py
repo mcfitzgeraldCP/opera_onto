@@ -24,11 +24,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Set specific logging levels for modules if needed (adjust as necessary)
-# logging.getLogger("data.mappers").setLevel(logging.DEBUG)
-# logging.getLogger("utils.string_utils").setLevel(logging.DEBUG)
-# logging.getLogger("ontology.helpers").setLevel(logging.DEBUG)
-
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -37,8 +32,8 @@ logger = logging.getLogger(__name__)
 def get_ontology_settings() -> Dict[str, Any]:
     """Get general ontology settings."""
     return {
-        "ontology_iri": "http://example.org/manufacturing_revised_ontology.owl",
-        "default_output_file": "manufacturing_ontology_revised_populated.owl",
+        "ontology_iri": "http://example.org/manufacturing_revised_ontology_v2.owl",  # Updated IRI Version
+        "default_output_file": "manufacturing_ontology_revised_populated_v2.owl",  # Updated Output Version
         "format": "rdfxml",
     }
 
@@ -59,25 +54,26 @@ def get_equipment_type_sequence_order() -> Dict[str, int]:
 
 
 def get_equipment_sequence_overrides() -> Dict[str, Dict[str, Dict[str, Any]]]:
-    """Define line-specific equipment sequence overrides."""
+    """Define line-specific equipment sequence overrides (order number)."""
     # Example overrides based on previous config examples
+    # This now primarily affects the 'sequenceOrder' property value assignment.
     return {
-        # Example: VIPCO012 might have a non-standard sequence
+        # Example: VIPCO012 might have a non-standard sequence order
         # "VIPCO012": {
-        #     "TubeMaker": {"order": 1, "downstream": "CasePacker"}, # Assuming TubeMaker is parsed type
-        #     "CasePacker": {"order": 2, "upstream": "TubeMaker"},
+        #     "TubeMaker": {"order": 1}, # Assuming TubeMaker is parsed type
+        #     "CasePacker": {"order": 2},
         # },
         # Example: FIPCO006 skips Cartoner, direct Filler->CasePacker
         # "FIPCO006": {
-        #     "Filler": {"order": 1, "downstream": "CasePacker"},
-        #     "CasePacker": {"order": 2, "upstream": "Filler"}, # Use actual parsed types
+        #     "Filler": {"order": 1},
+        #     "CasePacker": {"order": 2}, # Use actual parsed types
         # },
         # Add actual overrides based on real line configurations
     }
 
 
 # =============================================================================
-# Ontology Definition (Core, Classes, Properties)
+# Ontology Definition (Core, Classes, Properties) - REVISED
 # =============================================================================
 
 # --- Core Ontology Setup ---
@@ -188,60 +184,45 @@ with onto:
 
         pass
 
-    # --- Utilization States ---
+    # --- Utilization States (REVISED based on AE Model) ---
     class UtilizationState(Thing):
-        """The operational state of an asset during an EventRecord."""
+        """The operational state of an asset during an EventRecord, aligned with AE Model categories."""
 
         pass
 
-    class OperationalState(UtilizationState):
-        pass  # General category for running/producing
+    class RuntimeState(UtilizationState):
+        """State corresponding to AE Model category 'Runtime'."""
 
-    class RunningState(OperationalState):
-        pass  # Actively running/producing
+        pass
 
-    class NonOperationalState(UtilizationState):
-        pass  # General category for not running
+    class UnplannedState(UtilizationState):
+        """State corresponding to AE Model category 'Unplanned'."""
 
-    class StoppedState(NonOperationalState):
-        pass  # Intentionally stopped
+        pass
 
-    class PlannedStopState(StoppedState):
-        pass  # Stopped for planned reasons (maint, breaks, meetings)
+    class WaitingState(UtilizationState):
+        """State corresponding to AE Model category 'Waiting'."""
 
-    class ChangeoverState(PlannedStopState):
-        pass  # Specifically stopped for changeover
+        pass
 
-    class MaintenanceState(PlannedStopState):
-        pass  # Specifically stopped for maintenance
+    class PlantDecisionState(UtilizationState):
+        """State corresponding to AE Model category 'Plant Decision'."""
 
-    class OtherPlannedStopState(PlannedStopState):
-        pass  # Breaks, meetings, cleaning etc.
+        pass
 
-    class UnplannedStopState(NonOperationalState):
-        pass  # Unexpectedly stopped
+    class BusinessExternalState(UtilizationState):
+        """State corresponding to AE Model category 'Business External'."""
 
-    class DowntimeState(UnplannedStopState):
-        pass  # Generic unplanned stop (breakdowns, jams etc.)
+        pass
 
-    class WaitingState(UnplannedStopState):
-        pass  # Stopped waiting for external factor (material, operator, upstream)
+    class UnknownAEState(UtilizationState):
+        """State when the AE Model category could not be determined."""
 
-    class ExternalNonAvailabilityState(UtilizationState):
-        pass  # Not scheduled/available due to external factors
+        pass
 
-    class BusinessExternalState(ExternalNonAvailabilityState):
-        pass  # e.g., No Demand
-
-    class PlantDecisionState(ExternalNonAvailabilityState):
-        pass  # e.g., Planned Shutdown (No Orders) - overlaps?
-
-    class UnknownState(UtilizationState):
-        pass  # State couldn't be determined
-
-    # --- Utilization Reasons ---
+    # --- Utilization Reasons (Hierarchy kept, but mapping from free text removed) ---
     class UtilizationReason(Thing):
-        """The reason behind a specific UtilizationState."""
+        """The reason behind a specific UtilizationState. (Hierarchy retained for potential future use)."""
 
         pass
 
@@ -262,10 +243,10 @@ with onto:
         pass
 
     class ChangeoverReason(PlannedReason):
-        pass  # Reason is the changeover itself
+        pass
 
     class OperationalPlannedReason(PlannedReason):
-        pass  # Breaks, meetings, training
+        pass
 
     class LunchBreakReason(OperationalPlannedReason):
         pass
@@ -274,26 +255,26 @@ with onto:
         pass
 
     class ExperimentationReason(PlannedReason):
-        pass  # Planned trials
+        pass
 
     # Reasons for Unplanned Stops (Downtime/Waiting)
     class UnplannedReason(UtilizationReason):
         pass
 
     class BreakdownReason(UnplannedReason):
-        pass  # Equipment failure
+        pass
 
     class JamReason(UnplannedReason):
-        pass  # Material/product jam
+        pass
 
     class AdjustmentReason(UnplannedReason):
-        pass  # Minor adjustments needed
+        pass
 
     class ProcessReason(UnplannedReason):
-        pass  # Generic process issue causing stop (could overlap Jam/Adjust)
+        pass
 
     class WaitingReason(UnplannedReason):
-        pass  # Waiting for something/someone
+        pass  # Maps to WaitingState now
 
     class WaitingForMaterialReason(WaitingReason):
         pass
@@ -308,7 +289,7 @@ with onto:
         pass
 
     class WaitingOtherReason(WaitingReason):
-        pass  # Generic wait
+        pass
 
     # Reasons for External Non-Availability
     class ExternalReason(UtilizationReason):
@@ -318,20 +299,20 @@ with onto:
         pass
 
     class ExternalFactorReason(ExternalReason):
-        pass  # Weather, utility outage etc. (if applicable)
+        pass
 
-    # Other potential reasons (might overlap, use carefully)
+    # Other potential reasons
     class QualityLossReason(UtilizationReason):
-        pass  # If stop is *due* to quality issue detection
+        pass
 
     class SpeedLossReason(UtilizationReason):
-        pass  # If stop is *due* to speed issue detection (less common for stops)
+        pass
 
     class UnknownReason(UtilizationReason):
-        pass  # Reason couldn't be determined
+        pass
 
 
-# --- Property Definitions ---
+# --- Property Definitions (REVISED) ---
 with onto:
     # --- Object Properties (Relationships) ---
 
@@ -346,17 +327,16 @@ with onto:
 
     class involvesEquipment(owl.ObjectProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [Equipment]  # Event usually relates to one specific equip/line instance
+        range = [Equipment]  # Event usually relates to one specific equip instance
 
     class hasState(owl.ObjectProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [UtilizationState]  # An event captures one state
+        range = [UtilizationState]  # An event captures one AE state
 
-    class hasReason(owl.ObjectProperty):
+    class hasReason(owl.ObjectProperty):  # Kept, but not populated from free text
         domain = [EventRecord]
-        range = [
-            UtilizationReason
-        ]  # Could potentially have multiple reasons? Usually one primary. Let's keep non-functional for now.
+        range = [UtilizationReason]
+        # Non-functional allows linking if specific reasons *can* be identified later
 
     class occursDuring(owl.ObjectProperty, owl.FunctionalProperty):
         domain = [EventRecord]
@@ -364,13 +344,11 @@ with onto:
 
     class processesMaterial(owl.ObjectProperty):
         domain = [EventRecord]
-        range = [
-            Material
-        ]  # Maybe functional if only one material per event? Keep non-functional for flexibility.
+        range = [Material]  # Non-functional
 
     class relatesToOrder(owl.ObjectProperty):
         domain = [EventRecord]
-        range = [ProductionOrder]  # Maybe functional? Keep non-functional.
+        range = [ProductionOrder]  # Non-functional
 
     class duringShift(owl.ObjectProperty, owl.FunctionalProperty):
         domain = [EventRecord]
@@ -380,45 +358,93 @@ with onto:
         domain = [EventRecord]
         range = [Crew]
 
-    # Asset Hierarchy & Location Relationships
+    # --- Asset Hierarchy & Location Relationships (INVERSES CORRECTED) ---
+
+    # Focus Factory Relationships
     class locatedInPlant(owl.ObjectProperty, owl.FunctionalProperty):
+        # Domain expanded to include FocusFactory
         domain = [Line, Equipment, PhysicalArea, FocusFactory]
         range = [Plant]
+        # Inverse will be defined on Plant (e.g., plantContains) if needed, or managed via FF's inverse
 
-    class hasFocusFactory(owl.ObjectProperty):
+    class hasFocusFactory(owl.ObjectProperty):  # Plant -> FocusFactory
         domain = [Plant]
         range = [FocusFactory]
-        inverse_property = locatedInPlant  # Plant can have multiple FFs
+        # inverse_property = locatedInPlant # CORRECTED: Inverse defined on FocusFactory instead
 
-    class partOfFocusFactory(owl.ObjectProperty, owl.FunctionalProperty):
+    class partOfFocusFactory(
+        owl.ObjectProperty, owl.FunctionalProperty
+    ):  # Area/Line/Equip -> FocusFactory
         domain = [PhysicalArea, Line, Equipment]
         range = [FocusFactory]
-        inverse_property = locatedInPlant  # Areas/Lines/Equip belong to one FF
+        # Inverse defined below
 
-    class hasArea(owl.ObjectProperty):
+    # Define inverses on FocusFactory
+    class ffHasArea(owl.ObjectProperty):
         domain = [FocusFactory]
         range = [PhysicalArea]
-        inverse_property = partOfFocusFactory  # FF has multiple Areas
+        inverse_property = partOfFocusFactory
 
-    class locatedInArea(owl.ObjectProperty, owl.FunctionalProperty):
+    class ffHasLine(owl.ObjectProperty):
+        domain = [FocusFactory]
+        range = [Line]
+        inverse_property = partOfFocusFactory
+
+    class ffHasEquipment(owl.ObjectProperty):
+        domain = [FocusFactory]
+        range = [Equipment]
+        inverse_property = partOfFocusFactory
+
+    # Also set inverse for hasFocusFactory
+    locatedInPlant.inverse_property = hasFocusFactory  # FF -> Plant inverse
+
+    # Physical Area Relationships
+    class hasArea(owl.ObjectProperty):  # FocusFactory -> Area (Now use ffHasArea)
+        # This might be redundant now, consider removing if ffHasArea covers it. Keep for now.
+        domain = [FocusFactory]
+        range = [PhysicalArea]
+        inverse_property = partOfFocusFactory  # Okay
+
+    class locatedInArea(
+        owl.ObjectProperty, owl.FunctionalProperty
+    ):  # Line/Equip -> Area
         domain = [Line, Equipment]
-        range = [PhysicalArea]  # Line/Equip in one Area
+        range = [PhysicalArea]
+        # Inverse defined below
 
-    class hasLine(owl.ObjectProperty):
+    # Define inverses on PhysicalArea
+    class areaHasLine(owl.ObjectProperty):
         domain = [PhysicalArea]
         range = [Line]
-        inverse_property = locatedInArea  # Area has multiple Lines
+        inverse_property = locatedInArea
 
-    class isPartOfLine(owl.ObjectProperty, owl.FunctionalProperty):
+    class areaHasEquipment(owl.ObjectProperty):
+        domain = [PhysicalArea]
+        range = [Equipment]
+        inverse_property = locatedInArea
+
+    # Line Relationships
+    class hasLine(owl.ObjectProperty):  # PhysicalArea -> Line (Now use areaHasLine)
+        # This might be redundant now, consider removing if areaHasLine covers it. Keep for now.
+        domain = [PhysicalArea]
+        range = [Line]
+        inverse_property = locatedInArea  # Okay
+
+    class isPartOfLine(owl.ObjectProperty, owl.FunctionalProperty):  # Equip -> Line
         domain = [Equipment]
         range = [Line]
-        inverse_property = hasLine  # Equip on one Line
+        # inverse_property = hasLine # CORRECTED below
 
-    class hasEquipment(owl.ObjectProperty):
+    # Equipment Relationships
+    class hasEquipment(owl.ObjectProperty):  # Line -> Equip
         domain = [Line]
         range = [Equipment]
-        inverse_property = isPartOfLine  # Line has multiple Equip
+        inverse_property = isPartOfLine  # CORRECT
 
+    # Correct inverse for isPartOfLine
+    isPartOfLine.inverse_property = hasEquipment  # CORRECT
+
+    # Other Location Relationships
     class locatedInCountry(owl.ObjectProperty, owl.FunctionalProperty):
         domain = [Plant]
         range = [Country]
@@ -430,16 +456,15 @@ with onto:
     # Equipment Sequence Relationships
     class isImmediatelyUpstreamOf(owl.ObjectProperty):
         domain = [Equipment]
-        range = [
-            Equipment
-        ]  # Can have multiple downstream in parallel? Keep non-functional.
+        range = [Equipment]
+        # Non-functional, inverse defined below
 
     class isImmediatelyDownstreamOf(owl.ObjectProperty):
         domain = [Equipment]
         range = [Equipment]
-        inverse_property = isImmediatelyUpstreamOf  # Can have multiple upstream in parallel? Keep non-functional.
+        inverse_property = isImmediatelyUpstreamOf  # CORRECT
 
-    # Organizational Relationships (Example)
+    # Organizational Relationships (Example - check if inverses needed/correct)
     class partOfDivision(owl.ObjectProperty, owl.FunctionalProperty):
         domain = [Plant, FocusFactory]
         range = [Division]
@@ -450,7 +475,7 @@ with onto:
 
     # --- Data Properties (Attributes) ---
 
-    # TimeInterval Properties (Functional)
+    # TimeInterval Properties
     class startTime(owl.DataProperty, owl.FunctionalProperty):
         domain = [TimeInterval]
         range = [datetime]
@@ -459,14 +484,14 @@ with onto:
         domain = [TimeInterval]
         range = [datetime]
 
-    # Plant Properties (Define Directly)
+    # Plant Properties
     class plantId(owl.DataProperty, owl.FunctionalProperty):
         domain = [Plant]
         range = [str]
 
     class plantDescription(owl.DataProperty):
         domain = [Plant]
-        range = [str]  # Keep non-functional if multiple descriptions possible
+        range = [str]
 
     class latitude(owl.DataProperty, owl.FunctionalProperty):
         domain = [Plant]
@@ -476,14 +501,14 @@ with onto:
         domain = [Plant]
         range = [float]
 
-    # Country Properties (Define Directly)
+    # Country Properties
     class countryCode(owl.DataProperty, owl.FunctionalProperty):
         domain = [Country]
         range = [str]
 
     class countryName(owl.DataProperty, owl.FunctionalProperty):
         domain = [Country]
-        range = [str]  # Assuming name is unique/functional
+        range = [str]
 
     # Line Properties
     class lineName(owl.DataProperty, owl.FunctionalProperty):
@@ -505,7 +530,7 @@ with onto:
 
     class equipmentModel(owl.DataProperty):
         domain = [Equipment]
-        range = [str]  # Non-functional?
+        range = [str]
 
     class sequenceOrder(owl.DataProperty, owl.FunctionalProperty):
         domain = [Equipment]
@@ -535,7 +560,7 @@ with onto:
 
     class materialDescription(owl.DataProperty):
         domain = [Material]
-        range = [str]  # Non-functional?
+        range = [str]
 
     class materialUOM(owl.DataProperty, owl.FunctionalProperty):
         domain = [Material]
@@ -548,7 +573,7 @@ with onto:
 
     class orderDescription(owl.DataProperty):
         domain = [ProductionOrder]
-        range = [str]  # Non-functional?
+        range = [str]
 
     class orderRate(owl.DataProperty, owl.FunctionalProperty):
         domain = [ProductionOrder]
@@ -576,7 +601,20 @@ with onto:
         domain = [EventRecord]
         range = [float]
 
-    # AE Model Time Components (All Functional Floats)
+    class rampUpFlag(owl.DataProperty, owl.FunctionalProperty):
+        domain = [EventRecord]
+        range = [bool]
+
+    # NEW: Raw descriptions captured on EventRecord
+    class rawStateDescription(owl.DataProperty, owl.FunctionalProperty):
+        domain = [EventRecord]
+        range = [str]
+
+    class rawReasonDescription(owl.DataProperty, owl.FunctionalProperty):
+        domain = [EventRecord]
+        range = [str]
+
+    # AE Model Time Components (All Functional Floats on EventRecord)
     class businessExternalTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
         range = [float]
@@ -599,20 +637,22 @@ with onto:
 
     class downtimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]
+        range = [float]  # Corresponds to 'Unplanned' AE category total?
 
     class runTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]
+        range = [float]  # Corresponds to 'Runtime' AE category total?
 
     class notEnteredTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]
+        range = [float]  # Part of 'Unplanned'?
 
     class waitingTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]
+        range = [float]  # Corresponds to 'Waiting' AE category total?
 
+    # Note: Some time properties below might map conceptually *within* AE categories (e.g., Maintenance within Plant Decision/Unplanned)
+    # Keep them as distinct properties on EventRecord for detailed data capture.
     class plantExperimentationTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
         range = [float]
@@ -647,9 +687,9 @@ with onto:
 
     class noDemandTimeMinutes(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
-        range = [float]
+        range = [float]  # Part of 'Business External'?
 
-    # Production Quantities (Functional Floats)
+    # Production Quantities
     class goodProductionQty(owl.DataProperty, owl.FunctionalProperty):
         domain = [EventRecord]
         range = [float]
@@ -658,23 +698,18 @@ with onto:
         domain = [EventRecord]
         range = [float]
 
-    # Utilization State/Reason Descriptions (Define Directly)
-    class stateDescription(owl.DataProperty):
-        domain = [UtilizationState]
-        range = [str]  # Usually functional per state type instance
+    # REMOVED: stateDescription, reasonDescription from UtilizationState/Reason classes
 
-    class reasonDescription(owl.DataProperty):
+    # UtilizationReason Properties (Kept for potential future use of hierarchy)
+    class reasonDescription(
+        owl.DataProperty
+    ):  # Keep property definition, but don't populate from free text
         domain = [UtilizationReason]
-        range = [str]  # Usually functional per reason type instance
-
-    # Other properties
-    class rampUpFlag(owl.DataProperty, owl.FunctionalProperty):
-        domain = [EventRecord]
-        range = [bool]
+        range = [str]
 
 
 # =============================================================================
-# Utility Functions
+# Utility Functions (Largely Unchanged)
 # =============================================================================
 
 
@@ -691,21 +726,14 @@ def parse_datetime_with_tz(timestamp_str: Optional[str]) -> Optional[datetime]:
 
     try:
         # Format expected by source data: 'YYYY-MM-DD HH:MM:SS.fff +/-HHMM'
-        # Example: 2025-02-10 22:45:02.000 -0500
-        # Python's %z expects +/-HHMM
-
-        # Check if timezone part exists and looks valid
         if " " in timestamp_str and ("+" in timestamp_str or "-" in timestamp_str[-6:]):
             parts = timestamp_str.rsplit(" ", 1)
             dt_part_str = parts[0]
             tz_part_str = parts[1]
 
-            # Ensure tz_part is in +/-HHMM format (no colon)
             if ":" in tz_part_str:
-                # Attempt to remove colon if present, e.g., +01:00 -> +0100
                 tz_part_str = tz_part_str.replace(":", "")
 
-            # Validate tz format (+/-HHMM)
             if not (
                 len(tz_part_str) == 5
                 and tz_part_str[0] in ("+", "-")
@@ -713,9 +741,7 @@ def parse_datetime_with_tz(timestamp_str: Optional[str]) -> Optional[datetime]:
             ):
                 raise ValueError("Timezone offset not in +/-HHMM format")
 
-            # Reassemble and parse
             timestamp_to_parse = f"{dt_part_str}{tz_part_str}"
-            # Use the most precise format string possible
             if "." in dt_part_str:
                 format_str = "%Y-%m-%d %H:%M:%S.%f%z"
             else:
@@ -724,7 +750,6 @@ def parse_datetime_with_tz(timestamp_str: Optional[str]) -> Optional[datetime]:
             dt_obj = datetime.strptime(timestamp_to_parse, format_str)
             return dt_obj
         else:
-            # If no recognizable timezone, try parsing without it (as naive)
             logger.warning(
                 f"Timestamp '{timestamp_str}' lacks recognizable timezone offset. Attempting naive parse."
             )
@@ -737,9 +762,7 @@ def parse_datetime_with_tz(timestamp_str: Optional[str]) -> Optional[datetime]:
             return dt_obj
 
     except ValueError as e:
-        # Fallback 1: Try ISO format (less likely for the sample data)
         try:
-            # Replace first space with T for ISO compatibility if applicable
             iso_str = (
                 timestamp_str.replace(" ", "T", 1)
                 if " " in timestamp_str
@@ -786,13 +809,12 @@ def parse_equipment_base_type(equipment_name: str, line_name: str) -> str:
     equipment_name = equipment_name.strip()
     line_name = line_name.strip()
 
-    # Expected pattern: {LINE_NAME}_{BaseType}[OptionalNumber]
     prefix = f"{line_name}_"
     if equipment_name.startswith(prefix):
         base_type_part = equipment_name[len(prefix) :]
-
-        # Remove potential trailing numbers
-        base_type = re.sub(r"\d+$", "", base_type_part)
+        base_type = re.sub(
+            r"\d+$", "", base_type_part
+        )  # Remove potential trailing numbers
 
         if base_type:
             logger.debug(
@@ -803,9 +825,8 @@ def parse_equipment_base_type(equipment_name: str, line_name: str) -> str:
             logger.warning(
                 f"Equipment name '{equipment_name}' matches prefix '{prefix}' but has no type part."
             )
-            return "Unknown"  # Or maybe return base_type_part if numbers are allowed? Stick to removing numbers per req.
+            return "Unknown"
 
-    # Fallback: Check if equipment_name *is* one of the known types (case-insensitive)
     known_types_lower = {t.lower(): t for t in get_equipment_type_sequence_order()}
     if equipment_name.lower() in known_types_lower:
         base_type = known_types_lower[equipment_name.lower()]
@@ -814,16 +835,10 @@ def parse_equipment_base_type(equipment_name: str, line_name: str) -> str:
         )
         return base_type
 
-    # Fallback 2: If name contains underscore but not line prefix (less likely based on description)
     if "_" in equipment_name:
         possible_type_part = equipment_name.split("_")[-1]
         base_type = re.sub(r"\d+$", "", possible_type_part)
         if base_type:
-            # Check if this looks like a known type? Might be too ambiguous.
-            logger.debug(
-                f"Potential equipment type '{base_type}' from last part of '{equipment_name}' (fallback)."
-            )
-            # Let's only return if it matches a known type to avoid random strings
             if base_type.lower() in known_types_lower:
                 return known_types_lower[base_type.lower()]
 
@@ -838,7 +853,6 @@ def clean_string_value(value: Any) -> Optional[str]:
     if pd.isna(value) or value is None:
         return None
     cleaned = str(value).strip()
-    # Return None if the string is empty after stripping
     return cleaned if cleaned else None
 
 
@@ -847,7 +861,6 @@ def clean_numeric_value(value: Any) -> Optional[float]:
     if pd.isna(value) or value is None or value == "":
         return None
     try:
-        # Handle potential comma separators if locale uses them (basic approach)
         if isinstance(value, str):
             value = value.replace(",", "")
         return float(value)
@@ -877,10 +890,10 @@ def clean_boolean_value(value: Any) -> Optional[bool]:
 
 
 # =============================================================================
-# Ontology Helper Functions
+# Ontology Helper Functions (REVISED)
 # =============================================================================
 
-# Cache for shared state/reason instances
+# Cache for shared instances (like AE states)
 _shared_instances_cache = {}
 
 
@@ -889,160 +902,157 @@ def get_or_create_instance(
     instance_id: str,
     properties: Optional[Dict[str, Any]] = None,
     namespace: owl.Namespace = onto,
-    use_cache: bool = False,  # Flag for states/reasons
+    use_cache: bool = False,  # Flag primarily for AE state instances
 ) -> owl.Thing:
     """
     Get existing instance by identifier or create a new one.
     Handles functional properties by overwriting, non-functional by appending unique.
-    Uses a cache for specific classes (like states/reasons) if use_cache=True.
+    Uses a cache for specific classes if use_cache=True.
     """
     if not instance_id or not isinstance(instance_id, str):
         raise ValueError(
             f"Invalid instance_id provided for class {cls.__name__}: {instance_id}"
         )
 
+    # Sanitize ID for IRI - replace non-word chars (excluding hyphen) with underscore
     sanitized_id = re.sub(r"[^\w\-]+", "_", instance_id)
+    # Prevent IDs starting with numbers if using certain RDF formats
+    if sanitized_id[0].isdigit():
+        sanitized_id = f"_{sanitized_id}"
+
     instance_iri = f"{namespace.base_iri}{sanitized_id}"
 
     instance = None
-    cache_key = (cls, sanitized_id)
+    cache_key = (cls, sanitized_id)  # Use class and sanitized ID for cache key
 
     if use_cache and cache_key in _shared_instances_cache:
         instance = _shared_instances_cache[cache_key]
-        logger.debug(f"Retrieved '{sanitized_id}' of class {cls.__name__} from cache.")
+        # logger.debug(f"Retrieved '{sanitized_id}' of class {cls.__name__} from cache.") # Can be noisy
     else:
+        # Search in the world associated with the namespace
         instance = namespace.world.search_one(iri=instance_iri)
         if instance is not None:
+            # Check if the found instance is of the expected class type
             if not isinstance(instance, cls):
-                raise TypeError(
-                    f"IRI conflict: Found existing instance <{instance_iri}> but it is not of type {cls.__name__} (it's {type(instance).__name__})."
-                )
-            else:
-                logger.debug(
-                    f"Retrieved existing instance '{sanitized_id}' of class {cls.__name__} from ontology."
-                )
+                # Attempt to handle cases where class might be defined later or differently
+                # Check if expected class is a superclass of the found instance's class
+                if not issubclass(instance.__class__, cls):
+                    raise TypeError(
+                        f"IRI conflict: Found existing instance <{instance_iri}> but it is type {type(instance).__name__}, not compatible with expected type {cls.__name__}."
+                    )
+                # If compatible (subclass), use existing but log warning maybe?
+                # logger.warning(f"Retrieved existing instance <{instance_iri}> of type {type(instance).__name__}, assigning as expected type {cls.__name__}.")
+            # else: # Instance is of the correct type or a subclass, which is okay
+            #     logger.debug(f"Retrieved existing instance '{sanitized_id}' of class {cls.__name__} from ontology.")
+            pass  # Use the retrieved instance
         else:
-            logger.debug(
-                f"Creating new instance '{sanitized_id}' of class {cls.__name__}."
-            )
+            # logger.debug(f"Creating new instance '{sanitized_id}' of class {cls.__name__}.")
             instance = cls(sanitized_id, namespace=namespace)
-            if use_cache:
-                _shared_instances_cache[cache_key] = instance
-                logger.debug(
-                    f"Added '{sanitized_id}' of class {cls.__name__} to cache."
-                )
 
+        if use_cache:  # Add to cache whether found or newly created
+            _shared_instances_cache[cache_key] = instance
+            # logger.debug(f"Stored/Updated '{sanitized_id}' of class {cls.__name__} in cache.")
+
+    # Assign properties if provided
     if properties:
         for prop_name, value in properties.items():
-            if value is None:  # Skip None values
+            if value is None:  # Skip None values explicitly
                 continue
 
             try:
-                prop = getattr(instance.__class__, prop_name, None)
-                if prop is None:
-                    # Check if it's defined in a superclass if direct getattr fails
-                    # This might help with the initial warnings, though direct defs are better
-                    for base_cls in instance.__class__.__mro__:
-                        prop = getattr(base_cls, prop_name, None)
-                        if prop is not None:
-                            break
+                prop = getattr(
+                    onto, prop_name, None
+                )  # Get property from ontology namespace
+                if prop is None or not isinstance(prop, owl.Property):
+                    # Fallback check: sometimes properties are direct attributes on generated classes
+                    prop_on_class = getattr(cls, prop_name, None)
+                    if isinstance(prop_on_class, owl.Property):
+                        prop = prop_on_class
+                    else:
+                        logger.warning(
+                            f"Property '{prop_name}' not found in ontology namespace or on class {cls.__name__}. Skipping assignment for instance {instance.name}."
+                        )
+                        continue
 
-                if prop is None:
-                    logger.warning(
-                        f"Property '{prop_name}' not found for class {instance.__class__.__name__} or its bases. Skipping."
-                    )
-                    continue
+                is_functional = owl.FunctionalProperty in prop.is_a
+                is_object_prop = owl.ObjectProperty in prop.is_a
 
-                is_functional = hasattr(prop, "functional") and prop.functional
-                is_object_prop = isinstance(prop, owl.ObjectProperty)
-
-                current_value_owl = getattr(
-                    instance, prop_name
-                )  # Get current value via Owlready
+                current_value_owl = getattr(instance, prop_name)
 
                 if is_functional:
                     # --- Functional Property Assignment ---
-                    actual_value_to_set = None
-                    is_different = True  # Assume different unless proven otherwise
-
-                    if is_object_prop:
-                        # Ensure value is a single instance
-                        if isinstance(value, list):
-                            if len(value) > 1:
-                                logger.warning(
-                                    f"Assigning only first value to functional object property '{prop_name}' on {instance.name}"
-                                )
-                            actual_value_to_set = value[0] if value else None
-                        else:
-                            actual_value_to_set = value
-
-                        # Check if different from current value (which might be None or a list from Owlready)
-                        current_single_value = (
-                            current_value_owl[0] if current_value_owl else None
+                    actual_value_to_set = (
+                        value[0] if isinstance(value, list) and value else value
+                    )
+                    if isinstance(value, list) and len(value) > 1:
+                        logger.warning(
+                            f"Assigning only first value to functional property '{prop_name}' on {instance.name}"
                         )
-                        is_different = current_single_value != actual_value_to_set
 
-                    else:  # Functional Data Property
-                        if isinstance(value, list):
-                            if len(value) > 1:
-                                logger.warning(
-                                    f"Assigning only first value to functional data property '{prop_name}' on {instance.name}"
-                                )
-                            actual_value_to_set = value[0] if value else None
-                        else:
-                            actual_value_to_set = value
-
-                        # Owlready stores data properties directly, not always in lists
-                        is_different = current_value_owl != actual_value_to_set
-
-                    if actual_value_to_set is not None and is_different:
-                        # ***MODIFIED ASSIGNMENT*** Assign the value directly
+                    # Owlready handles functional comparison and assignment directly
+                    if current_value_owl != actual_value_to_set:
                         setattr(instance, prop_name, actual_value_to_set)
-                        logger.debug(
-                            f"Set functional property '{prop_name}' on {instance.name}"
-                        )
-                    elif actual_value_to_set is None:
-                        logger.debug(
-                            f"Skipping functional property '{prop_name}' on {instance.name} due to None value."
-                        )
-                    elif not is_different:
-                        logger.debug(
-                            f"Skipping functional property '{prop_name}' on {instance.name}, value is already set."
-                        )
+                        # logger.debug(f"Set functional property '{prop_name}' on {instance.name}")
+                    # else:
+                    #     logger.debug(f"Skipping functional property '{prop_name}' on {instance.name}, value is already set.")
 
                 else:
                     # --- Non-Functional Property Assignment ---
-                    # Ensure current_value_owl is a list for appending checks
                     current_list = list(current_value_owl) if current_value_owl else []
-
                     values_to_add = value if isinstance(value, list) else [value]
 
-                    newly_added = []
+                    newly_added_count = 0
                     for val_item in values_to_add:
-                        # Add only if not None and not already present
                         if val_item is not None and val_item not in current_list:
                             current_list.append(val_item)
-                            newly_added.append(val_item)
+                            newly_added_count += 1
 
-                    if newly_added:
+                    if newly_added_count > 0:
                         setattr(
                             instance, prop_name, current_list
                         )  # Assign the updated list
-                        logger.debug(
-                            f"Added {len(newly_added)} item(s) to non-functional property '{prop_name}' on {instance.name}"
-                        )
+                        # logger.debug(
+                        #     f"Added {newly_added_count} item(s) to non-functional property '{prop_name}' on {instance.name}"
+                        # )
 
             except Exception as e:
                 logger.error(
-                    f"Error setting property '{prop_name}' on instance {instance.name}: {e}",
-                    exc_info=True,
+                    f"Error setting property '{prop_name}' on instance {instance.name} with value '{value}': {e}",
+                    exc_info=False,  # Set True for full traceback if needed
                 )
 
     return instance
 
 
+# --- NEW Helper for AE State Instances ---
+def get_ae_state_instance(
+    ae_category_name: str, StateClass: Type[UtilizationState]
+) -> UtilizationState:
+    """
+    Gets or creates a shared, cached instance for an AE UtilizationState class.
+    The instance ID is derived from the class name and AE category name.
+    No description is stored on the state instance itself.
+    """
+    if not ae_category_name or not StateClass:
+        raise ValueError("Valid AE category name and StateClass are required.")
+
+    # Create a clean ID, e.g., UnplannedState_Unplanned
+    # Sanitize the category name just in case
+    sanitized_category = re.sub(r"[^\w\-]+", "_", ae_category_name)
+    instance_id = f"{StateClass.__name__}_{sanitized_category}"
+
+    # Use get_or_create_instance with caching, but no properties
+    instance = get_or_create_instance(
+        cls=StateClass,
+        instance_id=instance_id,
+        properties=None,  # Important: Do not store descriptions here
+        use_cache=True,
+    )
+    return instance
+
+
 # =============================================================================
-# Data Handling Functions (Load, Preprocess, Map)
+# Data Handling Functions (Load, Preprocess, Map - REVISED)
 # =============================================================================
 
 
@@ -1050,8 +1060,21 @@ def load_csv_data(csv_path: str) -> pd.DataFrame:
     """Load data from CSV file."""
     logger.info(f"Loading data from {csv_path}")
     try:
-        df = pd.read_csv(csv_path, low_memory=False)
-        # Add a unique record ID for easier instance naming/debugging if needed
+        # Specify dtype for potential ID columns to avoid mixed type warnings if possible
+        # Adjust based on actual data - this is a guess
+        dtype_spec = {
+            "EQUIPMENT_ID": str,
+            "PRODUCTION_ORDER_ID": str,
+            "MATERIAL_ID": str,
+            "SHORT_MATERIAL_ID": str,
+            "PLANT": str,
+            "LINE_NAME": str,
+            "EQUIPMENT_NAME": str,
+            "CREW_ID": str,
+            # Add others known to be strings or specific types
+        }
+        df = pd.read_csv(csv_path, low_memory=False, dtype=dtype_spec)
+        # Add a unique record ID for easier instance naming/debugging
         df["record_id_str"] = df.index.astype(str)
         logger.info(f"Loaded {len(df)} rows")
         return df
@@ -1068,12 +1091,8 @@ def preprocess_manufacturing_data(df: pd.DataFrame) -> pd.DataFrame:
     processed_df = df.copy()
     logger.info("Starting preprocessing...")
 
-    # --- Column Renaming (Optional but good practice) ---
-    # Example: Rename confusing columns if necessary
-    # processed_df.rename(columns={'OLD_NAME': 'NEW_NAME'}, inplace=True)
-
-    # --- Data Type Conversions ---
-    # Convert potential ID columns safely to strings (after handling NaNs)
+    # Define column types for cleaning
+    # Ensure AE_MODEL_CATEGORY is treated as a key string identifier
     id_cols = [
         "EQUIPMENT_ID",
         "PRODUCTION_ORDER_ID",
@@ -1082,25 +1101,23 @@ def preprocess_manufacturing_data(df: pd.DataFrame) -> pd.DataFrame:
         "PLANT",
         "LINE_NAME",
         "EQUIPMENT_NAME",
+        "CREW_ID",
+        "AE_MODEL_CATEGORY",  # Treat as key identifier string
+        "UTIL_STATE_DESCRIPTION",  # Will be captured as raw text
+        "UTIL_REASON_DESCRIPTION",  # Will be captured as raw text
+        "EQUIPMENT_TYPE",  # Row level 'Line' or 'Equipment'
+        # Add other categorical/ID-like string columns here
+        "PLANT_COUNTRY",
+        "PLANT_STRATEGIC_LOCATION",
+        "GH_FOCUSFACTORY",
+        "PHYSICAL_AREA",
+        "SHIFT_NAME",
+        "MATERIAL_UOM",
+        "PRODUCTION_ORDER_UOM",
     ]
-    for col in id_cols:
-        if col in processed_df.columns:
-            # Fill NA with a placeholder temporarily if needed, convert to string, then replace placeholder if desired
-            processed_df[col] = processed_df[col].apply(clean_string_value)
-            logger.debug(f"Processed ID column: {col}")
-
-    # Convert boolean columns
     boolean_cols = ["RAMPUP_FLAG"]
-    for col in boolean_cols:
-        if col in processed_df.columns:
-            processed_df[col] = processed_df[col].apply(clean_boolean_value)
-            # Optionally fill NA bools with False or keep as None/NaN? Let's keep None.
-            # processed_df[col] = processed_df[col].fillna(False)
-            logger.debug(f"Processed boolean column: {col}")
-
-    # Convert numeric columns (AE Time components + others)
     numeric_cols = [
-        "TOTAL_TIME",  # Primary duration in minutes
+        "TOTAL_TIME",
         "BUSINESS_EXTERNAL_TIME",
         "PLANT_AVAILABLE_TIME",
         "EFFECTIVE_RUNTIME",
@@ -1120,247 +1137,123 @@ def preprocess_manufacturing_data(df: pd.DataFrame) -> pd.DataFrame:
         "CLEANING_AND_SANITIZATION",
         "LUNCH_AND_BREAK",
         "LUNCH",
-        "BREAK",  # Keep LUNCH/BREAK if needed separately
+        "BREAK",
         "MEETING_AND_TRAINING",
         "NO_DEMAND",
         "PRIMARY_CONV_FACTOR",
         "PRODUCTION_ORDER_RATE",
         "SHIFT_DURATION_MIN",
-        "UOM_ST",
-        "UOM_ST_SAP",
-        "TP_UOM",
         "PLANT_LATITUDE",
         "PLANT_LONGITUDE",
         "CHANGEOVER_COUNT",
-        # "DAYS_MTD", "DAYS_YTD", # Keep commented unless known to be reliable numeric
+        # UOM_ST, UOM_ST_SAP, TP_UOM - check if numeric or string codes
     ]
+    datetime_cols = [  # Columns to be parsed later
+        "JOB_START_TIME_LOC",
+        "JOB_END_TIME_LOC",
+        # Add others like SHIFT_START/END if they are full datetime strings
+    ]
+
+    # Clean String/ID columns
+    for col in id_cols:
+        if col in processed_df.columns:
+            processed_df[col] = processed_df[col].apply(clean_string_value)
+            # logger.debug(f"Cleaned string/ID column: {col}")
+
+    # Clean Boolean columns
+    for col in boolean_cols:
+        if col in processed_df.columns:
+            processed_df[col] = processed_df[col].apply(clean_boolean_value)
+            # logger.debug(f"Cleaned boolean column: {col}")
+
+    # Clean Numeric columns
     for col in numeric_cols:
         if col in processed_df.columns:
-            original_dtype = processed_df[col].dtype
             processed_df[col] = processed_df[col].apply(clean_numeric_value)
-            logger.debug(
-                f"Processed numeric column: {col} (Original dtype: {original_dtype})"
-            )
+            # logger.debug(f"Cleaned numeric column: {col}")
 
-    # Convert remaining columns assumed to be string descriptions/categories
-    # List columns NOT handled above (IDs, bools, numerics, times)
+    # Clean remaining unspecified columns as general strings (descriptions etc.)
     all_cols = set(processed_df.columns)
     handled_cols = (
         set(id_cols)
         | set(boolean_cols)
         | set(numeric_cols)
-        | set(
-            [
-                "JOB_START_TIME_LOC",
-                "JOB_END_TIME_LOC",
-                "SHIFT_START_DATE_LOC",
-                "SHIFT_END_DATE_LOC",
-                "PRODUCTIONDATE_DAY_LOC",
-                "PRODUCTIONDATE_MONTH_LOC",
-                "PRODUCTIONDATE_QUARTER_LOC",
-                "PRODUCTIONDATE_YEAR_LOC",
-                "record_id_str",
-                "TOTAL_TIME_SECONDS",
-            ]
-        )
-    )  # Also exclude date/time strings handled later
-
-    string_cols = list(all_cols - handled_cols)
-    for col in string_cols:
+        | set(datetime_cols)
+        | {"record_id_str"}
+    )
+    other_string_cols = list(all_cols - handled_cols)
+    for col in other_string_cols:
         if col in processed_df.columns:
+            # Assume remaining are descriptive strings unless known otherwise
             processed_df[col] = processed_df[col].apply(clean_string_value)
-            logger.debug(f"Processed potential string column: {col}")
+            # logger.debug(f"Cleaned potential string column: {col}")
 
-    # --- Extract Equipment Base Type (CRITICAL based on clarification #5) ---
+    # --- Extract Equipment Base Type ---
     logger.info("Extracting Equipment Base Type from EQUIPMENT_NAME...")
     if "EQUIPMENT_NAME" in processed_df.columns and "LINE_NAME" in processed_df.columns:
-        # Apply the parsing function row-wise
-        # This will overwrite any existing 'EQUIPMENT_BASE_TYPE' column content
-        processed_df["EQUIPMENT_BASE_TYPE_PARSED"] = processed_df.apply(
+        processed_df["EQUIPMENT_BASE_TYPE"] = processed_df.apply(
             lambda row: parse_equipment_base_type(
                 row["EQUIPMENT_NAME"], row["LINE_NAME"]
             ),
             axis=1,
         )
         logger.info("Finished extracting Equipment Base Type.")
-
-        # Log statistics on parsed types
-        parsed_counts = processed_df["EQUIPMENT_BASE_TYPE_PARSED"].value_counts()
+        parsed_counts = processed_df["EQUIPMENT_BASE_TYPE"].value_counts()
         logger.info(f"Equipment Base Type parsing results:\n{parsed_counts}")
-
-        # Decide if we completely replace or just fill NaNs in an original column
-        # Based on clarification, parsing EQUIPMENT_NAME is the source of truth.
-        processed_df["EQUIPMENT_BASE_TYPE"] = processed_df["EQUIPMENT_BASE_TYPE_PARSED"]
-        processed_df.drop(columns=["EQUIPMENT_BASE_TYPE_PARSED"], inplace=True)
-        logger.info("Set 'EQUIPMENT_BASE_TYPE' based on parsed values.")
-
     else:
         logger.warning(
-            "Missing EQUIPMENT_NAME or LINE_NAME columns. Cannot extract equipment base type."
+            "Missing EQUIPMENT_NAME or LINE_NAME. Cannot extract equipment base type."
         )
         if "EQUIPMENT_BASE_TYPE" not in processed_df.columns:
-            processed_df["EQUIPMENT_BASE_TYPE"] = "Unknown"  # Ensure column exists
-
-    # --- Handle Line vs Equipment Rows ---
-    # The 'EQUIPMENT_TYPE' column indicates if the row is 'Line' or 'Equipment' level.
-    # We need this info in the mapping step. Ensure it's clean.
-    if "EQUIPMENT_TYPE" in processed_df.columns:
-        processed_df["EQUIPMENT_TYPE"] = (
-            processed_df["EQUIPMENT_TYPE"].apply(clean_string_value).fillna("Unknown")
-        )
-        logger.info(
-            f"Cleaned EQUIPMENT_TYPE column. Value counts:\n{processed_df['EQUIPMENT_TYPE'].value_counts()}"
-        )
-    else:
-        logger.warning(
-            "EQUIPMENT_TYPE column missing. Assuming all rows are equipment level unless EQUIPMENT_NAME == LINE_NAME."
-        )
-        # Add a placeholder column maybe?
-        processed_df["EQUIPMENT_TYPE"] = "Unknown"
+            processed_df["EQUIPMENT_BASE_TYPE"] = "Unknown"
 
     # --- Final Checks ---
-    logger.info("Preprocessing finished.")
-    # Example check: logger.info(f"Null counts after preprocessing:\n{processed_df.isnull().sum()}")
+    # Check if key columns for mapping exist
+    required_cols = ["AE_MODEL_CATEGORY", "PLANT", "LINE_NAME", "EQUIPMENT_NAME"]
+    missing_req = [
+        col
+        for col in required_cols
+        if col not in processed_df.columns or processed_df[col].isnull().all()
+    ]
+    if missing_req:
+        logger.error(
+            f"CRITICAL: Missing required columns or columns entirely null after preprocessing: {missing_req}. Mapping will likely fail."
+        )
+        # Consider raising an error here depending on desired robustness
+        # raise ValueError(f"Missing critical data columns for ontology mapping: {missing_req}")
 
+    logger.info("Preprocessing finished.")
     return processed_df
 
 
-# --- State and Reason Mapping Logic ---
+# --- State Mapping Logic (REVISED) ---
 
-# Define mappings from raw descriptions to ontology classes
-# This needs to be customized based on the actual values in UTIL_STATE_DESCRIPTION and UTIL_REASON_DESCRIPTION
-# Use lowercase for case-insensitive matching
-
-STATE_CLASS_MAP = {
-    # Running States
-    "running": RunningState,
-    "producing": RunningState,
-    # Planned Stops
-    "planned downtime": PlannedStopState,  # Generic Planned
-    "changeover": ChangeoverState,
-    "planned maintenance": MaintenanceState,  # Or more specific PlannedMaintenanceState if defined
-    "autonomous maintenance": MaintenanceState,  # Or more specific AutonomousMaintenanceState if defined
-    "cleaning": OtherPlannedStopState,  # Maps to CleaningSanitationReason
-    "sanitization": OtherPlannedStopState,  # Maps to CleaningSanitationReason
-    "break": OtherPlannedStopState,  # Maps to LunchBreakReason
-    "lunch": OtherPlannedStopState,  # Maps to LunchBreakReason
-    "meeting": OtherPlannedStopState,  # Maps to MeetingTrainingReason
-    "training": OtherPlannedStopState,  # Maps to MeetingTrainingReason
-    "experiment": OtherPlannedStopState,  # Maps to ExperimentationReason
-    # Unplanned Stops
-    "downtime": DowntimeState,  # Generic Unplanned
-    "unplanned downtime": DowntimeState,
-    "breakdown": DowntimeState,  # Maps to BreakdownReason
-    "jammed": DowntimeState,  # Maps to JamReason
-    "adjusting": DowntimeState,  # Maps to AdjustmentReason
-    "waiting": WaitingState,
-    "starved": WaitingState,  # Maps to WaitingForMaterial/Upstream Reason
-    "blocked": WaitingState,  # Maps to WaitingForDownstream Reason
-    # External
-    "business external": BusinessExternalState,
-    "no demand": BusinessExternalState,  # Maps to NoDemandReason
-    "plant decision": PlantDecisionState,  # If distinct from BusinessExternal
-    # Unknown
-    "not entered": UnknownState,
-    "unknown": UnknownState,
+# Map AE_MODEL_CATEGORY values (lowercase, stripped) to Ontology Classes
+# Assumes AE_MODEL_CATEGORY contains values like 'Runtime', 'Unplanned', 'Waiting', etc.
+AE_CATEGORY_CLASS_MAP = {
+    "runtime": onto.RuntimeState,
+    "unplanned": onto.UnplannedState,
+    "waiting": onto.WaitingState,
+    "plant decision": onto.PlantDecisionState,
+    "business external": onto.BusinessExternalState,
+    # Add mappings for None or specific codes if they represent unknown/other
+    # If AE_MODEL_CATEGORY can be None/NaN, map to UnknownAEState
 }
 
-REASON_CLASS_MAP = {
-    # Planned Maintenance
-    "planned maintenance": PlannedMaintenanceReason,
-    "preventive maintenance": PlannedMaintenanceReason,
-    "autonomous maintenance": AutonomousMaintenanceReason,
-    "operator maintenance": AutonomousMaintenanceReason,
-    # Cleaning / Sanitation
-    "cleaning": CleaningSanitationReason,
-    "sanitization": CleaningSanitationReason,
-    "cip": CleaningSanitationReason,
-    # Changeovers
-    "changeover": ChangeoverReason,
-    "size change": ChangeoverReason,
-    "product change": ChangeoverReason,
-    "formula change": ChangeoverReason,
-    # Operational Planned
-    "lunch": LunchBreakReason,
-    "break": LunchBreakReason,
-    "meeting": MeetingTrainingReason,
-    "training": MeetingTrainingReason,
-    # Experimentation
-    "trial": ExperimentationReason,
-    "plant experimentation": ExperimentationReason,
-    # Unplanned Breakdowns/Process
-    "breakdown": BreakdownReason,
-    "equipment failure": BreakdownReason,
-    "mechanical failure": BreakdownReason,
-    "electrical failure": BreakdownReason,
-    "jammed": JamReason,
-    "material jam": JamReason,
-    "product jam": JamReason,
-    "minor adjustment": AdjustmentReason,
-    "adjustment": AdjustmentReason,
-    "process issue": ProcessReason,  # Generic
-    # Waiting
-    "waiting for material": WaitingForMaterialReason,
-    "waiting for components": WaitingForMaterialReason,
-    "paste supply": WaitingForMaterialReason,  # Example
-    "waiting for operator": WaitingForOperatorReason,
-    "no operator": WaitingForOperatorReason,
-    "waiting for upstream": WaitingForUpstreamReason,
-    "upstream down": WaitingForUpstreamReason,
-    "starved": WaitingForUpstreamReason,  # Often implies upstream issue
-    "waiting for downstream": WaitingForDownstreamReason,
-    "downstream down": WaitingForDownstreamReason,
-    "blocked": WaitingForDownstreamReason,  # Often implies downstream issue
-    "waiting": WaitingOtherReason,  # Generic waiting if no other detail
-    # External
-    "no demand": NoDemandReason,
-    "no orders": NoDemandReason,
-    "external issue": ExternalFactorReason,  # Utility, weather etc. if applicable
-    # Quality/Speed (If they are the *reason* for the stop)
-    "quality issue": QualityLossReason,
-    "rejects": QualityLossReason,
-    "slow speed": SpeedLossReason,  # Less common as a stop reason itself
-    # Other/Unknown
-    "unknown": UnknownReason,
-    "not specified": UnknownReason,
-    "ending order": ProcessReason,  # Or maybe OperationalPlannedReason? Let's use ProcessReason for now.
-    "starting order": ProcessReason,  # Could also be part of Changeover?
-}
-
-
-def get_state_reason_instance(
-    cls: Type[owl.Thing], description: Optional[str]
-) -> Optional[owl.Thing]:
-    """Gets or creates a shared instance for a state or reason class based on description."""
-    if not description:
-        return None
-
-    # Use the class name and a sanitized description as the instance ID
-    # Sanitize description to make a valid IRI fragment
-    sanitized_desc = re.sub(r"[^\w\-]+", "_", description)
-    instance_id = f"{cls.__name__}_{sanitized_desc}"
-
-    # Use the cache to ensure only one instance per type/description is created
-    instance = get_or_create_instance(
-        cls,
-        instance_id,
-        properties={
-            "description": description
-        },  # Store original description on the instance
-        use_cache=True,
-    )
-    return instance
+# REMOVED: STATE_CLASS_MAP, REASON_CLASS_MAP
+# REMOVED: get_state_reason_instance (replaced by get_ae_state_instance used internally)
 
 
 def map_row_to_ontology(
     row_data: Dict[str, Any],
+    # sequence overrides only affect sequenceOrder value now
     equipment_sequence_overrides: Dict[str, Dict[str, Dict[str, Any]]],
     equipment_type_sequence_order: Dict[str, int],
 ) -> None:
     """Map a single preprocessed data row to ontology instances."""
 
     record_id_str = row_data.get("record_id_str", "UNKNOWN_RECORD")
-    logger.debug(f"--- Mapping row {record_id_str} ---")
+    # logger.debug(f"--- Mapping row {record_id_str} ---") # Can be noisy
 
     try:
         # --- 1. Identify/Create Core Assets (Plant, Line, Equipment) ---
@@ -1369,9 +1262,7 @@ def map_row_to_ontology(
         equipment_id = row_data.get("EQUIPMENT_ID")  # Actual unique asset ID
         equipment_name = row_data.get("EQUIPMENT_NAME")  # Name like LINE_CasePacker
         equipment_base_type = row_data.get("EQUIPMENT_BASE_TYPE")  # Parsed: CasePacker
-        row_level = row_data.get(
-            "EQUIPMENT_TYPE"
-        )  # Indicates 'Line' or 'Equipment' level data
+        row_level = row_data.get("EQUIPMENT_TYPE")  # Indicates 'Line' or 'Equipment'
 
         if not plant_id or not line_name or not equipment_name:
             logger.warning(
@@ -1379,127 +1270,131 @@ def map_row_to_ontology(
             )
             return
 
-        # Create Plant
-        plant_props = {
-            "plantId": plant_id,
-            "plantDescription": row_data.get(
-                "PLANT_DESCRIPTION"
-            ),  # Use description as name?
-            "latitude": row_data.get("PLANT_LATITUDE"),
-            "longitude": row_data.get("PLANT_LONGITUDE"),
-            # Add other plant attributes: division, subdivision, etc.
-        }
-        plant = get_or_create_instance(Plant, f"Plant_{plant_id}", plant_props)
+        # --- Create Hierarchy (Plant, Country, StratLoc, FF, Area, Line, Equip) ---
+        # (Using get_or_create_instance helper)
 
-        # Create Country and link to Plant
+        plant = get_or_create_instance(
+            onto.Plant,
+            f"Plant_{plant_id}",
+            {
+                "plantId": plant_id,
+                "plantDescription": row_data.get("PLANT_DESCRIPTION"),
+                "latitude": row_data.get("PLANT_LATITUDE"),
+                "longitude": row_data.get("PLANT_LONGITUDE"),
+            },
+        )
+
         country_code = row_data.get("PLANT_COUNTRY")
         if country_code:
             country = get_or_create_instance(
-                Country,
+                onto.Country,
                 f"Country_{country_code}",
                 {
                     "countryCode": country_code,
                     "countryName": row_data.get("PLANT_COUNTRY_DESCRIPTION"),
                 },
             )
-            plant.locatedInCountry = (
-                country  # Functional property update handled by helper
-            )
+            plant.locatedInCountry = country  # Functional
 
-        # Create Strategic Location and link to Plant
         strat_loc_code = row_data.get("PLANT_STRATEGIC_LOCATION")
         if strat_loc_code:
+            # Assuming name property exists or use code as name
             strat_loc = get_or_create_instance(
-                StrategicLocation,
+                onto.StrategicLocation,
                 f"StratLoc_{strat_loc_code}",
                 {
                     "name": row_data.get(
-                        "PLANT_STRATEGIC_LOCATION_DESCRIPTION"
-                    )  # Assuming name property exists
+                        "PLANT_STRATEGIC_LOCATION_DESCRIPTION", strat_loc_code
+                    )
                 },
             )
             plant.hasStrategicLocation = strat_loc  # Functional
 
-        # Create Focus Factory and link to Plant
         focus_factory_name = row_data.get("GH_FOCUSFACTORY")
         focus_factory = None
         if focus_factory_name:
             focus_factory = get_or_create_instance(
-                FocusFactory,
+                onto.FocusFactory,
                 f"FocusFactory_{focus_factory_name}",
-                {"focusFactoryName": focus_factory_name},
+                {
+                    "focusFactoryName": focus_factory_name,
+                    "locatedInPlant": plant,  # Functional inverse link
+                },
             )
-            # Ensure relationship (helper handles appending unique for non-functional 'hasFocusFactory')
+            # Link Plant -> FF (Non-functional) - handled by get_or_create_instance appending unique
             plant.hasFocusFactory = [focus_factory]
-            focus_factory.locatedInPlant = plant  # Functional inverse
 
-        # Create Physical Area and link to Focus Factory (if exists) and Plant
         physical_area_name = row_data.get("PHYSICAL_AREA")
         physical_area = None
         if physical_area_name:
+            area_props = {"areaName": physical_area_name}
+            if focus_factory:
+                area_props["partOfFocusFactory"] = focus_factory  # Functional link
+            # else link area directly to plant?
+            # area_props["locatedInPlant"] = plant # Example if needed
             physical_area = get_or_create_instance(
-                PhysicalArea,
-                f"Area_{physical_area_name}",
-                {"areaName": physical_area_name},
+                onto.PhysicalArea, f"Area_{physical_area_name}", area_props
             )
             if focus_factory:
-                physical_area.partOfFocusFactory = focus_factory  # Functional
-                focus_factory.hasArea = [
-                    physical_area
-                ]  # Non-functional inverse (append unique)
-            else:
-                # If no focus factory, maybe link area directly to plant? Depends on model needs.
-                # physical_area.locatedInPlant = plant # Example
-                pass
+                # Link FF -> Area (Non-functional)
+                focus_factory.ffHasArea = [physical_area]  # Use new inverse property
 
-        # Create Line and link to Plant, FocusFactory, Area
-        line_props = {
-            "lineName": line_name,
-            "locatedInPlant": plant,  # Functional link set via property dict
-        }
-        line = get_or_create_instance(Line, f"Line_{line_name}", line_props)
-        if focus_factory:
-            line.partOfFocusFactory = focus_factory  # Functional
+        line = get_or_create_instance(
+            onto.Line,
+            f"Line_{line_name}",
+            {
+                "lineName": line_name,
+                "locatedInPlant": plant,  # Functional
+                "partOfFocusFactory": focus_factory,  # Functional (None if no FF)
+                "locatedInArea": physical_area,  # Functional (None if no Area)
+            },
+        )
+        # Add inverse links from Area/FF to Line (Non-functional)
         if physical_area:
-            line.locatedInArea = physical_area  # Functional
-            physical_area.hasLine = [line]  # Non-functional inverse (append unique)
+            physical_area.areaHasLine = [line]
+        if focus_factory:
+            focus_factory.ffHasLine = [line]
 
-        # Create Equipment - Use EQUIPMENT_ID as primary identifier if available
-        # Fallback to EQUIPMENT_NAME if ID is missing.
+        # Equipment instance ID logic (handle potential float IDs)
         equip_instance_id_base = equipment_id if equipment_id else equipment_name
         if not equip_instance_id_base:
             logger.warning(
                 f"Row {record_id_str}: Cannot identify equipment (missing ID and Name). Skipping."
             )
             return
-
-        # Prevent clashes if ID is numeric but read as float (e.g., 273.0)
         if (
             isinstance(equip_instance_id_base, float)
             and equip_instance_id_base.is_integer()
         ):
             equip_instance_id_base = str(int(equip_instance_id_base))
-        elif isinstance(equip_instance_id_base, float):
-            equip_instance_id_base = str(
-                equip_instance_id_base
-            )  # Keep decimal if needed?
+        elif not isinstance(equip_instance_id_base, str):
+            equip_instance_id_base = str(equip_instance_id_base)
 
         equip_instance_id = f"Equipment_{equip_instance_id_base}"
 
-        equip_props = {
-            "equipmentId": equipment_id,  # Store original ID if exists
-            "equipmentName": equipment_name,  # Store original name
-            "equipmentBaseType": (
-                equipment_base_type if equipment_base_type != "Unknown" else None
-            ),  # Store parsed type
-            "isPartOfLine": line,  # Functional link
-            "equipmentModel": row_data.get("EQUIPMENT_MODEL"),
-            # Add COMPLEXITY, MODEL etc.
-        }
-        equipment = get_or_create_instance(Equipment, equip_instance_id, equip_props)
+        equipment = get_or_create_instance(
+            onto.Equipment,
+            equip_instance_id,
+            {
+                "equipmentId": equipment_id,
+                "equipmentName": equipment_name,
+                "equipmentBaseType": (
+                    equipment_base_type if equipment_base_type != "Unknown" else None
+                ),
+                "isPartOfLine": line,  # Functional link
+                "locatedInArea": physical_area,  # Functional link (redundant via line?)
+                "partOfFocusFactory": focus_factory,  # Functional link (redundant via line?)
+                "equipmentModel": row_data.get("EQUIPMENT_MODEL"),
+            },
+        )
+        # Add inverse links from Line/Area/FF to Equipment (Non-functional)
+        line.hasEquipment = [equipment]
+        if physical_area:
+            physical_area.areaHasEquipment = [equipment]
+        if focus_factory:
+            focus_factory.ffHasEquipment = [equipment]
 
-        # Add sequence order (only if it's actual equipment, not a line-level record)
-        # And only if base type was successfully parsed
+        # Assign sequence order (considers overrides)
         is_line_level_row = (row_level == "Line") or (equipment_name == line_name)
         if (
             not is_line_level_row
@@ -1507,7 +1402,6 @@ def map_row_to_ontology(
             and equipment_base_type != "Unknown"
         ):
             order = equipment_type_sequence_order.get(equipment_base_type)
-            # Check for overrides
             if (
                 line_name in equipment_sequence_overrides
                 and equipment_base_type in equipment_sequence_overrides[line_name]
@@ -1516,83 +1410,38 @@ def map_row_to_ontology(
                     equipment_base_type
                 ].get("order")
                 if override_order is not None:
-                    order = override_order
+                    order = int(override_order)  # Ensure integer
 
             if order is not None:
                 equipment.sequenceOrder = order  # Functional
 
-            # Apply sequence relationships (upstream/downstream) based on overrides
-            # This requires instances to exist, so might be better done *after* processing all rows
-            # Or look up potential neighbours during mapping (can be slow)
-            # Let's try looking up neighbours now.
-            if (
-                line_name in equipment_sequence_overrides
-                and equipment_base_type in equipment_sequence_overrides[line_name]
-            ):
-                config = equipment_sequence_overrides[line_name][equipment_base_type]
-
-                # Find potential upstream neighbour instance on the same line
-                upstream_type = config.get("upstream")
-                if upstream_type:
-                    # Search for equipment on the same line with that base type
-                    # This is inefficient if done row-by-row. Consider post-processing step.
-                    # Simple check for now:
-                    for (
-                        other_equip
-                    ) in line.hasEquipment:  # Assumes hasEquipment is populated
-                        if (
-                            other_equip != equipment
-                            and hasattr(other_equip, "equipmentBaseType")
-                            and other_equip.equipmentBaseType == upstream_type
-                        ):
-                            equipment.isImmediatelyDownstreamOf = [
-                                other_equip
-                            ]  # Non-functional append unique
-                            other_equip.isImmediatelyUpstreamOf = [
-                                equipment
-                            ]  # Non-functional append unique
-                            break  # Assume only one immediate upstream for simplicity here
-
-                # Find potential downstream neighbour instance
-                downstream_type = config.get("downstream")
-                if downstream_type:
-                    for other_equip in line.hasEquipment:
-                        if (
-                            other_equip != equipment
-                            and hasattr(other_equip, "equipmentBaseType")
-                            and other_equip.equipmentBaseType == downstream_type
-                        ):
-                            equipment.isImmediatelyUpstreamOf = [
-                                other_equip
-                            ]  # Non-functional append unique
-                            other_equip.isImmediatelyDownstreamOf = [
-                                equipment
-                            ]  # Non-functional append unique
-                            break
+        # --- REMOVED: Premature sequence linking block ---
 
         # --- 2. Create EventRecord ---
-        # Use a unique ID, e.g., combining key identifiers and start time if available
-        start_time_str = row_data.get(
-            "JOB_START_TIME_LOC"
-        )  # Use the LOC time as it's the basis for the record
-        event_record_id = f"Event_{equip_instance_id_base}_{record_id_str}"  # Use original record ID for uniqueness
+        event_record_id = f"Event_{equip_instance_id_base}_{record_id_str}"  # Unique ID
 
         event_props = {
             "occursAtPlant": plant,
             "occursOnLine": line,
-            "involvesEquipment": equipment,  # Link to the specific equipment/line instance
+            "involvesEquipment": equipment,
             "rampUpFlag": row_data.get("RAMPUP_FLAG"),
-            # AE Model Time Components (Floats, Minutes)
+            # AE Model Time Components
             "reportedDurationMinutes": row_data.get("TOTAL_TIME"),
             "businessExternalTimeMinutes": row_data.get("BUSINESS_EXTERNAL_TIME"),
             "plantAvailableTimeMinutes": row_data.get("PLANT_AVAILABLE_TIME"),
             "effectiveRuntimeMinutes": row_data.get("EFFECTIVE_RUNTIME"),
             "plantDecisionTimeMinutes": row_data.get("PLANT_DECISION_TIME"),
             "productionAvailableTimeMinutes": row_data.get("PRODUCTION_AVAILABLE_TIME"),
-            "downtimeMinutes": row_data.get("DOWNTIME"),
-            "runTimeMinutes": row_data.get("RUN_TIME"),
-            "notEnteredTimeMinutes": row_data.get("NOT_ENTERED"),
-            "waitingTimeMinutes": row_data.get("WAITING_TIME"),
+            "downtimeMinutes": row_data.get(
+                "DOWNTIME"
+            ),  # Maps to UnplannedState total?
+            "runTimeMinutes": row_data.get("RUN_TIME"),  # Maps to RuntimeState total?
+            "notEnteredTimeMinutes": row_data.get(
+                "NOT_ENTERED"
+            ),  # Included in Unplanned?
+            "waitingTimeMinutes": row_data.get(
+                "WAITING_TIME"
+            ),  # Maps to WaitingState total?
             "plantExperimentationTimeMinutes": row_data.get("PLANT_EXPERIMENTATION"),
             "allMaintenanceTimeMinutes": row_data.get("ALL_MAINTENANCE"),
             "autonomousMaintenanceTimeMinutes": row_data.get("AUTONOMOUS_MAINTENANCE"),
@@ -1601,104 +1450,118 @@ def map_row_to_ontology(
             "cleaningSanitizationTimeMinutes": row_data.get(
                 "CLEANING_AND_SANITIZATION"
             ),
-            "lunchBreakTimeMinutes": row_data.get(
-                "LUNCH_AND_BREAK"
-            ),  # Assuming this is the total lunch/break
+            "lunchBreakTimeMinutes": row_data.get("LUNCH_AND_BREAK"),
             "meetingTrainingTimeMinutes": row_data.get("MEETING_AND_TRAINING"),
             "noDemandTimeMinutes": row_data.get("NO_DEMAND"),
             # Production Quantities
             "goodProductionQty": row_data.get("GOOD_PRODUCTION_QTY"),
             "rejectProductionQty": row_data.get("REJECT_PRODUCTION_QTY"),
+            # Raw Descriptions (NEW)
+            "rawStateDescription": clean_string_value(
+                row_data.get("UTIL_STATE_DESCRIPTION")
+            ),
+            "rawReasonDescription": clean_string_value(
+                row_data.get("UTIL_REASON_DESCRIPTION")
+            ),
         }
-        event_record = get_or_create_instance(EventRecord, event_record_id, event_props)
+        event_record = get_or_create_instance(
+            onto.EventRecord, event_record_id, event_props
+        )
 
-        # --- 3. Add TimeInterval (if valid times exist) ---
+        # --- 3. Add TimeInterval ---
         start_time = parse_datetime_with_tz(row_data.get("JOB_START_TIME_LOC"))
         end_time = parse_datetime_with_tz(row_data.get("JOB_END_TIME_LOC"))
 
         if start_time and end_time:
             interval_id = f"Interval_{event_record_id}"
             interval = get_or_create_instance(
-                TimeInterval,
+                onto.TimeInterval,
                 interval_id,
                 {"startTime": start_time, "endTime": end_time},
             )
             event_record.occursDuring = interval  # Functional
 
-            # Calculate duration in seconds
-            duration_seconds = (end_time - start_time).total_seconds()
-            event_record.calculatedDurationSeconds = duration_seconds  # Functional
+            try:
+                duration_seconds = (end_time - start_time).total_seconds()
+                if duration_seconds >= 0:
+                    event_record.calculatedDurationSeconds = (
+                        duration_seconds  # Functional
+                    )
+                else:
+                    logger.warning(
+                        f"Row {record_id_str}: Negative duration calculated ({duration_seconds}s). End time may be before start time."
+                    )
+            except Exception as dur_err:
+                logger.warning(
+                    f"Row {record_id_str}: Could not calculate duration: {dur_err}"
+                )
         else:
             logger.warning(
                 f"Row {record_id_str}: Missing or invalid JOB_START/END_TIME_LOC. Cannot create TimeInterval or calculate duration."
             )
-            # event_record.calculatedDurationSeconds = None # Ensure it's None if not calculated
 
-        # --- 4. Add Utilization State & Reason (using shared instances) ---
-        state_desc_raw = row_data.get("UTIL_STATE_DESCRIPTION")
-        reason_desc_raw = row_data.get("UTIL_REASON_DESCRIPTION")
-
+        # --- 4. Add Utilization State (based on AE_MODEL_CATEGORY) ---
+        ae_category_raw = row_data.get("AE_MODEL_CATEGORY")
         state_instance = None
-        if state_desc_raw:
-            state_desc_lower = state_desc_raw.lower()
-            # Find corresponding class from map
-            StateClass = UnknownState  # Default
-            for keyword, Cls in STATE_CLASS_MAP.items():
-                if keyword in state_desc_lower:
-                    StateClass = Cls
-                    break  # Take first match (adjust order in map if needed)
+        TargetStateClass = None
 
-            state_instance = get_state_reason_instance(StateClass, state_desc_raw)
-            if state_instance:
-                event_record.hasState = state_instance  # Functional
+        if ae_category_raw:
+            ae_category_clean = str(ae_category_raw).strip().lower()
+            TargetStateClass = AE_CATEGORY_CLASS_MAP.get(ae_category_clean)
 
-        reason_instance = None
-        if reason_desc_raw:
-            reason_desc_lower = reason_desc_raw.lower()
-            # Find corresponding class from map
-            ReasonClass = UnknownReason  # Default
-            # More specific matches first
-            sorted_reason_keywords = sorted(
-                REASON_CLASS_MAP.keys(), key=len, reverse=True
+            if TargetStateClass:
+                # Get the shared instance for this AE state (e.g., UnplannedState_Unplanned)
+                state_instance = get_ae_state_instance(
+                    ae_category_raw, TargetStateClass
+                )  # Use original name for helper ID
+            else:
+                logger.warning(
+                    f"Row {record_id_str}: Unknown AE_MODEL_CATEGORY '{ae_category_raw}'. Mapping to UnknownAEState."
+                )
+                TargetStateClass = onto.UnknownAEState
+                state_instance = get_ae_state_instance(
+                    "Unknown", TargetStateClass
+                )  # Shared Unknown instance
+        else:
+            logger.warning(
+                f"Row {record_id_str}: Missing AE_MODEL_CATEGORY. Mapping to UnknownAEState."
             )
-            for keyword in sorted_reason_keywords:
-                if keyword in reason_desc_lower:
-                    ReasonClass = REASON_CLASS_MAP[keyword]
-                    break
+            TargetStateClass = onto.UnknownAEState
+            state_instance = get_ae_state_instance(
+                "Unknown", TargetStateClass
+            )  # Shared Unknown instance
 
-            reason_instance = get_state_reason_instance(ReasonClass, reason_desc_raw)
-            if reason_instance:
-                event_record.hasReason = [
-                    reason_instance
-                ]  # Non-functional append unique
+        if state_instance:
+            event_record.hasState = state_instance  # Functional
+
+        # --- REMOVED: Reason mapping logic ---
+        # Raw reason text is now captured directly in event_props using rawReasonDescription
 
         # --- 5. Add Process Context (Material, Order, Shift, Crew) ---
         material_id = row_data.get("MATERIAL_ID")
         if material_id:
             material = get_or_create_instance(
-                Material,
+                onto.Material,
                 f"Material_{material_id}",
                 {
                     "materialId": material_id,
                     "materialDescription": row_data.get(
                         "SHORT_MATERIAL_ID"
-                    ),  # Or MATERIAL_DESC if exists
+                    ),  # Or MATERIAL_DESC
                     "materialUOM": row_data.get("MATERIAL_UOM"),
-                    # Add SIZE_TYPE etc.
                 },
             )
             event_record.processesMaterial = [material]  # Non-functional append unique
 
-        order_id = row_data.get("PRODUCTION_ORDER_ID")
-        if order_id:
-            # Ensure order_id is string
-            if isinstance(order_id, float) and order_id.is_integer():
-                order_id = str(int(order_id))
-            elif isinstance(order_id, float):
-                order_id = str(order_id)
-
+        order_id_raw = row_data.get("PRODUCTION_ORDER_ID")
+        if order_id_raw:
+            order_id = (
+                str(int(order_id_raw))
+                if isinstance(order_id_raw, float) and order_id_raw.is_integer()
+                else str(order_id_raw)
+            )
             order = get_or_create_instance(
-                ProductionOrder,
+                onto.ProductionOrder,
                 f"Order_{order_id}",
                 {
                     "orderId": order_id,
@@ -1712,34 +1575,34 @@ def map_row_to_ontology(
         shift_name = row_data.get("SHIFT_NAME")
         if shift_name:
             shift = get_or_create_instance(
-                Shift, f"Shift_{shift_name}", {"shiftName": shift_name}
+                onto.Shift, f"Shift_{shift_name}", {"shiftName": shift_name}
             )
             event_record.duringShift = shift  # Functional
 
-            crew_id = row_data.get("CREW_ID")
-            if crew_id:
-                crew = get_or_create_instance(
-                    Crew, f"Crew_{crew_id}", {"crewId": crew_id}
-                )
-                event_record.operatedByCrew = crew  # Functional
+        crew_id = row_data.get("CREW_ID")
+        if crew_id:
+            crew = get_or_create_instance(
+                onto.Crew, f"Crew_{crew_id}", {"crewId": crew_id}
+            )
+            event_record.operatedByCrew = crew  # Functional
 
-        logger.debug(f"--- Successfully mapped row {record_id_str} ---")
+        # logger.debug(f"--- Successfully mapped row {record_id_str} ---")
 
     except Exception as e:
         logger.error(
             f"Error mapping row {record_id_str} to ontology: {e}", exc_info=True
         )
-        # Decide whether to raise e or just log and continue
-        # raise # Uncomment to stop execution on first error
+        raise  # Re-raise to potentially stop execution or be caught higher up
 
 
 # =============================================================================
-# Query Functions (Examples)
+# Query Functions (Examples - REVISED for new states/properties)
 # =============================================================================
 
 
 def find_equipment_by_type(equipment_type: str) -> List[Equipment]:
     """Find equipment instances by their base type."""
+    # No change needed here
     if not equipment_type:
         logger.warning("Cannot search for equipment with None/empty type")
         return []
@@ -1754,153 +1617,197 @@ def find_equipment_by_type(equipment_type: str) -> List[Equipment]:
 
 def find_downstream_equipment(equipment: Equipment) -> List[Equipment]:
     """Find equipment immediately downstream of the given equipment."""
+    # No change needed here
     if not equipment:
         return []
-    # isImmediatelyUpstreamOf property links an equipment to its downstream neighbours
-    downstream = list(equipment.isImmediatelyUpstreamOf)
+    downstream = list(
+        equipment.isImmediatelyUpstreamOf
+    )  # Property points *to* downstream
     logger.debug(f"Found {len(downstream)} downstream equipment for {equipment.name}")
     return downstream
 
 
 def find_upstream_equipment(equipment: Equipment) -> List[Equipment]:
     """Find equipment immediately upstream of the given equipment."""
+    # No change needed here
     if not equipment:
         return []
-    # isImmediatelyDownstreamOf property links an equipment to its upstream neighbours
-    upstream = list(equipment.isImmediatelyDownstreamOf)
+    upstream = list(
+        equipment.isImmediatelyDownstreamOf
+    )  # Property points *to* upstream
     logger.debug(f"Found {len(upstream)} upstream equipment for {equipment.name}")
     return upstream
 
 
-def find_events_by_reason_description(reason_desc_substring: str) -> List[EventRecord]:
-    """Find events whose reason description contains a substring."""
-    matching_events = []
-    if not reason_desc_substring:
-        return []
+# Example query adjusted for new structure
+def find_longest_unplanned_events(
+    equipment: Equipment, count: int = 1
+) -> List[Dict[str, Any]]:
+    """Find the longest event(s) for a piece of equipment classified as UnplannedState."""
+    results = []
+    if not equipment or not isinstance(equipment, onto.Equipment):
+        logger.warning("Invalid equipment provided.")
+        return results
 
-    # Search for Reason instances matching the description
-    matching_reasons = list(
+    logger.info(f"Searching for longest UnplannedState events for {equipment.name}...")
+
+    # Get the shared instance for UnplannedState
+    try:
+        # Assumes AE category name is 'Unplanned'
+        unplanned_state_instance = get_ae_state_instance(
+            "Unplanned", onto.UnplannedState
+        )
+    except Exception as e:
+        logger.error(f"Could not get UnplannedState instance: {e}")
+        return results  # Cannot proceed without the state instance
+
+    # Search for events involving the equipment and having the UnplannedState
+    unplanned_events = list(
         onto.search(
-            type=onto.UtilizationReason, description=f"*{reason_desc_substring}*"
+            type=onto.EventRecord,
+            involvesEquipment=equipment,
+            hasState=unplanned_state_instance,
         )
     )
 
-    if not matching_reasons:
-        logger.debug(
-            f"No UtilizationReason instances found with description containing '{reason_desc_substring}'"
+    if not unplanned_events:
+        logger.info(f"No UnplannedState events found for {equipment.name}.")
+        return results
+
+    # Sort by calculated duration (or reported duration as fallback)
+    def get_duration(event):
+        if (
+            hasattr(event, "calculatedDurationSeconds")
+            and event.calculatedDurationSeconds is not None
+        ):
+            return event.calculatedDurationSeconds
+        elif (
+            hasattr(event, "reportedDurationMinutes")
+            and event.reportedDurationMinutes is not None
+        ):
+            # Convert fallback to seconds for consistent sorting
+            return event.reportedDurationMinutes * 60
+        return 0  # Treat events with no duration as shortest
+
+    unplanned_events.sort(key=get_duration, reverse=True)
+
+    # Get top N events and their reasons
+    top_events = unplanned_events[:count]
+    for event in top_events:
+        results.append(
+            {
+                "event_iri": event.iri,
+                "duration_seconds": get_duration(event),
+                "raw_state_desc": getattr(event, "rawStateDescription", "N/A"),
+                "raw_reason_desc": getattr(event, "rawReasonDescription", "N/A"),
+                "start_time": (
+                    getattr(event.occursDuring, "startTime", None)
+                    if event.occursDuring
+                    else None
+                ),
+                "end_time": (
+                    getattr(event.occursDuring, "endTime", None)
+                    if event.occursDuring
+                    else None
+                ),
+            }
         )
-        return []
 
-    logger.debug(
-        f"Found {len(matching_reasons)} reason instances matching '*{reason_desc_substring}*'. Searching for events..."
+    logger.info(
+        f"Found {len(results)} longest UnplannedState event(s) for {equipment.name}."
     )
+    return results
 
-    # Find events linked to these reasons
-    for reason_instance in matching_reasons:
-        # Find instances where 'hasReason' points to this reason_instance
-        events_for_reason = list(onto.search(hasReason=reason_instance))
-        matching_events.extend(events_for_reason)
 
-    # Remove duplicates if an event somehow links to multiple matching reasons
-    matching_events = list(set(matching_events))
-    logger.debug(
-        f"Found {len(matching_events)} events linked to reasons containing '{reason_desc_substring}'"
-    )
-    return matching_events
+# =============================================================================
+# Post-Processing: Link Equipment by Sequence (Unchanged)
+# =============================================================================
 
 
 def link_equipment_by_sequence(ontology: owl.Ontology):
     """
     Iterates through all lines and links equipment instances based on their
     sequenceOrder property (n is upstream of n+1).
-
-    Args:
-        ontology: The ontology instance containing the populated data.
     """
     logger.info("Starting post-processing step: Linking equipment by sequence order...")
     link_count = 0
     processed_lines = 0
 
-    # Use the ontology context
-    with ontology:
-        all_lines = list(ontology.Line.instances())
-        logger.info(
-            f"Found {len(all_lines)} lines to process for equipment sequencing."
-        )
+    # Use the ontology context? May not be needed if just accessing properties
+    # with ontology: # Probably not required here
+    all_lines = list(
+        ontology.search(type=onto.Line)
+    )  # Use search instead of instances() sometimes safer
+    logger.info(f"Found {len(all_lines)} lines to process for equipment sequencing.")
 
-        for line in all_lines:
-            processed_lines += 1
-            logger.debug(f"Processing line: {line.name}")
+    for line in all_lines:
+        processed_lines += 1
+        # logger.debug(f"Processing line: {line.name}")
 
-            # Get equipment associated with this line that have a sequence order
-            equipment_on_line = []
-            if hasattr(line, "hasEquipment"):
-                for equip in line.hasEquipment:
-                    # Ensure sequenceOrder exists and is an integer
-                    if hasattr(equip, "sequenceOrder") and isinstance(
-                        equip.sequenceOrder, int
-                    ):
-                        equipment_on_line.append(equip)
-                    elif hasattr(equip, "sequenceOrder"):
-                        logger.warning(
-                            f"Equipment {equip.name} on line {line.name} has non-integer sequenceOrder '{equip.sequenceOrder}'. Skipping for linking."
-                        )
+        equipment_on_line = []
+        # Access hasEquipment property safely
+        equip_list = list(getattr(line, "hasEquipment", []))
 
-            if not equipment_on_line:
-                logger.debug(
-                    f"No equipment with sequenceOrder found for line {line.name}."
-                )
-                continue
-
-            # Sort equipment by sequenceOrder
-            sorted_equipment = sorted(equipment_on_line, key=lambda e: e.sequenceOrder)
-            logger.debug(
-                f"Sorted equipment on line {line.name}: {[e.name for e in sorted_equipment]}"
-            )
-
-            # Iterate through sorted equipment and link adjacent sequences (n to n+1)
-            for i in range(len(sorted_equipment) - 1):
-                upstream_eq = sorted_equipment[i]
-                downstream_eq = sorted_equipment[i + 1]
-
-                # Check if sequence order is consecutive
-                if downstream_eq.sequenceOrder == upstream_eq.sequenceOrder + 1:
-                    # Add links (helper function handles duplicates for non-functional props)
-                    # Using direct property access and relying on owlready's list nature for non-functional props
-
-                    # Check and add downstream link to upstream_eq
-                    if downstream_eq not in upstream_eq.isImmediatelyUpstreamOf:
-                        upstream_eq.isImmediatelyUpstreamOf.append(downstream_eq)
-                        logger.debug(
-                            f"Linking {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name}"
-                        )
-                        link_count += 1
-
-                    # Check and add upstream link to downstream_eq
-                    if upstream_eq not in downstream_eq.isImmediatelyDownstreamOf:
-                        downstream_eq.isImmediatelyDownstreamOf.append(upstream_eq)
-                        logger.debug(
-                            f"Linking {downstream_eq.name} --isImmediatelyDownstreamOf--> {upstream_eq.name}"
-                        )
-                        # Link count incremented above for the pair
-
-                elif downstream_eq.sequenceOrder > upstream_eq.sequenceOrder + 1:
-                    logger.debug(
-                        f"Gap in sequence order detected on line {line.name} between {upstream_eq.name} (Order {upstream_eq.sequenceOrder}) and {downstream_eq.name} (Order {downstream_eq.sequenceOrder}). No direct link created."
+        for equip in equip_list:
+            seq_order_val = getattr(equip, "sequenceOrder", None)
+            if seq_order_val is not None:
+                try:
+                    # Ensure it's a valid integer
+                    seq_order_int = int(seq_order_val)
+                    equipment_on_line.append(equip)
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"Equipment {equip.name} on line {line.name} has non-integer sequenceOrder '{seq_order_val}'. Skipping for linking."
                     )
 
-            if processed_lines % 50 == 0:  # Log progress every 50 lines
-                logger.info(
-                    f"Processed {processed_lines}/{len(all_lines)} lines for sequencing."
+        if not equipment_on_line:
+            # logger.debug(f"No equipment with sequenceOrder found for line {line.name}.")
+            continue
+
+        # Sort equipment by sequenceOrder
+        sorted_equipment = sorted(equipment_on_line, key=lambda e: int(e.sequenceOrder))
+        # logger.debug(
+        #     f"Sorted equipment on line {line.name}: {[e.name for e in sorted_equipment]}"
+        # )
+
+        # Link adjacent sequences (n to n+1)
+        for i in range(len(sorted_equipment) - 1):
+            upstream_eq = sorted_equipment[i]
+            downstream_eq = sorted_equipment[i + 1]
+
+            # Check if sequence order is consecutive
+            if int(downstream_eq.sequenceOrder) == int(upstream_eq.sequenceOrder) + 1:
+                # Add links - Owlready list properties handle uniqueness implicitly on append? Check docs.
+                # Safest is to check membership before append for non-functional.
+
+                # Check and add downstream link to upstream_eq
+                if downstream_eq not in list(upstream_eq.isImmediatelyUpstreamOf):
+                    upstream_eq.isImmediatelyUpstreamOf.append(downstream_eq)
+                    # logger.debug(f"Linking {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name}")
+                    link_count += 1  # Count pairs once
+
+                # Check and add upstream link to downstream_eq
+                if upstream_eq not in list(downstream_eq.isImmediatelyDownstreamOf):
+                    downstream_eq.isImmediatelyDownstreamOf.append(upstream_eq)
+                    # logger.debug(f"Linking {downstream_eq.name} --isImmediatelyDownstreamOf--> {upstream_eq.name}")
+
+            elif int(downstream_eq.sequenceOrder) > int(upstream_eq.sequenceOrder) + 1:
+                logger.debug(
+                    f"Gap in sequence order detected on line {line.name} between {upstream_eq.name} (Order {upstream_eq.sequenceOrder}) and {downstream_eq.name} (Order {downstream_eq.sequenceOrder}). No direct link created."
                 )
 
+        if processed_lines % 100 == 0:  # Log progress every 100 lines
+            logger.info(
+                f"Processed {processed_lines}/{len(all_lines)} lines for sequencing."
+            )
+
     logger.info(
-        f"Finished linking equipment by sequence. Created {link_count} directional links."
+        f"Finished linking equipment by sequence. Created/verified approximately {link_count} link pairs."
     )
 
 
 # =============================================================================
-# Main Execution Block
+# Main Execution Block (Adjusted for New Ontology/File Names)
 # =============================================================================
 
 
@@ -1909,9 +1816,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="Manufacturing Ontology Builder")
     parser.add_argument("--input", "-i", required=True, help="Input CSV file path")
     settings = get_ontology_settings()
-    default_output = settings.get(
-        "default_output_file", "manufacturing_ontology_revised_populated.owl"
-    )
+    default_output = settings.get("default_output_file")  # Get updated default
     parser.add_argument(
         "--output", "-o", help="Output OWL file path", default=default_output
     )
@@ -1931,14 +1836,31 @@ def main():
     logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
 
     input_path = Path(args.input)
-    if not input_path.exists():
-        logger.critical(f"Input file not found: {input_path}")
+    if not input_path.is_file():  # More specific check
+        logger.critical(f"Input file not found or is not a file: {input_path}")
         return 1
 
     try:
         # Load and preprocess
         df_raw = load_csv_data(args.input)
         processed_df = preprocess_manufacturing_data(df_raw)
+
+        # Check if preprocessing resulted in empty dataframe
+        if processed_df.empty:
+            logger.critical(
+                "Preprocessing resulted in an empty DataFrame. Cannot proceed."
+            )
+            return 1
+
+        # Check again for AE_MODEL_CATEGORY after preprocessing
+        if (
+            "AE_MODEL_CATEGORY" not in processed_df.columns
+            or processed_df["AE_MODEL_CATEGORY"].isnull().all()
+        ):
+            logger.critical(
+                "CRITICAL: AE_MODEL_CATEGORY column is missing or entirely null after preprocessing. State mapping will fail."
+            )
+            return 1  # Stop execution
 
         # Get configuration
         equipment_type_seq = get_equipment_type_sequence_order()
@@ -1948,9 +1870,9 @@ def main():
         stats = {"total_rows": len(processed_df), "processed_rows": 0, "error_rows": 0}
         logger.info(f"Populating ontology from {stats['total_rows']} processed rows...")
         row_count = len(processed_df)
-        data_rows = processed_df.to_dict("records")  # More efficient for iteration
+        data_rows = processed_df.to_dict("records")  # Efficient for iteration
 
-        # Wrap processing in ontology context
+        # Use ontology context for mapping operations
         with onto:
             for i, row_data in enumerate(data_rows):
                 try:
@@ -1958,56 +1880,101 @@ def main():
                         row_data, equipment_seq_overrides, equipment_type_seq
                     )
                     stats["processed_rows"] += 1
-                except Exception as e:
-                    # Error logged within map_row_to_ontology
+                except Exception as map_err:
+                    # Error should be logged within map_row_to_ontology if raised
+                    # If not re-raised, log here:
+                    # logger.error(f"Unhandled error mapping row {i}: {map_err}", exc_info=True)
                     stats["error_rows"] += 1
+                    # Decide whether to continue or stop on mapping errors
+                    # For now, we count and continue
 
                 # Log progress
-                if (i + 1) % 1000 == 0 or (i + 1) == row_count:  # Log every 1000 rows
+                if (i + 1) % 5000 == 0 or (
+                    i + 1
+                ) == row_count:  # Adjust logging frequency
                     logger.info(
                         f"Mapped {i + 1}/{row_count} rows ({(i + 1) / row_count:.1%})"
                     )
 
+        # Check for errors before proceeding
+        if stats["error_rows"] > 0:
+            logger.warning(
+                f"{stats['error_rows']} errors occurred during row mapping. Ontology may be incomplete."
+            )
+
         # Post-process: Link equipment by sequence order
-        logger.info("Running post-processing operations...")
-        link_equipment_by_sequence(onto)
+        logger.info("Running post-processing: Linking equipment sequences...")
+        link_equipment_by_sequence(onto)  # Pass the populated ontology
 
         # Save ontology
         output_path = args.output
         output_format = settings.get("format", "rdfxml")
         logger.info(f"Saving ontology to {output_path} in format {output_format}")
-        onto.save(file=output_path, format=output_format)
+        try:
+            onto.save(file=output_path, format=output_format)
+            logger.info("Ontology saved successfully.")
+        except Exception as save_err:
+            logger.critical(f"Failed to save ontology: {save_err}", exc_info=True)
+            return 1  # Treat save failure as critical
 
-        # Optional: Run reasoner
+        # Optional: Run reasoner (commented out)
         # logger.info("Synchronizing reasoner (this may take time)...")
         # try:
         #     with onto:
-        #         owl.sync_reasoner() # Use Pellet or HermiT if configured
+        #         owl.sync_reasoner_pellet(infer_property_values=True, infer_data_property_values=True) # Example using Pellet
         #     logger.info("Reasoner synchronized successfully.")
-        # except Exception as e:
-        #     logger.warning(f"Could not synchronize reasoner: {e}")
+        # except Exception as reason_err:
+        #     logger.warning(f"Could not synchronize reasoner: {reason_err}")
 
         # Run example queries
         logger.info("--- Running Example Queries ---")
-        case_packers = find_equipment_by_type("CasePacker")
-        logger.info(f"Found {len(case_packers)} CasePacker equipment instances.")
-        if case_packers:
-            cp1 = case_packers[0]
-            logger.info(f"Example CasePacker: {cp1.name}")
-            upstream = find_upstream_equipment(cp1)
-            downstream = find_downstream_equipment(cp1)
-            logger.info(f"  Upstream: {[e.name for e in upstream]}")
-            logger.info(f"  Downstream: {[e.name for e in downstream]}")
+        example_equip_type = "CasePacker"
+        case_packers = find_equipment_by_type(example_equip_type)
+        logger.info(
+            f"Found {len(case_packers)} {example_equip_type} equipment instances."
+        )
 
-        jam_events = find_events_by_reason_description("Jam")  # Case-insensitive search
-        logger.info(f"Found {len(jam_events)} events with 'Jam' in reason description.")
+        if case_packers:
+            # Find one associated with a line for more interesting queries
+            cp1 = None
+            for cp in case_packers:
+                if getattr(cp, "isPartOfLine", None):
+                    cp1 = cp
+                    break
+
+            if cp1:
+                logger.info(f"Querying around example {example_equip_type}: {cp1.name}")
+                upstream = find_upstream_equipment(cp1)
+                downstream = find_downstream_equipment(cp1)
+                logger.info(f"  Upstream: {[e.name for e in upstream]}")
+                logger.info(f"  Downstream: {[e.name for e in downstream]}")
+
+                # Example: Find longest unplanned event for this CasePacker
+                longest_unplanned = find_longest_unplanned_events(cp1, count=1)
+                if longest_unplanned:
+                    event_info = longest_unplanned[0]
+                    logger.info(
+                        f"  Longest Unplanned Event (~{event_info['duration_seconds']:.0f}s):"
+                    )
+                    logger.info(f"    State Desc (raw): {event_info['raw_state_desc']}")
+                    logger.info(
+                        f"    Reason Desc (raw): {event_info['raw_reason_desc']}"
+                    )
+                else:
+                    logger.info(f"  No UnplannedState events found for {cp1.name}.")
+            else:
+                logger.info(
+                    f"Could not find a {example_equip_type} associated with a line for detailed queries."
+                )
 
         # --- Final Statistics ---
         logger.info("--- Processing Summary ---")
-        logger.info(f"Total rows in input: {stats['total_rows']}")
-        logger.info(f"Rows processed for mapping: {stats['processed_rows']}")
+        logger.info(f"Input rows processed: {stats['total_rows']}")
+        # logger.info(f"Rows successfully mapped: {stats['processed_rows']}") # Less useful if errors are counted
         if stats["error_rows"] > 0:
             logger.warning(f"Rows with errors during mapping: {stats['error_rows']}")
+        else:
+            logger.info("No errors detected during row mapping.")
         logger.info("---------------------------")
 
         logger.info("Processing completed.")
@@ -2015,7 +1982,7 @@ def main():
 
     except Exception as e:
         logger.critical(
-            f"An critical error occurred in the main process: {e}", exc_info=True
+            f"A critical error occurred in the main process: {e}", exc_info=True
         )
         return 1
 
