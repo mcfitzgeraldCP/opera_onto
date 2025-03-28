@@ -1371,8 +1371,11 @@ def map_row_to_ontology(
                     "locatedInPlant": plant,  # Functional inverse link
                 },
             )
-            # Link Plant -> FF (Non-functional) - handled by get_or_create_instance appending unique
-            plant.hasFocusFactory = [focus_factory]
+            # Link Plant -> FF (Non-functional) - CORRECTED APPEND LOGIC
+            current_ff_on_plant = list(getattr(plant, "hasFocusFactory", []))
+            if focus_factory not in current_ff_on_plant:
+                current_ff_on_plant.append(focus_factory)
+                plant.hasFocusFactory = current_ff_on_plant  # Assign updated list
 
         physical_area_name = row_data.get("PHYSICAL_AREA")
         physical_area = None
@@ -1385,9 +1388,12 @@ def map_row_to_ontology(
             physical_area = get_or_create_instance(
                 onto.PhysicalArea, f"Area_{physical_area_name}", area_props
             )
-            if focus_factory:
-                # Link FF -> Area (Non-functional)
-                focus_factory.ffHasArea = [physical_area]  # Use new inverse property
+            # Link FF -> Area (Non-functional) - CORRECTED APPEND LOGIC
+            if focus_factory:  # Ensure focus_factory exists
+                current_area_on_ff = list(getattr(focus_factory, "ffHasArea", []))
+                if physical_area not in current_area_on_ff:
+                    current_area_on_ff.append(physical_area)
+                    focus_factory.ffHasArea = current_area_on_ff  # Assign updated list
 
         line = get_or_create_instance(
             onto.Line,
@@ -1399,11 +1405,17 @@ def map_row_to_ontology(
                 "locatedInArea": physical_area,  # Functional (None if no Area)
             },
         )
-        # Add inverse links from Area/FF to Line (Non-functional)
+        # Add inverse links from Area/FF to Line (Non-functional) - CORRECTED APPEND LOGIC
         if physical_area:
-            physical_area.areaHasLine = [line]
+            current_line_on_area = list(getattr(physical_area, "areaHasLine", []))
+            if line not in current_line_on_area:
+                current_line_on_area.append(line)
+                physical_area.areaHasLine = current_line_on_area  # Assign updated list
         if focus_factory:
-            focus_factory.ffHasLine = [line]
+            current_line_on_ff = list(getattr(focus_factory, "ffHasLine", []))
+            if line not in current_line_on_ff:
+                current_line_on_ff.append(line)
+                focus_factory.ffHasLine = current_line_on_ff  # Assign updated list
 
         # Equipment instance ID logic (handle potential float IDs)
         equip_instance_id_base = equipment_id if equipment_id else equipment_name
@@ -1437,12 +1449,27 @@ def map_row_to_ontology(
                 "equipmentModel": row_data.get("EQUIPMENT_MODEL"),
             },
         )
-        # Add inverse links from Line/Area/FF to Equipment (Non-functional)
-        line.hasEquipment = [equipment]
+        # Add inverse links from Line/Area/FF to Equipment (Non-functional) - CORRECTED APPEND LOGIC
+        current_equip_on_line = list(getattr(line, "hasEquipment", []))
+        if equipment not in current_equip_on_line:
+            current_equip_on_line.append(equipment)
+            line.hasEquipment = current_equip_on_line  # Assign updated list
+
         if physical_area:
-            physical_area.areaHasEquipment = [equipment]
+            current_equip_on_area = list(getattr(physical_area, "areaHasEquipment", []))
+            if equipment not in current_equip_on_area:
+                current_equip_on_area.append(equipment)
+                physical_area.areaHasEquipment = (
+                    current_equip_on_area  # Assign updated list
+                )
+
         if focus_factory:
-            focus_factory.ffHasEquipment = [equipment]
+            current_equip_on_ff = list(getattr(focus_factory, "ffHasEquipment", []))
+            if equipment not in current_equip_on_ff:
+                current_equip_on_ff.append(equipment)
+                focus_factory.ffHasEquipment = (
+                    current_equip_on_ff  # Assign updated list
+                )
 
         # Assign sequence order (considers overrides)
         is_line_level_row = (row_level == "Line") or (equipment_name == line_name)
