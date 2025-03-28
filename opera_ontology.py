@@ -1868,34 +1868,34 @@ def link_equipment_by_sequence(ontology: owl.Ontology):
             upstream_eq = sorted_equipment[i]
             downstream_eq = sorted_equipment[i + 1]
             upstream_order = sorted_orders[i]
-            downstream_order = sorted_orders[i + 1]
+            downstream_order = sorted_orders[i+1]
 
-            logger.debug(
-                f"  Checking pair: {upstream_eq.name}({upstream_order}) -> {downstream_eq.name}({downstream_order})"
-            )
+            logger.debug(f"  Checking pair: {upstream_eq.name}({upstream_order}) -> {downstream_eq.name}({downstream_order})")
 
             # Check if sequence order is consecutive
             if downstream_order == upstream_order + 1:
                 logger.debug(f"    Orders are consecutive. Attempting to link.")
                 pair_linked = False
 
-                # --- ONLY UPDATE ONE SIDE (isImmediatelyUpstreamOf) ---
-                current_downstream = list(
-                    getattr(upstream_eq, "isImmediatelyUpstreamOf", [])
-                )
+                # --- ONLY UPDATE ONE SIDE using simple assignment ---
+                current_downstream = list(getattr(upstream_eq, "isImmediatelyUpstreamOf", []))
                 if downstream_eq not in current_downstream:
                     current_downstream.append(downstream_eq)
-                    # Use direct attribute assignment which Owlready intercepts
+                    # Assign the updated list back
                     upstream_eq.isImmediatelyUpstreamOf = current_downstream
-                    # setattr(upstream_eq, "isImmediatelyUpstreamOf", current_downstream) # Alternative syntax
-                    logger.info(
-                        f"    LINKED: {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name} (Owlready2 should handle inverse)"
-                    )
+                    logger.info(f"    LINKED: {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name} (Owlready2 should handle inverse)")
                     pair_linked = True
                 else:
+                    logger.debug(f"    Link {upstream_eq.name} -> {downstream_eq.name} already exists.")
+
+                if pair_linked:
+                    link_count += 1
+                    line_links_made += 1
                     logger.debug(
                         f"    Link {upstream_eq.name} -> {downstream_eq.name} already exists."
                     )
+
+                # --- REMOVED Manual update of isImmediatelyDownstreamOf ---
 
                 if pair_linked:
                     link_count += 1
@@ -1944,7 +1944,6 @@ def parse_arguments():
 
 
 def main():
-    """Main application entry point."""
     args = parse_arguments()
     logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
 
@@ -1979,14 +1978,15 @@ def main():
         equipment_type_seq = get_equipment_type_sequence_order()
         equipment_seq_overrides = get_equipment_sequence_overrides()
 
-        # --- Ontology Population ---
-        stats = {"total_rows": len(processed_df), "processed_rows": 0, "error_rows": 0}
-        logger.info(f"Populating ontology from {stats['total_rows']} processed rows...")
-        row_count = len(processed_df)
-        data_rows = processed_df.to_dict("records")  # Efficient for iteration
-
-        # Use ontology context for mapping operations
+        # Use ontology context for mapping AND linking operations
+        logger.info("Entering main ontology context for population and linking...")
         with onto:
+            # --- Ontology Population ---
+            stats = {"total_rows": len(processed_df), "processed_rows": 0, "error_rows": 0}
+            logger.info(f"Populating ontology from {stats['total_rows']} processed rows...")
+            row_count = len(processed_df)
+            data_rows = processed_df.to_dict("records")
+
             for i, row_data in enumerate(data_rows):
                 try:
                     map_row_to_ontology(
@@ -1994,30 +1994,25 @@ def main():
                     )
                     stats["processed_rows"] += 1
                 except Exception as map_err:
-                    # Error should be logged within map_row_to_ontology if raised
-                    # If not re-raised, log here:
-                    # logger.error(f"Unhandled error mapping row {i}: {map_err}", exc_info=True)
                     stats["error_rows"] += 1
-                    # Decide whether to continue or stop on mapping errors
-                    # For now, we count and continue
-
                 # Log progress
-                if (i + 1) % 5000 == 0 or (
-                    i + 1
-                ) == row_count:  # Adjust logging frequency
+                if (i + 1) % 5000 == 0 or (i + 1) == row_count:
                     logger.info(
                         f"Mapped {i + 1}/{row_count} rows ({(i + 1) / row_count:.1%})"
                     )
 
-        # Check for errors before proceeding
-        if stats["error_rows"] > 0:
-            logger.warning(
-                f"{stats['error_rows']} errors occurred during row mapping. Ontology may be incomplete."
-            )
+            logger.info(f"Mapped {stats['processed_rows']} rows successfully.")
 
-        # Post-process: Link equipment by sequence order
-        logger.info("Running post-processing: Linking equipment sequences...")
-        link_equipment_by_sequence(onto)  # Pass the populated ontology
+            # Check for errors before proceeding with linking
+            if stats["error_rows"] > 0:
+                logger.warning(f"{stats['error_rows']} errors occurred during row mapping. Ontology may be incomplete.")
+
+            # Post-process: Link equipment by sequence order (NOW INSIDE with onto)
+            logger.info("Running post-processing: Linking equipment sequences...")
+            # Ensure link_equipment_by_sequence uses the version that modifies only one side
+            link_equipment_by_sequence(onto)
+
+        logger.info("Exited main ontology context.")
 
         # Save ontology
         output_path = args.output
@@ -2028,16 +2023,7 @@ def main():
             logger.info("Ontology saved successfully.")
         except Exception as save_err:
             logger.critical(f"Failed to save ontology: {save_err}", exc_info=True)
-            return 1  # Treat save failure as critical
-
-        # Optional: Run reasoner (commented out)
-        # logger.info("Synchronizing reasoner (this may take time)...")
-        # try:
-        #     with onto:
-        #         owl.sync_reasoner_pellet(infer_property_values=True, infer_data_property_values=True) # Example using Pellet
-        #     logger.info("Reasoner synchronized successfully.")
-        # except Exception as reason_err:
-        #     logger.warning(f"Could not synchronize reasoner: {reason_err}")
+            return 1
 
         # Run example queries
         logger.info("--- Running Example Queries ---")
