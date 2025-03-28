@@ -917,8 +917,14 @@ def get_or_create_instance(
     # Sanitize ID for IRI - replace non-word chars (excluding hyphen) with underscore
     sanitized_id = re.sub(r"[^\w\-]+", "_", instance_id)
     # Prevent IDs starting with numbers if using certain RDF formats
-    if sanitized_id[0].isdigit():
+    if sanitized_id and sanitized_id[0].isdigit():  # Added check for empty string
         sanitized_id = f"_{sanitized_id}"
+
+    # Handle potential empty sanitized_id after sanitization
+    if not sanitized_id:
+        raise ValueError(
+            f"Sanitized instance_id became empty for original ID '{instance_id}' and class {cls.__name__}"
+        )
 
     instance_iri = f"{namespace.base_iri}{sanitized_id}"
 
@@ -934,14 +940,15 @@ def get_or_create_instance(
         if instance is not None:
             # Check if the found instance is of the expected class type
             if not isinstance(instance, cls):
-                # Attempt to handle cases where class might be defined later or differently
-                # Check if expected class is a superclass of the found instance's class
-                if not issubclass(instance.__class__, cls):
+                # Check superclass compatibility (more robust check)
+                instance_class = instance.__class__
+                expected_class = cls
+                # Check MRO (Method Resolution Order) for flexibility
+                if not any(c == expected_class for c in instance_class.mro()):
                     raise TypeError(
-                        f"IRI conflict: Found existing instance <{instance_iri}> but it is type {type(instance).__name__}, not compatible with expected type {cls.__name__}."
+                        f"IRI conflict: Found existing instance <{instance_iri}> of type {instance_class.__name__}, not compatible with expected type {expected_class.__name__} (not in MRO)."
                     )
-                # If compatible (subclass), use existing but log warning maybe?
-                # logger.warning(f"Retrieved existing instance <{instance_iri}> of type {type(instance).__name__}, assigning as expected type {cls.__name__}.")
+                # If compatible, use existing
             # else: # Instance is of the correct type or a subclass, which is okay
             #     logger.debug(f"Retrieved existing instance '{sanitized_id}' of class {cls.__name__} from ontology.")
             pass  # Use the retrieved instance
@@ -960,27 +967,58 @@ def get_or_create_instance(
                 continue
 
             try:
-                prop = getattr(
-                    onto, prop_name, None
-                )  # Get property from ontology namespace
-                if prop is None or not isinstance(prop, owl.Property):
-                    # Fallback check: sometimes properties are direct attributes on generated classes
-                    prop_on_class = getattr(cls, prop_name, None)
-                    if isinstance(prop_on_class, owl.Property):
-                        prop = prop_on_class
-                    else:
-                        logger.warning(
-                            f"Property '{prop_name}' not found in ontology namespace or on class {cls.__name__}. Skipping assignment for instance {instance.name}."
-                        )
-                        continue
+                # --- MODIFIED PROPERTY LOOKUP & VALIDATION ---
+                prop = None  # Initialize prop
+                try:
+                    prop = onto[prop_name]  # Use dictionary-style lookup
+                    # --- ADD DEBUG LOGGING ---
+                    logger.debug(
+                        f"For prop_name '{prop_name}', onto[...] lookup returned: {prop} (type: {type(prop)})"
+                    )
+                    # --- END DEBUG LOGGING ---
+                except KeyError:
+                    logger.warning(
+                        f"Property '{prop_name}' not found via dictionary lookup (KeyError) for class {cls.__name__}. Skipping assignment for instance {instance.name}."
+                    )
+                    continue
 
-                is_functional = owl.FunctionalProperty in prop.is_a
-                is_object_prop = owl.ObjectProperty in prop.is_a
+                is_prop_instance = isinstance(prop, owl.Property)
+                is_prop_subclass = False
+                if prop is not None and isinstance(
+                    prop, type
+                ):  # Check if prop is a class type
+                    try:
+                        # Check if it's a subclass of owl.Property
+                        is_prop_subclass = issubclass(prop, owl.Property)
+                    except TypeError:
+                        # issubclass() arg 1 must be a class
+                        pass  # is_prop_subclass remains False
 
-                current_value_owl = getattr(instance, prop_name)
+                logger.debug(
+                    f"Property '{prop_name}': is_instance={is_prop_instance}, is_subclass={is_prop_subclass}"
+                )
 
+                # Check if it's a valid property (either instance or subclass)
+                if not is_prop_instance and not is_prop_subclass:
+                    logger.warning(
+                        f"Property '{prop_name}' resolved to something ({type(prop)}) that is neither an instance nor a subclass of owl.Property for class {cls.__name__}. Skipping assignment for instance {instance.name}."
+                    )
+                    continue
+                # --- END MODIFIED LOOKUP & VALIDATION ---
+
+                # --- Determine if Functional (Works for both class and instance) ---
+                # Check the MRO (Method Resolution Order) for the FunctionalProperty mixin
+                prop_mro_check_target = (
+                    prop if isinstance(prop, type) else prop.__class__
+                )
+                is_functional = owl.FunctionalProperty in prop_mro_check_target.mro()
+                logger.debug(
+                    f"Property '{prop_name}' determined as functional? {is_functional}"
+                )
+                # --- End Functional Check ---
+
+                # --- Property Assignment Logic (Largely unchanged, uses setattr) ---
                 if is_functional:
-                    # --- Functional Property Assignment ---
                     actual_value_to_set = (
                         value[0] if isinstance(value, list) and value else value
                     )
@@ -989,36 +1027,43 @@ def get_or_create_instance(
                             f"Assigning only first value to functional property '{prop_name}' on {instance.name}"
                         )
 
-                    # Owlready handles functional comparison and assignment directly
-                    if current_value_owl != actual_value_to_set:
+                    current_direct_val = getattr(instance, prop_name, None)
+                    if current_direct_val != actual_value_to_set:
                         setattr(instance, prop_name, actual_value_to_set)
                         # logger.debug(f"Set functional property '{prop_name}' on {instance.name}")
-                    # else:
-                    #     logger.debug(f"Skipping functional property '{prop_name}' on {instance.name}, value is already set.")
 
-                else:
-                    # --- Non-Functional Property Assignment ---
-                    current_list = list(current_value_owl) if current_value_owl else []
+                else:  # Non-functional
+                    current_list = list(getattr(instance, prop_name, []))
                     values_to_add = value if isinstance(value, list) else [value]
 
+                    updated_list = list(current_list)
                     newly_added_count = 0
                     for val_item in values_to_add:
-                        if val_item is not None and val_item not in current_list:
-                            current_list.append(val_item)
-                            newly_added_count += 1
+                        # Ensure we don't add duplicates
+                        if val_item is not None:
+                            # Need careful comparison, especially for OWL individuals
+                            is_duplicate = False
+                            for existing_item in updated_list:
+                                if val_item == existing_item:
+                                    is_duplicate = True
+                                    break
+                            if not is_duplicate:
+                                updated_list.append(val_item)
+                                newly_added_count += 1
 
                     if newly_added_count > 0:
-                        setattr(
-                            instance, prop_name, current_list
-                        )  # Assign the updated list
-                        # logger.debug(
-                        #     f"Added {newly_added_count} item(s) to non-functional property '{prop_name}' on {instance.name}"
-                        # )
+                        setattr(instance, prop_name, updated_list)
+                        # logger.debug(f"Added {newly_added_count} item(s) to non-functional property '{prop_name}' on {instance.name}")
 
+            except AttributeError as ae:
+                logger.error(
+                    f"AttributeError processing property '{prop_name}' on {instance.name}. Error: {ae}",
+                    exc_info=False,
+                )
             except Exception as e:
                 logger.error(
-                    f"Error setting property '{prop_name}' on instance {instance.name} with value '{value}': {e}",
-                    exc_info=False,  # Set True for full traceback if needed
+                    f"Unexpected error setting property '{prop_name}' on instance {instance.name} with value '{value}': {e}",
+                    exc_info=True,
                 )
 
     return instance
