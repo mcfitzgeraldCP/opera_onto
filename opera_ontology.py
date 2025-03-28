@@ -1694,25 +1694,33 @@ def find_equipment_by_type(equipment_type: str) -> List[Equipment]:
 
 def find_downstream_equipment(equipment: Equipment) -> List[Equipment]:
     """Find equipment immediately downstream of the given equipment."""
-    # No change needed here
     if not equipment:
         return []
-    downstream = list(
-        equipment.isImmediatelyUpstreamOf
-    )  # Property points *to* downstream
-    logger.debug(f"Found {len(downstream)} downstream equipment for {equipment.name}")
+    # --- ADD DEBUGGING ---
+    downstream_prop_value = getattr(equipment, "isImmediatelyUpstreamOf", None)
+    logger.debug(
+        f"Querying downstream for {equipment.name}: Found isImmediatelyUpstreamOf = {downstream_prop_value}"
+    )
+    # --- END DEBUGGING ---
+    downstream = list(downstream_prop_value) if downstream_prop_value else []
+    logger.debug(
+        f"Returning {len(downstream)} downstream equipment for {equipment.name}"
+    )
     return downstream
 
 
 def find_upstream_equipment(equipment: Equipment) -> List[Equipment]:
     """Find equipment immediately upstream of the given equipment."""
-    # No change needed here
     if not equipment:
         return []
-    upstream = list(
-        equipment.isImmediatelyDownstreamOf
-    )  # Property points *to* upstream
-    logger.debug(f"Found {len(upstream)} upstream equipment for {equipment.name}")
+    # --- ADD DEBUGGING ---
+    upstream_prop_value = getattr(equipment, "isImmediatelyDownstreamOf", None)
+    logger.debug(
+        f"Querying upstream for {equipment.name}: Found isImmediatelyDownstreamOf = {upstream_prop_value}"
+    )
+    # --- END DEBUGGING ---
+    upstream = list(upstream_prop_value) if upstream_prop_value else []
+    logger.debug(f"Returning {len(upstream)} upstream equipment for {equipment.name}")
     return upstream
 
 
@@ -1804,25 +1812,20 @@ def find_longest_unplanned_events(
 def link_equipment_by_sequence(ontology: owl.Ontology):
     """
     Iterates through all lines and links equipment instances based on their
-    sequenceOrder property (n is upstream of n+1).
+    sequenceOrder property (n is upstream of n+1). Relies on Owlready2 for inverse.
     """
     logger.info("Starting post-processing step: Linking equipment by sequence order...")
     link_count = 0
     processed_lines = 0
 
-    # Use the ontology context? May not be needed if just accessing properties
-    # with ontology: # Probably not required here
-    all_lines = list(
-        ontology.search(type=onto.Line)
-    )  # Use search instead of instances() sometimes safer
+    all_lines = list(ontology.search(type=onto.Line))
     logger.info(f"Found {len(all_lines)} lines to process for equipment sequencing.")
 
     for line in all_lines:
         processed_lines += 1
-        logger.debug(f"--- Processing line: {line.name} ---")  # Line marker
+        logger.debug(f"--- Processing line: {line.name} ---")
 
         equipment_on_line_with_order = []
-        # Access hasEquipment property safely
         equip_list = list(getattr(line, "hasEquipment", []))
         logger.debug(
             f"Line {line.name}: Found {len(equip_list)} equipment instances total."
@@ -1833,9 +1836,7 @@ def link_equipment_by_sequence(ontology: owl.Ontology):
             seq_order_val = getattr(equip, "sequenceOrder", None)
             if seq_order_val is not None:
                 try:
-                    # Ensure it's a valid integer
                     seq_order_int = int(seq_order_val)
-                    # Store tuple (order, equipment instance) for sorting
                     equipment_on_line_with_order.append((seq_order_int, equip))
                     logger.debug(
                         f"  Equipment {equip.name} (Type: {getattr(equip,'equipmentBaseType','N/A')}) has sequenceOrder: {seq_order_int}"
@@ -1844,26 +1845,19 @@ def link_equipment_by_sequence(ontology: owl.Ontology):
                     logger.warning(
                         f"  Equipment {equip.name} on line {line.name} has non-integer sequenceOrder '{seq_order_val}'. Skipping for linking."
                     )
-            # else: # Optional: Log equipment without order
-            #    logger.debug(f"  Equipment {equip.name} (Type: {getattr(equip,'equipmentBaseType','N/A')}) has NO sequenceOrder.")
 
-        if (
-            len(equipment_on_line_with_order) < 2
-        ):  # Need at least two pieces of equipment with order to potentially link
+        if len(equipment_on_line_with_order) < 2:
             logger.debug(
                 f"Line {line.name}: Found only {len(equipment_on_line_with_order)} equipment with sequenceOrder. Need at least 2 to link. Skipping line."
             )
             continue
 
-        # Sort equipment by sequenceOrder (first element of tuple)
+        # Sort equipment by sequenceOrder
         sorted_equipment_pairs = sorted(
             equipment_on_line_with_order, key=lambda item: item[0]
         )
-        # Extract sorted equipment instances
         sorted_equipment = [pair[1] for pair in sorted_equipment_pairs]
-        sorted_orders = [
-            pair[0] for pair in sorted_equipment_pairs
-        ]  # Get the orders for logging
+        sorted_orders = [pair[0] for pair in sorted_equipment_pairs]
         logger.debug(
             f"Line {line.name}: Sorted equipment with order: {[f'{e.name}({o})' for e, o in zip(sorted_equipment, sorted_orders)]}"
         )
@@ -1873,7 +1867,6 @@ def link_equipment_by_sequence(ontology: owl.Ontology):
         for i in range(len(sorted_equipment) - 1):
             upstream_eq = sorted_equipment[i]
             downstream_eq = sorted_equipment[i + 1]
-            # Use the sorted orders directly
             upstream_order = sorted_orders[i]
             downstream_order = sorted_orders[i + 1]
 
@@ -1884,40 +1877,24 @@ def link_equipment_by_sequence(ontology: owl.Ontology):
             # Check if sequence order is consecutive
             if downstream_order == upstream_order + 1:
                 logger.debug(f"    Orders are consecutive. Attempting to link.")
-                pair_linked = False  # Flag to count pairs once
+                pair_linked = False
 
-                # Add downstream link to upstream_eq (isImmediatelyUpstreamOf)
+                # --- ONLY UPDATE ONE SIDE (isImmediatelyUpstreamOf) ---
                 current_downstream = list(
                     getattr(upstream_eq, "isImmediatelyUpstreamOf", [])
                 )
                 if downstream_eq not in current_downstream:
                     current_downstream.append(downstream_eq)
-                    setattr(upstream_eq, "isImmediatelyUpstreamOf", current_downstream)
+                    # Use direct attribute assignment which Owlready intercepts
+                    upstream_eq.isImmediatelyUpstreamOf = current_downstream
+                    # setattr(upstream_eq, "isImmediatelyUpstreamOf", current_downstream) # Alternative syntax
                     logger.info(
-                        f"    LINKED: {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name}"
+                        f"    LINKED: {upstream_eq.name} --isImmediatelyUpstreamOf--> {downstream_eq.name} (Owlready2 should handle inverse)"
                     )
                     pair_linked = True
                 else:
                     logger.debug(
                         f"    Link {upstream_eq.name} -> {downstream_eq.name} already exists."
-                    )
-
-                # Add upstream link to downstream_eq (isImmediatelyDownstreamOf)
-                current_upstream = list(
-                    getattr(downstream_eq, "isImmediatelyDownstreamOf", [])
-                )
-                if upstream_eq not in current_upstream:
-                    current_upstream.append(upstream_eq)
-                    setattr(
-                        downstream_eq, "isImmediatelyDownstreamOf", current_upstream
-                    )
-                    logger.debug(
-                        f"    LINKED (inverse): {downstream_eq.name} --isImmediatelyDownstreamOf--> {upstream_eq.name}"
-                    )
-                    # No need to set pair_linked again
-                else:
-                    logger.debug(
-                        f"    Link (inverse) {downstream_eq.name} -> {upstream_eq.name} already exists."
                     )
 
                 if pair_linked:
@@ -1935,12 +1912,7 @@ def link_equipment_by_sequence(ontology: owl.Ontology):
 
         logger.debug(
             f"--- Finished processing line: {line.name}. Links created on this line: {line_links_made} ---"
-        )  # Line end marker
-
-        if processed_lines % 100 == 0:  # Log progress every 100 lines
-            logger.info(
-                f"Processed {processed_lines}/{len(all_lines)} lines for sequencing."
-            )
+        )
 
     logger.info(
         f"Finished linking equipment by sequence. Created/verified approximately {link_count} link pairs."
