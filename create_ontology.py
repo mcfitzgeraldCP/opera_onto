@@ -1086,6 +1086,142 @@ def read_data(data_file_path):
         main_logger.error(f"Error reading data file {data_file_path}: {e}")
         raise
 
+def generate_reasoning_report(onto, pre_stats, post_stats, inconsistent_classes, 
+                            inferred_hierarchy, inferred_properties, inferred_individuals):
+    """
+    Generates a structured report from reasoning results.
+    
+    Args:
+        onto: The ontology object
+        pre_stats: Dict with pre-reasoning statistics
+        post_stats: Dict with post-reasoning statistics
+        inconsistent_classes: List of inconsistent classes
+        inferred_hierarchy: Dict of inferred class relationships
+        inferred_properties: Dict of inferred property characteristics
+        inferred_individuals: Dict of inferred individual relationships
+    
+    Returns:
+        tuple: (report_str, has_issues)
+    """
+    report_lines = []
+    has_issues = False
+    
+    def add_section(title):
+        report_lines.extend([
+            "\n" + "="*80,
+            f"{title}",
+            "="*80
+        ])
+    
+    # 1. Executive Summary
+    add_section("REASONING REPORT EXECUTIVE SUMMARY")
+    
+    # Ontology Consistency Status
+    if inconsistent_classes:
+        has_issues = True
+        report_lines.append("❌ ONTOLOGY STATUS: Inconsistent")
+        report_lines.append(f"   Found {len(inconsistent_classes)} inconsistent classes")
+    else:
+        report_lines.append("✅ ONTOLOGY STATUS: Consistent")
+    
+    # Changes Overview
+    class_diff = post_stats['classes'] - pre_stats['classes']
+    prop_diff = (post_stats['object_properties'] - pre_stats['object_properties'] +
+                post_stats['data_properties'] - pre_stats['data_properties'])
+    ind_diff = post_stats['individuals'] - pre_stats['individuals']
+    
+    report_lines.extend([
+        f"\nStructural Changes:",
+        f"  • Classes: {class_diff:+d}",
+        f"  • Properties: {prop_diff:+d}",
+        f"  • Individuals: {ind_diff:+d}"
+    ])
+    
+    # 2. Detailed Statistics
+    add_section("DETAILED STATISTICS")
+    report_lines.extend([
+        "\nPre-Reasoning:",
+        f"  • Classes: {pre_stats['classes']}",
+        f"  • Object Properties: {pre_stats['object_properties']}",
+        f"  • Data Properties: {pre_stats['data_properties']}",
+        f"  • Individuals: {pre_stats['individuals']}",
+        "\nPost-Reasoning:",
+        f"  • Classes: {post_stats['classes']}",
+        f"  • Object Properties: {post_stats['object_properties']}",
+        f"  • Data Properties: {post_stats['data_properties']}",
+        f"  • Individuals: {post_stats['individuals']}"
+    ])
+    
+    # 3. Consistency Issues
+    if inconsistent_classes:
+        add_section("CONSISTENCY ISSUES")
+        report_lines.append("\nInconsistent Classes:")
+        for cls in inconsistent_classes:
+            report_lines.append(f"  • {cls.name}")
+            has_issues = True
+    
+    # 4. Inferred Knowledge
+    add_section("INFERRED KNOWLEDGE")
+    
+    # Class Hierarchy
+    if inferred_hierarchy:
+        report_lines.append("\nClass Hierarchy Changes:")
+        for parent, data in inferred_hierarchy.items():
+            if data.get('subclasses'):
+                report_lines.append(f"\n  {parent}:")
+                for sub in data['subclasses']:
+                    report_lines.append(f"    ↳ {sub}")
+            if data.get('equivalent'):
+                report_lines.append(f"    ≡ Equivalent to: {', '.join(data['equivalent'])}")
+    else:
+        report_lines.append("\nNo new class hierarchy relationships inferred.")
+    
+    # Property Characteristics
+    if inferred_properties:
+        report_lines.append("\nInferred Property Characteristics:")
+        for prop, chars in inferred_properties.items():
+            report_lines.append(f"\n  {prop}:")
+            for char in chars:
+                report_lines.append(f"    • {char}")
+    else:
+        report_lines.append("\nNo new property characteristics inferred.")
+    
+    # Individual Classifications
+    if inferred_individuals:
+        report_lines.append("\nIndividual Inferences:")
+        for ind, data in inferred_individuals.items():
+            report_lines.append(f"\n  {ind}:")
+            if data.get('types'):
+                report_lines.append("    Types:")
+                for t in data['types']:
+                    report_lines.append(f"      • {t}")
+            if data.get('properties'):
+                report_lines.append("    Properties:")
+                for p, vals in data['properties'].items():
+                    report_lines.append(f"      • {p}: {', '.join(map(str, vals))}")
+    else:
+        report_lines.append("\nNo new individual classifications inferred.")
+    
+    # 5. Recommendations
+    add_section("RECOMMENDATIONS")
+    recommendations = []
+    
+    if inconsistent_classes:
+        recommendations.append("❗ HIGH PRIORITY: Resolve inconsistencies in classes listed above.")
+    
+    if class_diff == 0 and prop_diff == 0 and ind_diff == 0:
+        recommendations.append("⚠️ No structural changes after reasoning - verify if this is expected.")
+    
+    if not inferred_hierarchy and not inferred_properties and not inferred_individuals:
+        recommendations.append("⚠️ No inferences made - consider enriching ontology axioms.")
+        has_issues = True
+    
+    if recommendations:
+        report_lines.extend(["\n" + rec for rec in recommendations])
+    else:
+        report_lines.append("\nNo critical issues found. Ontology appears to be well-structured.")
+    
+    return "\n".join(report_lines), has_issues
 
 def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, ontology_iri=DEFAULT_ONTOLOGY_IRI, save_format="rdfxml", use_reasoner=False, world_db_path=None):
     """
@@ -1172,9 +1308,88 @@ def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, on
             try:
                 # Use with onto context for reasoning as well
                 with onto:
-                    # Choose sync_reasoner_pellet() if Pellet is preferred/installed
-                    sync_reasoner(infer_property_values=True, infer_data_property_values=True)
-                main_logger.info("Reasoning complete.")
+                    # Collect pre-reasoning statistics
+                    pre_stats = {
+                        'classes': len(list(onto.classes())),
+                        'object_properties': len(list(onto.object_properties())),
+                        'data_properties': len(list(onto.data_properties())),
+                        'individuals': len(list(onto.individuals()))
+                    }
+                    
+                    # Log basic pre-reasoning info
+                    main_logger.info("Starting reasoning process...")
+                    sync_reasoner(infer_property_values=True, debug=2)
+                    
+                    # Collect reasoning results
+                    inconsistent = list(default_world.inconsistent_classes())
+                    
+                    # Collect inferred hierarchy
+                    inferred_hierarchy = {}
+                    for cls in onto.classes():
+                        inferred = {
+                            'subclasses': [sub.name for sub in cls.subclasses() 
+                                         if not any(sub in c.subclasses() for c in cls.is_a)],
+                            'equivalent': [eq.name for eq in cls.equivalent_to if eq != cls]
+                        }
+                        if inferred['subclasses'] or inferred['equivalent']:
+                            inferred_hierarchy[cls.name] = inferred
+                    
+                    # Collect property inferences
+                    inferred_properties = {}
+                    for prop in onto.properties():
+                        characteristics = []
+                        if prop.is_functional_for is not None:
+                            characteristics.append("Functional")
+                        if getattr(prop, 'is_transitive_for', None) is not None:
+                            characteristics.append("Transitive")
+                        if getattr(prop, 'is_symmetric_for', None) is not None:
+                            characteristics.append("Symmetric")
+                        if characteristics:
+                            inferred_properties[prop.name] = characteristics
+                    
+                    # Collect individual inferences
+                    inferred_individuals = {}
+                    for ind in onto.individuals():
+                        inferred = {
+                            'types': [cls.name for cls in ind.is_a 
+                                    if cls not in ind.INDIRECT_is_instance_of],
+                            'properties': {}
+                        }
+                        for prop in onto.properties():
+                            try:
+                                values = list(prop[ind])
+                                if values:
+                                    inferred['properties'][prop.name] = [
+                                        getattr(v, 'name', str(v)) for v in values
+                                    ]
+                            except Exception:
+                                continue
+                        if inferred['types'] or inferred['properties']:
+                            inferred_individuals[ind.name] = inferred
+                    
+                    # Collect post-reasoning statistics
+                    post_stats = {
+                        'classes': len(list(onto.classes())),
+                        'object_properties': len(list(onto.object_properties())),
+                        'data_properties': len(list(onto.data_properties())),
+                        'individuals': len(list(onto.individuals()))
+                    }
+                    
+                    # Generate and log the report
+                    report, has_issues = generate_reasoning_report(
+                        onto, pre_stats, post_stats, inconsistent,
+                        inferred_hierarchy, inferred_properties, inferred_individuals
+                    )
+                    
+                    # Log the report
+                    main_logger.info("\nReasoning Report:\n" + report)
+                    
+                    # Update reasoning_successful based on issues
+                    if has_issues:
+                        main_logger.warning("Reasoning completed but potential issues were identified.")
+                    else:
+                        main_logger.info("Reasoning completed successfully with no issues identified.")
+                
             except OwlReadyInconsistentOntologyError:
                 main_logger.error("REASONING FAILED: Ontology is inconsistent!")
                 reasoning_successful = False
