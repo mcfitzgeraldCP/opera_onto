@@ -16,6 +16,22 @@ DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 SPEC_PARENT_CLASS_COLUMN = 'Parent Class' # Assumed column name for hierarchy
 
+# --- Language Mapping for Alternative Reason Descriptions ---
+# Mapping from country descriptions to BCP 47 language tags
+COUNTRY_TO_LANGUAGE = {
+    "Mexico": "es",
+    "United States": "en",
+    "Brazil": "pt",
+    "France": "fr",
+    "Germany": "de",
+    "Italy": "it",
+    "Spain": "es",
+    "Japan": "ja",
+    "China": "zh",
+    # Add more mappings as needed based on your data
+}
+DEFAULT_LANGUAGE = "en"  # Default language if country not found in mapping
+
 # --- Logging Setup ---
 # Basic config will be set in create_ontology.py's main block
 # Get root logger for module-level logging configuration
@@ -552,6 +568,24 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         "isPartOfProductionLine", "involvesResource", "associatedWithProductionRequest",
         "usesMaterial", "occursDuring", "duringShift", "eventHasState", "eventHasReason"
     ]
+    
+    # Define which properties are functional (should be directly assigned vs. appended)
+    functional_properties = {
+        # Datatype properties (generally functional)
+        "plantId", "areaId", "processCellId", "lineId", "equipmentId", "equipmentClassId",
+        "equipmentModel", "materialId", "materialUOM", "standardUOM", "targetProductUOM",
+        "conversionFactor", "requestId", "requestRate", "requestRateUOM", "startTime", 
+        "endTime", "shiftId", "shiftStartTime", "shiftEndTime", "shiftDurationMinutes", 
+        "rampUpFlag", "reportedDurationMinutes", "businessExternalTimeMinutes",
+        "plantAvailableTimeMinutes", "effectiveRuntimeMinutes", "plantDecisionTimeMinutes",
+        "productionAvailableTimeMinutes",
+        
+        # Object properties marked as Functional in the spec
+        "memberOfClass", "locatedInPlant", "partOfArea", "locatedInProcessCell", 
+        "isPartOfProductionLine", "occursDuring", "duringShift", "eventHasState", 
+        "eventHasReason"
+    }
+    
     essential_prop_names = { # Define props critical for basic structure/linking
          "equipmentId", "lineId", "involvesResource", "occursDuring", "startTime"
          # Add more as needed
@@ -795,6 +829,7 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
 
 
                 # --- Create Operational State and Reason Individuals ---
+                # First create OperationalState
                 state_desc = safe_cast(row.get('UTIL_STATE_DESCRIPTION'), str)
                 state_ind = None
                 if state_desc and cls_OperationalState:
@@ -805,27 +840,57 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                         # Use append for non-functional properties
                         if prop_map["stateDescription"] and state_desc:
                             state_ind.stateDescription.append(state_desc)
-                        if prop_map["reasonDescription"]:
-                            # Use append for non-functional property
-                            state_ind.reasonDescription.append(state_desc)
-                        # Alt lang needs locstr handling - assuming plain string if target type is str
+                
+                # Then create OperationalReason as a separate individual
+                reason_desc = safe_cast(row.get('UTIL_REASON_DESCRIPTION'), str)
+                reason_ind = None
+                if reason_desc and cls_OperationalReason:
+                    reason_labels = [reason_desc]
+                    # Create unique reason instance based on description
+                    reason_ind = get_or_create_individual(cls_OperationalReason, reason_desc, onto, add_labels=reason_labels)
+                    if reason_ind:
+                        # Add ReasonDescription (non-functional)
+                        if prop_map["reasonDescription"] and reason_desc:
+                            reason_ind.reasonDescription.append(reason_desc)
+                        
+                        # Handle AltReasonDescription with language tag based on plant country
                         if prop_map["altReasonDescription"]:
-                             alt_reason = safe_cast(row.get('UTIL_ALT_LANGUAGE_REASON'), str)
-                             if alt_reason:
-                                 # Here you could potentially create locstr if language info was available
-                                 # e.g., state_ind.altReasonDescription.append(locstr(alt_reason, lang="es"))
-                                 # Use append for non-functional property
-                                 state_ind.altReasonDescription.append(alt_reason)
+                            alt_reason = safe_cast(row.get('UTIL_ALT_LANGUAGE_REASON'), str)
+                            if alt_reason:
+                                # Get the plant country to determine language
+                                plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
+                                # Map country to language tag
+                                lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE)
+                                if lang_tag:
+                                    # Create localized string with language tag
+                                    try:
+                                        alt_reason_locstr = locstr(alt_reason, lang=lang_tag)
+                                        # Use append for non-functional property
+                                        reason_ind.altReasonDescription.append(alt_reason_locstr)
+                                        pop_logger.debug(f"Added localized reason description '{alt_reason}' with language '{lang_tag}'")
+                                    except Exception as e:
+                                        pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e}")
+                                        # Fallback to plain string if locstr fails
+                                        reason_ind.altReasonDescription.append(alt_reason)
+                                else:
+                                    # No language mapping found, use plain string
+                                    pop_logger.warning(f"No language mapping for country '{plant_country}', using plain string")
+                                    reason_ind.altReasonDescription.append(alt_reason)
+                        
+                        # Handle DowntimeDriver (non-functional)
                         if prop_map["downtimeDriver"]:
-                             dt_driver = safe_cast(row.get('DOWNTIME_DRIVER'), str)
-                             if dt_driver:
-                                 # Use append for non-functional property
-                                 state_ind.downtimeDriver.append(dt_driver)
-                        # Handle combined CO_TYPE columns (check spec logic)
-                        co_type = safe_cast(row.get('CO_TYPE'), str) or safe_cast(row.get('CO_ORIGINAL_TYPE'), str)
-                        if prop_map["changeoverType"] and co_type:
-                            # Use append for non-functional property
-                            state_ind.changeoverType.append(co_type)
+                            dt_driver = safe_cast(row.get('DOWNTIME_DRIVER'), str)
+                            if dt_driver:
+                                # Use append for non-functional property
+                                reason_ind.downtimeDriver.append(dt_driver)
+                        
+                        # Handle ChangeoverType (non-functional)
+                        if prop_map["changeoverType"]:
+                            # Handle combined CO_TYPE columns (check spec logic)
+                            co_type = safe_cast(row.get('CO_TYPE'), str) or safe_cast(row.get('CO_ORIGINAL_TYPE'), str)
+                            if co_type:
+                                # Use append for non-functional property
+                                reason_ind.changeoverType.append(co_type)
 
 
                 # --- Create Time Interval ---
@@ -901,49 +966,90 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
 
                 # --- Link EventRecord to other Individuals (Object Properties) ---
                 # Using property indexing for safer non-functional object property assignments
+                # and direct assignment for functional properties
                 
-                # Link to resource (Line or Equipment)
+                # Link to resource (Line or Equipment) - involvesResource might be functional or not per spec
                 prop_involvesResource = prop_map.get("involvesResource")
                 if prop_involvesResource and resource_individual:
-                    if resource_individual not in prop_involvesResource[event_ind]:
-                        prop_involvesResource[event_ind].append(resource_individual)
+                    if "involvesResource" in functional_properties:
+                        # Direct assignment if functional
+                        event_ind.involvesResource = resource_individual
+                        pop_logger.debug(f"Set functional property involvesResource for {event_ind.name} to {resource_individual.name}")
+                    else:
+                        # Append if non-functional
+                        if resource_individual not in prop_involvesResource[event_ind]:
+                            prop_involvesResource[event_ind].append(resource_individual)
                 
-                # Link to ProductionRequest
+                # Link to ProductionRequest - associatedWithProductionRequest
                 prop_associatedWithProductionRequest = prop_map.get("associatedWithProductionRequest")
                 if prop_associatedWithProductionRequest and req_ind:
-                    if req_ind not in prop_associatedWithProductionRequest[event_ind]:
-                        prop_associatedWithProductionRequest[event_ind].append(req_ind)
+                    if "associatedWithProductionRequest" in functional_properties:
+                        # Direct assignment if functional
+                        event_ind.associatedWithProductionRequest = req_ind
+                    else:
+                        # Append if non-functional
+                        if req_ind not in prop_associatedWithProductionRequest[event_ind]:
+                            prop_associatedWithProductionRequest[event_ind].append(req_ind)
                 
-                # Link to Material
+                # Link to Material - usesMaterial
                 prop_usesMaterial = prop_map.get("usesMaterial")
                 if prop_usesMaterial and mat_ind:
-                    if mat_ind not in prop_usesMaterial[event_ind]:
-                        prop_usesMaterial[event_ind].append(mat_ind)
+                    if "usesMaterial" in functional_properties:
+                        # Direct assignment if functional
+                        event_ind.usesMaterial = mat_ind
+                    else:
+                        # Append if non-functional
+                        if mat_ind not in prop_usesMaterial[event_ind]:
+                            prop_usesMaterial[event_ind].append(mat_ind)
                 
-                # Link to TimeInterval
+                # Link to TimeInterval - occursDuring (functional per spec)
                 prop_occursDuring = prop_map.get("occursDuring")
                 if prop_occursDuring and time_interval_ind:
-                    if time_interval_ind not in prop_occursDuring[event_ind]:
-                        prop_occursDuring[event_ind].append(time_interval_ind)
+                    if "occursDuring" in functional_properties:
+                        # Direct assignment for functional property
+                        event_ind.occursDuring = time_interval_ind
+                        pop_logger.debug(f"Set functional property occursDuring for {event_ind.name} to {time_interval_ind.name}")
+                    else:
+                        # Append if non-functional (per spec)
+                        if time_interval_ind not in prop_occursDuring[event_ind]:
+                            prop_occursDuring[event_ind].append(time_interval_ind)
                 
-                # Link to Shift
+                # Link to Shift - duringShift (functional per spec)
                 prop_duringShift = prop_map.get("duringShift")
                 if prop_duringShift and shift_ind:
-                    if shift_ind not in prop_duringShift[event_ind]:
-                        prop_duringShift[event_ind].append(shift_ind)
+                    if "duringShift" in functional_properties:
+                        # Direct assignment for functional property
+                        event_ind.duringShift = shift_ind
+                        pop_logger.debug(f"Set functional property duringShift for {event_ind.name} to {shift_ind.name}")
+                    else:
+                        # Append if non-functional (per spec)
+                        if shift_ind not in prop_duringShift[event_ind]:
+                            prop_duringShift[event_ind].append(shift_ind)
                 
-                # Link to OperationalState
+                # Link to OperationalState - eventHasState (functional per spec)
                 prop_eventHasState = prop_map.get("eventHasState")
                 if prop_eventHasState and state_ind:
-                    if state_ind not in prop_eventHasState[event_ind]:
-                        prop_eventHasState[event_ind].append(state_ind)
+                    if "eventHasState" in functional_properties:
+                        # Direct assignment for functional property
+                        event_ind.eventHasState = state_ind
+                        pop_logger.debug(f"Set functional property eventHasState for {event_ind.name} to {state_ind.name}")
+                    else:
+                        # Append if non-functional (per spec)
+                        if state_ind not in prop_eventHasState[event_ind]:
+                            prop_eventHasState[event_ind].append(state_ind)
                 
-                # Link to OperationalReason (using state_ind as OperationalReason too)
+                # Link to OperationalReason - eventHasReason (functional per spec)
                 prop_eventHasReason = prop_map.get("eventHasReason")
-                if prop_eventHasReason and state_ind:
-                    if state_ind not in prop_eventHasReason[event_ind]:
-                        prop_eventHasReason[event_ind].append(state_ind)
-
+                if prop_eventHasReason and reason_ind:
+                    if "eventHasReason" in functional_properties:
+                        # Direct assignment for functional property
+                        event_ind.eventHasReason = reason_ind
+                        pop_logger.debug(f"Set functional property eventHasReason for {event_ind.name} to {reason_ind.name}")
+                    else:
+                        # Append if non-functional (per spec)
+                        if reason_ind not in prop_eventHasReason[event_ind]:
+                            prop_eventHasReason[event_ind].append(reason_ind)
+                
                 # Add links to Personnel, ProcessSegment etc. if data/properties exist
 
                 successful_rows += 1

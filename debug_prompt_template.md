@@ -1,7 +1,7 @@
 # Ontology Code Debug Assistant Prompt
 
 ## Task Description
-You are tasked with helping debug the ontology generation code based on the provided source code and log files. 
+You are tasked with helping debug the ontology generation code based on the provided source code and log files (especially WARNING messages). 
 Please analyze the warnings, errors, and potential issues in the implementation. After explaining your analysis, provide a 
 prompt that can be fed to an agent to make the proposed fixes. Ask for confirmation if unclear or there are multiple options. Confirm that you understand.
 
@@ -18,7 +18,7 @@ prompt that can be fed to an agent to make the proposed fixes. Ask for confirmat
 ## Available Resources
 - Full source code of create_ontology.py
 - Execution logs from Logs/log.txt
-- Ontology specification (OPERA_ISA95_OWL_ONT_V5.csv)
+- Ontology specification (OPERA_ISA95_OWL_ONT_V6.csv)
 - Sample data (mx_toothpaste_finishing_sample_100lines.csv)
 - Access to owlready2 documentation if needed
 

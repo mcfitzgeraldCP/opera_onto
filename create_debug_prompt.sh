@@ -1,56 +1,57 @@
 #!/bin/bash
 
+# Show usage if no arguments provided
+usage() {
+    echo "Usage: $0 <code_file> <spec_file> <data_file>"
+    echo "Example: $0 create_ontology.py OPERA_ISA95_OWL_ONT_V6.csv mx_toothpaste_finishing_sample_100lines.csv"
+    echo ""
+    echo "Arguments:"
+    echo "  code_file  : Path to the source code file (e.g., create_ontology.py)"
+    echo "  spec_file  : Path to the ontology specification file (e.g., OPERA_ISA95_OWL_ONT_V6.csv)"
+    echo "  data_file  : Path to the sample data file (e.g., mx_toothpaste_finishing_sample_100lines.csv)"
+    exit 1
+}
+
+# Check if we have the required number of arguments
+if [ "$#" -ne 3 ]; then
+    usage
+fi
+
 # Configuration
 PROMPT_TEMPLATE="debug_prompt_template.md"
 OUTPUT_FILE="debug_prompt.txt"
-CODE_FILE="create_ontology.py"
+CODE_FILE="$1"
+SPEC_FILE="$2"
+SAMPLE_DATA_FILE="$3"
 LOG_FILE="Logs/log.txt"
-SPEC_FILE="OPERA_ISA95_OWL_ONT_V5.csv"
-SAMPLE_DATA_FILE="mx_toothpaste_finishing_sample_100lines.csv"
 
 # Function to create the debug prompt
 create_debug_prompt() {
-    # Check if template exists
-    if [ ! -f "$PROMPT_TEMPLATE" ]; then
-        echo "Error: Template file $PROMPT_TEMPLATE not found"
-        exit 1
-    fi
-
-    # Check if source code exists
-    if [ ! -f "$CODE_FILE" ]; then
-        echo "Error: $CODE_FILE not found"
-        exit 1
-    fi
+    # Check if all required files exist
+    for file in "$PROMPT_TEMPLATE" "$CODE_FILE" "$SPEC_FILE" "$SAMPLE_DATA_FILE"; do
+        if [ ! -f "$file" ]; then
+            echo "Error: Required file not found: $file"
+            usage
+        fi
+    done
 
     # Create output file using the template
     cp "$PROMPT_TEMPLATE" "$OUTPUT_FILE"
 
     # Replace placeholders with actual content
     # For ontology specification
-    if [ -f "$SPEC_FILE" ]; then
-        sed -i.bak "/<SPEC_CONTENT>/r $SPEC_FILE" "$OUTPUT_FILE"
-        sed -i.bak "/<SPEC_CONTENT>/d" "$OUTPUT_FILE"
-    else
-        sed -i.bak "s/<SPEC_CONTENT>/Ontology specification file not found./" "$OUTPUT_FILE"
-    fi
+    sed -i.bak "/<SPEC_CONTENT>/r $SPEC_FILE" "$OUTPUT_FILE"
+    sed -i.bak "/<SPEC_CONTENT>/d" "$OUTPUT_FILE"
 
     # For sample data
-    if [ -f "$SAMPLE_DATA_FILE" ]; then
-        sed -i.bak "/<SAMPLE_CONTENT>/r $SAMPLE_DATA_FILE" "$OUTPUT_FILE"
-        sed -i.bak "/<SAMPLE_CONTENT>/d" "$OUTPUT_FILE"
-    else
-        sed -i.bak "s/<SAMPLE_CONTENT>/Sample data file not found./" "$OUTPUT_FILE"
-    fi
+    sed -i.bak "/<SAMPLE_CONTENT>/r $SAMPLE_DATA_FILE" "$OUTPUT_FILE"
+    sed -i.bak "/<SAMPLE_CONTENT>/d" "$OUTPUT_FILE"
 
     # For code content
-    if [ -f "$CODE_FILE" ]; then
-        sed -i.bak "/<CODE_CONTENT>/r $CODE_FILE" "$OUTPUT_FILE"
-        sed -i.bak "/<CODE_CONTENT>/d" "$OUTPUT_FILE"
-    else
-        sed -i.bak "s/<CODE_CONTENT>/Source code file not found./" "$OUTPUT_FILE"
-    fi
+    sed -i.bak "/<CODE_CONTENT>/r $CODE_FILE" "$OUTPUT_FILE"
+    sed -i.bak "/<CODE_CONTENT>/d" "$OUTPUT_FILE"
 
-    # For log content
+    # For log content (optional)
     if [ -f "$LOG_FILE" ]; then
         sed -i.bak "/<LOG_CONTENT>/r $LOG_FILE" "$OUTPUT_FILE"
         sed -i.bak "/<LOG_CONTENT>/d" "$OUTPUT_FILE"
@@ -62,6 +63,10 @@ create_debug_prompt() {
     rm -f "$OUTPUT_FILE.bak"
 
     echo "Debug prompt created in $OUTPUT_FILE"
+    echo "Using:"
+    echo "  Code file: $CODE_FILE"
+    echo "  Spec file: $SPEC_FILE"
+    echo "  Data file: $SAMPLE_DATA_FILE"
 }
 
 # Execute the function
