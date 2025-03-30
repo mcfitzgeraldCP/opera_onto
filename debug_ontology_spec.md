@@ -1,3 +1,15 @@
+
+Please debug and revise the ontology specification to address the following issues. Reference the ISA95 standard for the recommended class hierarchy.
+
+Major Issue: Missing Parent Class Column in Spec:
+Code: The define_ontology_structure function explicitly looks for a column named Parent Class (defined by SPEC_PARENT_CLASS_COLUMN = 'Parent Class') in the specification CSV to build the class hierarchy (subclassOf relationships).
+Specification: The provided snippet of OPERA_ISA95_OWL_ONT_V5.csv does not contain a Parent Class column.
+Impact: The class hierarchy logic in define_ontology_structure will likely fail to establish any parent-child relationships beyond making every class a direct subclass of owl:Thing. This significantly deviates from a potentially intended hierarchical structure. The code might run without error if the column is simply missing (due to .get(SPEC_PARENT_CLASS_COLUMN, '')), but the resulting ontology structure will be flat.
+
+onfirmation of Parent Class Column: Does the full specification CSV actually contain a Parent Class column? If not, how should hierarchy be determined (if at all)?
+
+## Ontology Specification
+```csv
 Logical Group,Raw Data Column Name,Proposed OWL Entity,Proposed OWL Property,OWL Property Type,Target/Range (xsd:) / Target Class,OWL Property Characteristics,Inverse Property,Domain,Property Restrictions,ISA-95 Concept,Notes/Considerations
 Asset Hierarchy,PLANT,Plant,plantId,DatatypeProperty,xsd:string,Functional,,Plant,,Enterprise/Site ID,Used to create/identify Plant Individual - harmonized with B2MML terminology.
 Asset Hierarchy,GH_FOCUSFACTORY,Area,areaId,DatatypeProperty,xsd:string,Functional,,Area,,Area ID,Used to create/identify Area Individual. Links via locatedInPlant to Plant.
@@ -77,4 +89,4 @@ Utilization State/Reason,UTIL_REASON_DESCRIPTION,OperationalReason,reasonDescrip
 Utilization State/Reason,UTIL_ALT_LANGUAGE_REASON,OperationalReason,altReasonDescription,DatatypeProperty,xsd:string (with lang tag),-,,OperationalReason,,OperationsEvent Description,Property of OperationalReason per Section 5.11.
 Utilization State/Reason,DOWNTIME_DRIVER,OperationalReason,downtimeDriver,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Category,Property of OperationalReason per Section 5.11.
 Utilization State/Reason,OPERA_TYPE,EventRecord,operationType,DatatypeProperty,xsd:string,-,,EventRecord,,OperationsRecord Type,Property of EventRecord per Section 5.10. Categorical.
-Utilization State/Reason,"CO_TYPE, CO_ORIGINAL_TYPE",OperationalReason,changeoverType,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Detail,Property of OperationalReason for changeover events. Categorical.
+Utilization State/Reason,"CO_TYPE, CO_ORIGINAL_TYPE",OperationalReason,changeoverType,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Detail,Property of OperationalReason for changeover events. Categorical.```
