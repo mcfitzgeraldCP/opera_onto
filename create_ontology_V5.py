@@ -1750,7 +1750,7 @@ def main_ontology_generation(spec_file_path: str,
                     main_logger.info("Starting reasoning process...")
                     reasoning_start_time = timing.time()
                     # Run reasoner on the specific world containing the ontology
-                    sync_reasoner(world = active_world, infer_property_values=True, infer_data_property_values=True, debug=0)
+                    sync_reasoner(infer_property_values=True, debug=0)
                     reasoning_end_time = timing.time()
                     main_logger.info(f"Reasoning finished in {reasoning_end_time - reasoning_start_time:.2f} seconds.")
 
