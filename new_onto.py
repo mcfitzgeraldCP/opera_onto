@@ -1440,7 +1440,8 @@ def generate_reasoning_report(onto: Ontology,
                               inconsistent_classes: List[ThingClass],
                               inferred_hierarchy: Dict[str, Dict[str, List[str]]],
                               inferred_properties: Dict[str, List[str]],
-                              inferred_individuals: Dict[str, Dict[str, Any]]
+                              inferred_individuals: Dict[str, Dict[str, Any]],
+                              use_reasoner: bool
                              ) -> Tuple[str, bool]:
     """
     Generates a structured report from reasoning results. Returns report string and has_issues flag.
@@ -1651,7 +1652,7 @@ def main_ontology_generation(spec_file_path: str,
                     }
                     main_logger.info("Starting reasoning process...")
                     reasoning_start_time = timing.time()
-                    sync_reasoner(infer_property_values=True, infer_data_property_values=False, debug=0)
+                    sync_reasoner(infer_property_values=True, debug=0)
                     reasoning_end_time = timing.time()
                     main_logger.info(f"Reasoning finished in {reasoning_end_time - reasoning_start_time:.2f} seconds.")
 
@@ -1662,7 +1663,7 @@ def main_ontology_generation(spec_file_path: str,
                     inferred_individuals = {}
                     # Simplified post-reasoning state collection (as before)
                     for cls in onto.classes():
-                         current_subclasses = set(cls.subclasses(direct=True))
+                         current_subclasses = set(cls.subclasses())
                          inferred_subs = [sub.name for sub in current_subclasses]
                          equivalent_classes = [eq.name for eq in cls.equivalent_to if eq != cls and isinstance(eq, ThingClass)]
                          if inferred_subs or equivalent_classes:
@@ -1702,7 +1703,7 @@ def main_ontology_generation(spec_file_path: str,
                         'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
                         'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
                     }
-                    report, has_issues = generate_reasoning_report(onto, pre_stats, post_stats, inconsistent, inferred_hierarchy, inferred_properties, inferred_individuals)
+                    report, has_issues = generate_reasoning_report(onto, pre_stats, post_stats, inconsistent, inferred_hierarchy, inferred_properties, inferred_individuals, use_reasoner)
                     main_logger.info("\nReasoning Report:\n" + report)
 
                     if has_issues or inconsistent:

@@ -234,7 +234,7 @@ FIPCO00J,FIPCO00J_Cartoner,767.0,MX11,Breakdown,Full OPERA,PACK,OC,TPST,OralCare
 ### Source Code: create_ontology.py
 ```python
 # -*- coding: utf-8 -*-
-# Combined and Updated Ontology Generation Code (v3 - Functional Property Fix)
+# Combined and Updated Ontology Generation Code (v4 - Fixes & Enhancements)
 
 import csv
 import logging
@@ -242,10 +242,10 @@ import sys
 import time as timing
 import argparse
 import re
-import os # Added for worlddb path check
+import os
 from owlready2 import *
-from decimal import Decimal, InvalidOperation
 from datetime import datetime, date, time # time might not be needed if not used in spec
+from typing import List, Dict, Optional, Set, Tuple, Any # For type hinting
 
 # --- Configuration ---
 DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
@@ -254,7 +254,7 @@ SPEC_PARENT_CLASS_COLUMN = 'Parent Class' # Assumed column name for hierarchy
 
 # --- Language Mapping for Alternative Reason Descriptions ---
 # Mapping from country descriptions to BCP 47 language tags
-COUNTRY_TO_LANGUAGE = {
+COUNTRY_TO_LANGUAGE: Dict[str, str] = {
     "Mexico": "es",
     "United States": "en",
     "Brazil": "pt",
@@ -269,7 +269,8 @@ COUNTRY_TO_LANGUAGE = {
 DEFAULT_LANGUAGE = "en"  # Default language if country not found in mapping
 
 # --- Default Equipment Class Sequencing ---
-DEFAULT_EQUIPMENT_SEQUENCE = {
+# Defines a default linear sequence for common equipment types
+DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
     "Filler": 1,
     "Cartoner": 2,
     "Bundler": 3,
@@ -281,34 +282,32 @@ DEFAULT_EQUIPMENT_SEQUENCE = {
 }
 
 # --- Logging Setup ---
-# Basic config will be set in create_ontology.py's main block
-# Get root logger for module-level logging configuration
+# Basic config will be set in the main block
 logger = logging.getLogger(__name__) # Logger for definition module
 pop_logger = logging.getLogger("ontology_population") # Logger for population module
 main_logger = logging.getLogger("create_ontology") # Logger for main script
 
 #======================================================================#
-#               ontology_definition.py Module Code                   #
+#                 ontology_definition.py Module Code                 #
 #======================================================================#
 
 # Mapping from XSD types in the spec to Python types/owlready2 constructs
-XSD_TYPE_MAP = {
+XSD_TYPE_MAP: Dict[str, type] = {
     "xsd:string": str,
-    "xsd:decimal": float,  # Changed from Decimal to float for compatibility with owlready2
+    "xsd:decimal": float,  # Using float for compatibility with owlready2. High precision Decimal is possible but adds complexity.
     "xsd:integer": int,
     "xsd:dateTime": datetime,
     "xsd:date": date,
     "xsd:time": time,
     "xsd:boolean": bool,
     "xsd:anyURI": str,
-    "xsd:string (with lang tag)": locstr,
-    # Add more mappings if needed based on your spec
+    "xsd:string (with lang tag)": locstr, # owlready2 localized string
 }
 
-def parse_specification(spec_file_path):
+def parse_specification(spec_file_path: str) -> List[Dict[str, str]]:
     """Parses the ontology specification CSV file."""
     logger.info(f"Parsing specification file: {spec_file_path}")
-    spec_list = []
+    spec_list: List[Dict[str, str]] = []
     try:
         with open(spec_file_path, mode='r', encoding='utf-8-sig') as infile: # Use utf-8-sig to handle potential BOM
             reader = csv.DictReader(infile)
@@ -316,8 +315,7 @@ def parse_specification(spec_file_path):
             # expected_cols = {'Proposed OWL Entity', 'Proposed OWL Property', 'Parent Class', ...}
             # if not expected_cols.issubset(reader.fieldnames):
             #     logger.warning(f"Specification file might be missing expected columns. Found: {reader.fieldnames}")
-            for row in reader:
-                spec_list.append(row)
+            spec_list = list(reader)
             logger.info(f"Successfully parsed {len(spec_list)} rows from specification.")
             return spec_list
     except FileNotFoundError:
@@ -326,19 +324,28 @@ def parse_specification(spec_file_path):
     except Exception as e:
         logger.error(f"Error parsing specification file {spec_file_path}: {e}")
         raise
+    return [] # Return empty list on error if not raising
 
-def define_ontology_structure(onto, specification):
-    """Defines OWL classes and properties based on the parsed specification."""
+def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]]) -> Tuple[Dict[str, ThingClass], Dict[str, PropertyClass], Dict[str, bool]]:
+    """
+    Defines OWL classes and properties based on the parsed specification.
+
+    Returns:
+        tuple: (defined_classes, defined_properties, property_is_functional)
+            - defined_classes: Dict mapping class name to owlready2 class object.
+            - defined_properties: Dict mapping property name to owlready2 property object.
+            - property_is_functional: Dict mapping property name to boolean indicating functionality.
+    """
     logger.info(f"Defining ontology structure in: {onto.base_iri}")
-    defined_classes = {}
-    defined_properties = {}
-    property_is_functional = {}  # Track which properties are functional based on spec
-    class_metadata = {} # Store metadata like notes per class
+    defined_classes: Dict[str, ThingClass] = {}
+    defined_properties: Dict[str, PropertyClass] = {}
+    property_is_functional: Dict[str, bool] = {}  # Track which properties are functional based on spec
+    class_metadata: Dict[str, Dict[str, Any]] = {} # Store metadata like notes per class
 
     # --- Pre-process Spec for Class Metadata and Hierarchy ---
     logger.debug("--- Pre-processing specification for class details ---")
-    all_class_names = set()
-    class_parents = {} # {child_name: parent_name}
+    all_class_names: Set[str] = set()
+    class_parents: Dict[str, str] = {} # {child_name: parent_name}
     for i, row in enumerate(specification):
         class_name = row.get('Proposed OWL Entity', '').strip()
         if class_name:
@@ -362,68 +369,64 @@ def define_ontology_structure(onto, specification):
     with onto:
         # Ensure Thing is available if not explicitly listed
         if "Thing" not in all_class_names and "owl:Thing" not in all_class_names:
-            pass # Thing is implicitly available via owlready2
+             pass # Thing is implicitly available via owlready2
 
-        defined_order = [] # Track definition order for hierarchy
+        defined_order: List[str] = [] # Track definition order for hierarchy
         definition_attempts = 0
         max_attempts = len(all_class_names) + 5 # Allow some leeway for complex hierarchies
 
-        classes_to_define = set(cn for cn in all_class_names if cn.lower() != "owl:thing") # Exclude Thing variants
+        classes_to_define: Set[str] = set(cn for cn in all_class_names if cn.lower() != "owl:thing") # Exclude Thing variants
 
         while classes_to_define and definition_attempts < max_attempts:
-            defined_in_pass = set()
+            defined_in_pass: Set[str] = set()
             for class_name in sorted(list(classes_to_define)): # Sort for somewhat deterministic order
-                parent_name = class_parents.get(class_name)
-                parent_class_obj = Thing # Default parent is Thing
+                 parent_name = class_parents.get(class_name)
+                 parent_class_obj: ThingClass = Thing # Default parent is Thing
 
-                if parent_name:
-                    if parent_name == "Thing" or parent_name.lower() == "owl:thing": # Handle case variation
-                        parent_class_obj = Thing
-                    elif parent_name in defined_classes:
-                        parent_class_obj = defined_classes[parent_name]
-                    else:
-                        # Parent not defined yet, skip this class for now
-                        logger.debug(f"Deferring class '{class_name}', parent '{parent_name}' not defined yet.")
-                        continue
+                 if parent_name:
+                     if parent_name == "Thing" or parent_name.lower() == "owl:thing": # Handle case variation
+                         parent_class_obj = Thing
+                     elif parent_name in defined_classes:
+                         parent_class_obj = defined_classes[parent_name]
+                     else:
+                         # Parent not defined yet, skip this class for now
+                         logger.debug(f"Deferring class '{class_name}', parent '{parent_name}' not defined yet.")
+                         continue
 
-                # Define the class
-                try:
-                    if class_name not in defined_classes:
-                        logger.debug(f"Attempting to define Class: {class_name} with Parent: {parent_class_obj.name}")
-                        # Ensure class name is valid Python identifier if needed by backend
-                        safe_class_name = re.sub(r'\W|^(?=\d)', '_', class_name)
-                        if safe_class_name != class_name:
-                            logger.warning(f"Class name '{class_name}' sanitized to '{safe_class_name}' for internal use. Using original name for IRI.")
-                            # Sticking with original name as owlready2 often handles non-standard chars in IRIs
-                        new_class = types.new_class(class_name, (parent_class_obj,))
-                        defined_classes[class_name] = new_class
-                        defined_order.append(class_name)
-                        defined_in_pass.add(class_name)
-                        logger.debug(f"Defined Class: {new_class.iri} (Parent: {parent_class_obj.iri})")
+                 # Define the class
+                 try:
+                     if class_name not in defined_classes:
+                         logger.debug(f"Attempting to define Class: {class_name} with Parent: {parent_class_obj.name}")
+                         # Ensure class name is valid Python identifier if needed by backend
+                         safe_class_name = re.sub(r'\W|^(?=\d)', '_', class_name)
+                         if safe_class_name != class_name:
+                             logger.warning(f"Class name '{class_name}' sanitized to '{safe_class_name}' for internal use. Using original name for IRI.")
+                             # Sticking with original name as owlready2 often handles non-standard chars in IRIs
+                         new_class: ThingClass = types.new_class(class_name, (parent_class_obj,))
+                         defined_classes[class_name] = new_class
+                         defined_order.append(class_name)
+                         defined_in_pass.add(class_name)
+                         logger.debug(f"Defined Class: {new_class.iri} (Parent: {parent_class_obj.iri})")
 
-                        # Add annotations like comments/labels from pre-processed metadata
-                        meta = class_metadata.get(class_name)
-                        if meta:
-                            comments = []
-                            if meta['notes']: comments.append(f"Notes: {meta['notes']}")
-                            if meta['isa95']: comments.append(f"ISA-95 Concept: {meta['isa95']}")
-                            if comments:
-                                new_class.comment = comments
-                                logger.debug(f"Added comments to class {class_name}")
-                        # else: # Reduce noise: only log if metadata expected but missing
-                        #    if class_name != 'owl:Thing': # Don't warn for implicit Thing
-                        #        logger.warning(f"No metadata found for class '{class_name}' during annotation.")
-                except Exception as e:
-                    logger.error(f"Error defining class '{class_name}' with parent '{getattr(parent_class_obj,'name','N/A')}': {e}")
-                    # Optionally remove from classes_to_define to prevent infinite loops if error is persistent
-                    # defined_in_pass.add(class_name) # Remove from consideration in this loop iteration
-                    # Decided to let it retry, might be a transient issue or solvable in later pass
+                         # Add annotations like comments/labels from pre-processed metadata
+                         meta = class_metadata.get(class_name)
+                         if meta:
+                             comments = []
+                             if meta['notes']: comments.append(f"Notes: {meta['notes']}")
+                             if meta['isa95']: comments.append(f"ISA-95 Concept: {meta['isa95']}")
+                             if comments:
+                                 new_class.comment = comments
+                                 logger.debug(f"Added comments to class {class_name}")
+
+                 except Exception as e:
+                     logger.error(f"Error defining class '{class_name}' with parent '{getattr(parent_class_obj,'name','N/A')}': {e}")
+                     # Let it retry, might be a transient issue or solvable in later pass
 
             classes_to_define -= defined_in_pass
             definition_attempts += 1
             if not defined_in_pass and classes_to_define:
-                logger.error(f"Could not define remaining classes (possible circular dependency or missing parents): {classes_to_define}")
-                break # Avoid infinite loop
+                 logger.error(f"Could not define remaining classes (possible circular dependency or missing parents): {classes_to_define}")
+                 break # Avoid infinite loop
 
         if classes_to_define:
             logger.warning(f"Failed to define the following classes: {classes_to_define}")
@@ -431,11 +434,10 @@ def define_ontology_structure(onto, specification):
     # --- Pass 2: Define Properties ---
     logger.debug("--- Defining Properties ---")
     properties_to_process = [row for row in specification if row.get('Proposed OWL Property')]
+    temp_inverse_map: Dict[str, str] = {} # Stores {prop_name: inverse_name}
 
     with onto:
         # Define properties first without inverse, handle inverse in a second pass
-        temp_inverse_map = {} # Stores {prop_name: inverse_name}
-
         for row in properties_to_process:
             prop_name = row.get('Proposed OWL Property','').strip()
             if not prop_name or prop_name in defined_properties:
@@ -452,8 +454,8 @@ def define_ontology_structure(onto, specification):
                 continue
 
             # Determine parent classes for the property
-            parent_classes = []
-            base_prop_type = None
+            parent_classes: List[type] = []
+            base_prop_type: Optional[type] = None
             if prop_type_str == 'ObjectProperty':
                 base_prop_type = ObjectProperty
             elif prop_type_str == 'DatatypeProperty':
@@ -464,17 +466,10 @@ def define_ontology_structure(onto, specification):
 
             parent_classes.append(base_prop_type)
 
-            # Add characteristics - check using lowercased string for robustness
-            # Note: owlready2 might implicitly handle some characteristic implications
+            # Add characteristics
             is_functional = 'functional' in characteristics_str
-            if is_functional: 
-                parent_classes.append(FunctionalProperty)
-                # Store functional status for later use in population
-                property_is_functional[prop_name] = True
-            else:
-                # Explicitly mark as non-functional
-                property_is_functional[prop_name] = False
-                
+            property_is_functional[prop_name] = is_functional # Track functionality status
+            if is_functional: parent_classes.append(FunctionalProperty)
             if 'inversefunctional' in characteristics_str: parent_classes.append(InverseFunctionalProperty)
             if 'transitive' in characteristics_str: parent_classes.append(TransitiveProperty)
             if 'symmetric' in characteristics_str: parent_classes.append(SymmetricProperty)
@@ -483,12 +478,12 @@ def define_ontology_structure(onto, specification):
             if 'irreflexive' in characteristics_str: parent_classes.append(IrreflexiveProperty)
 
             try:
-                # Use original prop_name for definition
-                new_prop = types.new_class(prop_name, tuple(parent_classes))
+                # Define the property
+                new_prop: PropertyClass = types.new_class(prop_name, tuple(parent_classes))
 
                 # Set Domain
                 domain_class_names = [dc.strip() for dc in domain_str.split('|')]
-                prop_domain = []
+                prop_domain: List[ThingClass] = []
                 valid_domain_found = False
                 for dc_name in domain_class_names:
                     domain_class = defined_classes.get(dc_name)
@@ -510,7 +505,7 @@ def define_ontology_structure(onto, specification):
                 # Set Range
                 if base_prop_type is ObjectProperty:
                     range_class_names = [rc.strip() for rc in range_str.split('|')]
-                    prop_range = []
+                    prop_range: List[ThingClass] = []
                     valid_range_found = False
                     for rc_name in range_class_names:
                         range_class = defined_classes.get(rc_name)
@@ -555,24 +550,27 @@ def define_ontology_structure(onto, specification):
             except Exception as e:
                 logger.error(f"Error defining property '{prop_name}': {e}")
 
-        # --- Pass 3: Set Inverse Properties ---
-        logger.debug("--- Setting Inverse Properties ---")
+    # --- Pass 3: Set Inverse Properties ---
+    logger.debug("--- Setting Inverse Properties ---")
+    with onto: # Ensure changes are applied within the ontology context
         for prop_name, inverse_name in temp_inverse_map.items():
             prop = defined_properties.get(prop_name)
             inverse_prop = defined_properties.get(inverse_name)
 
             if prop and inverse_prop:
                 try:
-                    # Check if already set to a different value than what's in the spec
-                    if prop.inverse_property and prop.inverse_property != inverse_prop:
-                        logger.warning(f"Overriding existing inverse property for {prop.name} from {prop.inverse_property.name} to {inverse_prop.name} as specified in the spec.")
-                    
-                    # Always set the inverse property according to the spec
-                    prop.inverse_property = inverse_prop
-                    logger.debug(f"Set inverse_property for {prop.name} to {inverse_prop.name}")
-
+                    # Check if already set to the desired value to avoid unnecessary writes/warnings if possible
+                    current_inverse = getattr(prop, "inverse_property", None)
+                    if current_inverse != inverse_prop:
+                        prop.inverse_property = inverse_prop
+                        logger.debug(f"Set inverse_property for {prop.name} to {inverse_prop.name}")
+                    # Also explicitly set the inverse's inverse property back
+                    current_inverse_of_inverse = getattr(inverse_prop, "inverse_property", None)
+                    if current_inverse_of_inverse != prop:
+                         inverse_prop.inverse_property = prop
+                         logger.debug(f"Set inverse_property for {inverse_prop.name} back to {prop.name}")
                 except Exception as e:
-                    logger.error(f"Error setting inverse property for '{prop_name}' and '{inverse_name}': {e}")
+                    logger.error(f"Error setting inverse property between '{prop_name}' and '{inverse_name}': {e}")
             elif not prop:
                 logger.warning(f"Property '{prop_name}' not found while trying to set inverse '{inverse_name}'.")
             elif not inverse_prop:
@@ -580,24 +578,22 @@ def define_ontology_structure(onto, specification):
 
 
     # --- Pass 4: Define Property Restrictions (Optional) ---
-    # More complex restrictions (min/max cardinality, exactly, value) can be added here
-    # by iterating through the specification again and finding rows that define restrictions
-    # on specific classes using owlready2's restriction syntax (e.g., Class.some(Property, Value)).
-    logger.debug("--- Skipping complex property restrictions (add implementation if needed based on spec) ---")
+    # Implementation can be added here if needed, iterating spec again.
+    logger.debug("--- Skipping complex property restrictions definition ---")
 
     logger.info("Ontology structure definition complete.")
     return defined_classes, defined_properties, property_is_functional
 
 #======================================================================#
-#             ontology_population.py Module Code                     #
+#               ontology_population.py Module Code                   #
 #======================================================================#
 
 # --- Helper Functions ---
 
-def parse_equipment_class(equipment_name):
+def parse_equipment_class(equipment_name: Optional[str]) -> Optional[str]:
     """
     Parses the EquipmentClass from the EQUIPMENT_NAME.
-    Rule: Extracts the part after the last underscore.
+    Rule: Extracts the part after the last underscore. Returns None if input is invalid.
     Example: FIPCO009_Filler -> Filler
     """
     if not equipment_name or not isinstance(equipment_name, str):
@@ -615,7 +611,7 @@ def parse_equipment_class(equipment_name):
     pop_logger.debug(f"No underscore found in EQUIPMENT_NAME '{equipment_name}', using whole name as class.")
     return equipment_name # Fallback if no underscore
 
-def safe_cast(value, target_type, default=None):
+def safe_cast(value: Any, target_type: type, default: Any = None) -> Any:
     """Safely casts a value to a target type, returning default on failure."""
     if value is None or value == '':
         return default
@@ -629,11 +625,9 @@ def safe_cast(value, target_type, default=None):
             # Handle potential floats in data like '224.0'
             return int(float(value_str))
         if target_type is float:
+            # Handles standard float conversion
             return float(value_str)
-        if target_type is Decimal: # Kept for clarity, but casting to float
-             # Convert to float instead of Decimal for compatibility with owlready2
-             cleaned_value = value_str.replace(',', '')
-             return float(cleaned_value)
+        # Note: xsd:decimal maps to float based on XSD_TYPE_MAP
         if target_type is bool:
             val_lower = value_str.lower()
             if val_lower in ['true', '1', 't', 'y', 'yes']:
@@ -644,42 +638,30 @@ def safe_cast(value, target_type, default=None):
                 pop_logger.warning(f"Could not interpret {original_value_repr} as boolean.")
                 return default
         if target_type is datetime:
-            # Try parsing common formats, including the one in the sample data
-            # '2025-02-05 22:40:21.000 -0500'
-            # owlready2 stores datetime naive, stripping timezone info after parsing
+            # Try parsing common formats. owlready2 stores datetime naive.
+            # Parsing tz info helps ensure correctness if data has mixed offsets,
+            # but the final stored value will be naive.
             fmts = [
-                "%Y-%m-%d %H:%M:%S.%f %z", # Format with timezone and microseconds
-                "%Y-%m-%d %H:%M:%S %z",    # Format with timezone, no microseconds
-                "%Y-%m-%d %H:%M:%S.%f",    # Format without timezone, with microseconds
-                "%Y-%m-%d %H:%M:%S",        # Format without timezone, no microseconds
-                "%Y-%m-%dT%H:%M:%S.%f%z",  # ISO 8601 format often seen
-                "%Y-%m-%dT%H:%M:%S%z",     # ISO 8601 format
-                "%Y-%m-%dT%H:%M:%S.%f",    # ISO 8601 format naive
-                "%Y-%m-%dT%H:%M:%S",       # ISO 8601 format naive
-                "%Y-%m-%d",                # Date only
+                "%Y-%m-%d %H:%M:%S.%f %z", "%Y-%m-%d %H:%M:%S %z",
+                "%Y-%m-%d %H:%M:%S.%f",   "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%dT%H:%M:%S.%f%z","%Y-%m-%dT%H:%M:%S%z",
+                "%Y-%m-%dT%H:%M:%S.%f",  "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%d",
             ]
             parsed_dt = None
-            # Clean common variations like trailing Z or space before timezone
             clean_value = value_str.replace('Z', '+0000')
-            # Handle space separated timezone offset like "+05 00" -> "+0500"
             clean_value = re.sub(r'([+-])(\d{2})\s(\d{2})$', r'\1\2\3', clean_value)
-            # Handle potential missing microseconds before timezone
+            # Handle potential missing microseconds before timezone (common issue)
             clean_value = re.sub(r'(\d{2}:\d{2}:\d{2})\s([+-]\d{4})', r'\1.000 \2', clean_value)
 
             for fmt in fmts:
                 try:
                     parsed_dt = datetime.strptime(clean_value, fmt)
-                    # Make timezone-aware if timezone info was present, then convert to UTC?
-                    # owlready2 seems to prefer naive datetimes representing UTC or local implicitly.
-                    # For consistency, let's store naive. If parsed with TZ, log it.
                     if parsed_dt.tzinfo:
-                        pop_logger.debug(f"Parsed datetime {original_value_repr} with timezone {parsed_dt.tzinfo}, storing as naive.")
-                        # Example: Convert to UTC then make naive
-                        # from datetime import timezone
-                        # parsed_dt = parsed_dt.astimezone(timezone.utc).replace(tzinfo=None)
-                        # Or just make naive directly (loses original offset info)
+                        pop_logger.debug(f"Parsed datetime {original_value_repr} with timezone {parsed_dt.tzinfo}, storing as naive datetime.")
+                        # Convert to UTC and make naive, or just make naive directly.
+                        # Making naive directly loses original offset info but is simplest for owlready2.
                         parsed_dt = parsed_dt.replace(tzinfo=None)
-
                     #pop_logger.debug(f"Successfully parsed datetime {original_value_repr} using format '{fmt}' -> {parsed_dt}")
                     return parsed_dt
                 except ValueError:
@@ -688,7 +670,6 @@ def safe_cast(value, target_type, default=None):
                 pop_logger.warning(f"Could not parse datetime string {original_value_repr} with known formats.")
                 return default
 
-        # Add other types like date, time if needed based on XSD_TYPE_MAP usage
         if target_type is date:
              try:
                  return date.fromisoformat(value_str) # Assumes YYYY-MM-DD
@@ -702,9 +683,12 @@ def safe_cast(value, target_type, default=None):
                  pop_logger.warning(f"Could not parse time string {original_value_repr} as ISO time.")
                  return default
 
+        # General cast attempt for types not explicitly handled above (e.g., locstr handled by owlready2)
+        if target_type is locstr: # Let owlready2 handle locstr creation later
+            return value_str
 
-        # General cast attempt for types not explicitly handled above
-        return target_type(value_str)
+        return target_type(value_str) # Fallback attempt
+
     except (ValueError, TypeError, InvalidOperation) as e:
         pop_logger.warning(f"Failed to cast {original_value_repr} to {target_type.__name__}: {e}. Returning default: {default}")
         return default
@@ -713,17 +697,10 @@ def safe_cast(value, target_type, default=None):
         return default
 
 
-def get_or_create_individual(onto_class, individual_name_base, onto, add_labels=None):
+def get_or_create_individual(onto_class: ThingClass, individual_name_base: Any, onto: Ontology, add_labels: Optional[List[str]] = None) -> Optional[Thing]:
     """
     Gets an individual if it exists, otherwise creates it.
-    Uses a naming convention incorporating the class name to reduce cross-class collisions.
-    Args:
-        onto_class: The owlready2 class object.
-        individual_name_base: The base name derived from data (e.g., ID, description).
-        onto: The owlready2 ontology object.
-        add_labels (list): Optional list of strings to add as rdfs:label.
-    Returns:
-        The owlready2 individual object or None if creation failed.
+    Uses a class-prefixed, sanitized name for the individual IRI. Returns None on failure.
     """
     if not individual_name_base:
         pop_logger.warning(f"Cannot get/create individual with empty base name for class {onto_class.name if onto_class else 'None'}")
@@ -733,58 +710,42 @@ def get_or_create_individual(onto_class, individual_name_base, onto, add_labels=
         return None
 
     # 1. Sanitize the base name
-    # Replace problematic characters (spaces, punctuation not allowed in IRIs)
-    # Basic sanitization - adjust regex as needed for your specific data patterns
     safe_base = re.sub(r'\s+', '_', str(individual_name_base).strip())
     safe_base = re.sub(r'[^\w\-.]', '', safe_base) # Keep word chars, hyphen, period
-    # Handle potential leading digits or hyphens if needed, depending on IRI rules
-    # safe_base = re.sub(r'^[-\d]+', '_', safe_base) # Example: prefix with underscore
-
-    if not safe_base: # Handle cases where name becomes empty after sanitization
-        # Generate a fallback using hash - less readable but unique
-        fallback_hash = abs(hash(str(individual_name_base))) # Use abs for positivity
+    if not safe_base: # Handle cases where name becomes empty
+        fallback_hash = abs(hash(str(individual_name_base)))
         safe_base = f"UnnamedData_{fallback_hash}"
         pop_logger.warning(f"Sanitized name for '{individual_name_base}' became empty. Using fallback: {safe_base}")
 
-    # 2. Create the class-specific, sanitized name for the individual's IRI fragment
-    # Prepending class name helps avoid clashes like having an Equipment '123' and a Material '123'
-    # Using CamelCase for class name is common, ensure consistency
+    # 2. Create the class-specific, sanitized name
     final_name = f"{onto_class.name}_{safe_base}"
 
-    # 3. Check if individual with this final name already exists
+    # 3. Check if individual exists
     individual = onto[final_name]
 
     if individual:
         # Check if the existing individual is of the correct type
         if isinstance(individual, onto_class):
-            #pop_logger.debug(f"Retrieved existing individual: {individual.iri} of class {onto_class.name}")
             # Optionally add labels even if retrieved
             if add_labels:
+                current_labels = individual.label
                 for lbl in add_labels:
-                    # Check label type and value before appending
-                    if lbl and isinstance(lbl, str) and lbl not in individual.label:
+                    if lbl and isinstance(lbl, str) and lbl not in current_labels:
                          individual.label.append(lbl)
-                    #elif lbl and not isinstance(lbl, str): # Reduce noise
-                    #     pop_logger.warning(f"Label '{repr(lbl)}' for individual {individual.name} is not a string, skipping.")
             return individual
         else:
-            # This should be rare with the class name prefix, but possible if manually created
             pop_logger.error(f"IRI collision: Individual '{final_name}' ({individual.iri}) exists but is not of expected type {onto_class.name}. It has type(s): {individual.is_a}. Cannot proceed reliably.")
-            # Raise error or return None - Raising is safer to prevent data corruption
             raise TypeError(f"IRI collision: {final_name} exists with wrong type.")
-            # return None
 
-    # 4. Create the new individual if it doesn't exist
+    # 4. Create the new individual
     try:
         pop_logger.debug(f"Creating new individual '{final_name}' of class {onto_class.name}")
-        new_individual = onto_class(final_name, namespace=onto) # Ensure it's created in the target ontology
+        new_individual = onto_class(final_name, namespace=onto)
 
         # Add labels if provided
         if add_labels:
             for lbl in add_labels:
                 if lbl and isinstance(lbl, str): new_individual.label.append(lbl)
-                #elif lbl and not isinstance(lbl, str): # Reduce noise
-                #    pop_logger.warning(f"Label '{repr(lbl)}' for new individual {new_individual.name} is not a string, skipping.")
 
         return new_individual
     except Exception as e:
@@ -794,31 +755,28 @@ def get_or_create_individual(onto_class, individual_name_base, onto, add_labels=
 
 # --- Main Population Function ---
 
-def populate_ontology_from_data(onto, data_rows, defined_classes, defined_properties, property_is_functional):
+def populate_ontology_from_data(onto: Ontology,
+                                data_rows: List[Dict[str, Any]],
+                                defined_classes: Dict[str, ThingClass],
+                                defined_properties: Dict[str, PropertyClass],
+                                property_is_functional: Dict[str, bool]
+                               ) -> Tuple[int, Dict[str, Thing], Dict[str, int]]:
     """
     Populates the ontology with individuals and relations from data rows.
 
-    Args:
-        onto: The owlready2 ontology object.
-        data_rows: A list of dictionaries (rows from data CSV).
-        defined_classes: Dictionary mapping class names to owlready2 class objects.
-        defined_properties: Dictionary mapping property names to owlready2 property objects.
-        property_is_functional: Dictionary mapping property names to boolean indicating if they're functional.
-
     Returns:
         tuple: (failed_rows_count, created_equipment_class_inds, equipment_class_positions)
-               - failed_rows_count (int): Number of rows that failed processing.
-               - created_equipment_class_inds (dict): Maps equipment class name (str) to its individual object.
-               - equipment_class_positions (dict): Maps equipment class name (str) to its default sequence position (int).
+            - failed_rows_count: Number of rows that failed processing.
+            - created_equipment_class_inds: Maps equipment class name (str) to its individual object.
+            - equipment_class_positions: Maps equipment class name (str) to its default sequence position (int).
     """
     pop_logger.info(f"Starting ontology population with {len(data_rows)} data rows.")
 
     # Track equipment class sequence positions and created individuals
-    equipment_class_positions = {}
-    created_equipment_class_inds = {} # {eq_class_name_str: eq_class_ind_obj}
+    equipment_class_positions: Dict[str, int] = {}
+    created_equipment_class_inds: Dict[str, Thing] = {} # {eq_class_name_str: eq_class_ind_obj}
 
     # --- Get Class Objects ---
-    # Fetch classes needed for population, checking they were defined
     cls_Plant = defined_classes.get("Plant")
     cls_Area = defined_classes.get("Area")
     cls_ProcessCell = defined_classes.get("ProcessCell")
@@ -848,8 +806,8 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         return len(data_rows), {}, {} # Return all rows as failed, empty dicts
 
     # --- Get Property Objects ---
-    # Fetch properties, checking they were defined. Use None if missing, handle downstream.
-    prop_map = {}
+    prop_map: Dict[str, Optional[PropertyClass]] = {}
+    # List all properties potentially used in population or later sequence setup
     prop_names = [
         # IDs & Names (Data Props)
         "plantId", "areaId", "processCellId", "lineId", "equipmentId", "equipmentName",
@@ -862,26 +820,36 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         "plantAvailableTimeMinutes", "effectiveRuntimeMinutes", "plantDecisionTimeMinutes",
         "productionAvailableTimeMinutes", "stateDescription", "reasonDescription",
         "altReasonDescription", "downtimeDriver", "changeoverType", "defaultSequencePosition",
-        # Relationships (Object Props - verify these names match your spec exactly!)
+        # Relationships (Object Props - Use specific names from spec!)
         "memberOfClass", "locatedInPlant", "partOfArea", "locatedInProcessCell",
         "isPartOfProductionLine", "involvesResource", "associatedWithProductionRequest",
         "usesMaterial", "occursDuring", "duringShift", "eventHasState", "eventHasReason",
-        "isUpstreamOf", "isDownstreamOf"
+        "classIsUpstreamOf", # Specific name
+        "classIsDownstreamOf", # Specific name
+        "equipmentIsUpstreamOf", # Specific name
+        "equipmentIsDownstreamOf" # Specific name
     ]
 
-    essential_prop_names = { # Define props critical for basic structure/linking
+    # Define props critical for linking or subsequent steps like sequencing
+    essential_prop_names: Set[str] = {
         "equipmentId", "lineId", "involvesResource", "occursDuring", "startTime",
-        "memberOfClass", "equipmentClassId", "isPartOfProductionLine", # Needed for hierarchy & sequencing
-        "defaultSequencePosition", "isUpstreamOf" # Needed for sequencing logic
+        # Properties needed for Equipment -> EquipmentClass linking and sequence setup
+        "memberOfClass", "equipmentClassId", "isPartOfProductionLine",
+        "defaultSequencePosition",
+        # Properties needed for setting up sequence relationships later
+        "classIsUpstreamOf", "equipmentIsUpstreamOf"
     }
 
     missing_essential_props = []
     for name in prop_names:
         prop_map[name] = defined_properties.get(name)
         if not prop_map[name] and name in essential_prop_names:
-            missing_essential_props.append(name)
+             missing_essential_props.append(name)
         elif not prop_map[name]:
-            pop_logger.warning(f"Property '{name}' not found in ontology definition. Population using this property will be skipped.")
+             # Only warn if property was expected to be defined (i.e., in the original spec list)
+             if any(row.get('Proposed OWL Property') == name for row in specification):
+                pop_logger.warning(f"Property '{name}' (from spec) not found in defined_properties map. Population using this property will be skipped.")
+             # else: don't warn for properties we added programmatically but might not be in spec
 
     if missing_essential_props:
         pop_logger.error(f"Cannot reliably proceed with population. Missing essential properties definitions: {missing_essential_props}")
@@ -904,14 +872,11 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                     continue
                 plant_labels = [plant_id]
                 plant_ind = get_or_create_individual(cls_Plant, plant_id, onto, add_labels=plant_labels)
-                if plant_ind and prop_map["plantId"]:
-                    if plant_ind.plantId != plant_id: # Assign only if different
-                        is_functional = property_is_functional.get("plantId", True)  # Default to True if unknown
-                        if is_functional:
-                            plant_ind.plantId = plant_id  # Direct assignment for functional properties
-                        else:
-                            if plant_id not in plant_ind.plantId:
-                                plant_ind.plantId.append(plant_id)  # Append for non-functional
+                prop_plantId = prop_map.get("plantId")
+                if plant_ind and prop_plantId:
+                    # Functional Property: Use getattr/setattr
+                    if getattr(plant_ind, "plantId", None) != plant_id:
+                        setattr(plant_ind, "plantId", plant_id)
 
                 area_id = safe_cast(row.get('GH_FOCUSFACTORY'), str) # Using FocusFactory as Area ID based on spec assumption
                 if not area_id: area_id = "UnknownArea" # Fallback if missing
@@ -920,25 +885,18 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 area_ind = get_or_create_individual(cls_Area, area_unique_base, onto, add_labels=area_labels)
                 if area_ind:
                     prop_areaId = prop_map.get("areaId")
-                    if prop_areaId and area_ind.areaId != area_id:
-                        is_functional = property_is_functional.get("areaId", True)  # Default to True if unknown
-                        if is_functional:
-                            area_ind.areaId = area_id  # Direct assignment for functional properties
-                        else:
-                            if area_id not in area_ind.areaId:
-                                area_ind.areaId.append(area_id)  # Append for non-functional
+                    if prop_areaId:
+                         # Functional Property: Use getattr/setattr
+                        if getattr(area_ind, "areaId", None) != area_id:
+                            setattr(area_ind, "areaId", area_id)
+
                     # Add relationship: Area locatedInPlant Plant (NON-FUNCTIONAL per spec)
                     prop_locatedInPlant = prop_map.get("locatedInPlant")
                     if prop_locatedInPlant and plant_ind:
-                        is_functional = property_is_functional.get("locatedInPlant", False)  # Default to False if unknown
-                        if is_functional:
-                            if area_ind.locatedInPlant != plant_ind:  # Only assign if different
-                                area_ind.locatedInPlant = plant_ind  # Direct assignment for functional
-                        else:
-                            # Use append for non-functional
-                            if plant_ind not in area_ind.locatedInPlant:
-                                 area_ind.locatedInPlant.append(plant_ind)
-                                 pop_logger.debug(f"Linked {area_ind.name} locatedInPlant {plant_ind.name}")
+                         # Non-Functional: Use append if not already present
+                        if plant_ind not in area_ind.locatedInPlant:
+                            area_ind.locatedInPlant.append(plant_ind)
+                            pop_logger.debug(f"Linked {area_ind.name} locatedInPlant {plant_ind.name}")
 
                 pcell_id = safe_cast(row.get('PHYSICAL_AREA'), str) # Using PhysicalArea as ProcessCell ID assumption
                 if not pcell_id: pcell_id = "UnknownProcessCell" # Fallback
@@ -947,25 +905,18 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 pcell_ind = get_or_create_individual(cls_ProcessCell, pcell_unique_base, onto, add_labels=pcell_labels)
                 if pcell_ind:
                     prop_processCellId = prop_map.get("processCellId")
-                    if prop_processCellId and pcell_ind.processCellId != pcell_id:
-                        is_functional = property_is_functional.get("processCellId", True)  # Default to True if unknown
-                        if is_functional:
-                            pcell_ind.processCellId = pcell_id  # Direct assignment for functional properties
-                        else:
-                            if pcell_id not in pcell_ind.processCellId:
-                                pcell_ind.processCellId.append(pcell_id)  # Append for non-functional
+                    if prop_processCellId:
+                         # Functional Property: Use getattr/setattr
+                        if getattr(pcell_ind, "processCellId", None) != pcell_id:
+                            setattr(pcell_ind, "processCellId", pcell_id)
+
                     # Add relationship: ProcessCell partOfArea Area (NON-FUNCTIONAL per spec)
                     prop_partOfArea = prop_map.get("partOfArea")
                     if prop_partOfArea and area_ind:
-                        is_functional = property_is_functional.get("partOfArea", False)  # Default to False if unknown
-                        if is_functional:
-                            if pcell_ind.partOfArea != area_ind:  # Only assign if different
-                                pcell_ind.partOfArea = area_ind  # Direct assignment for functional
-                        else:
-                            # Use append for non-functional
-                            if area_ind not in pcell_ind.partOfArea:
-                                 pcell_ind.partOfArea.append(area_ind)
-                                 pop_logger.debug(f"Linked {pcell_ind.name} partOfArea {area_ind.name}")
+                        # Non-Functional: Use append if not already present
+                        if area_ind not in pcell_ind.partOfArea:
+                            pcell_ind.partOfArea.append(area_ind)
+                            pop_logger.debug(f"Linked {pcell_ind.name} partOfArea {area_ind.name}")
 
                 line_id = safe_cast(row.get('LINE_NAME'), str)
                 if not line_id:
@@ -977,25 +928,18 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 line_ind = get_or_create_individual(cls_ProductionLine, line_unique_base, onto, add_labels=line_labels)
                 if line_ind:
                     prop_lineId = prop_map.get("lineId")
-                    if prop_lineId and line_ind.lineId != line_id:
-                        is_functional = property_is_functional.get("lineId", True)  # Default to True if unknown
-                        if is_functional:
-                            line_ind.lineId = line_id  # Direct assignment for functional properties
-                        else:
-                            if line_id not in line_ind.lineId:
-                                line_ind.lineId.append(line_id)  # Append for non-functional
+                    if prop_lineId:
+                         # Functional Property: Use getattr/setattr
+                        if getattr(line_ind, "lineId", None) != line_id:
+                            setattr(line_ind, "lineId", line_id)
+
                     # Add relationship: ProductionLine locatedInProcessCell ProcessCell (NON-FUNCTIONAL per spec)
                     prop_locatedInProcessCell = prop_map.get("locatedInProcessCell")
                     if prop_locatedInProcessCell and pcell_ind:
-                        is_functional = property_is_functional.get("locatedInProcessCell", False)  # Default to False if unknown
-                        if is_functional:
-                            if line_ind.locatedInProcessCell != pcell_ind:  # Only assign if different
-                                line_ind.locatedInProcessCell = pcell_ind  # Direct assignment for functional
-                        else:
-                            # Use append for non-functional
-                            if pcell_ind not in line_ind.locatedInProcessCell:
-                                 line_ind.locatedInProcessCell.append(pcell_ind)
-                                 pop_logger.debug(f"Linked {line_ind.name} locatedInProcessCell {pcell_ind.name}")
+                        # Non-Functional: Use append if not already present
+                        if pcell_ind not in line_ind.locatedInProcessCell:
+                            line_ind.locatedInProcessCell.append(pcell_ind)
+                            pop_logger.debug(f"Linked {line_ind.name} locatedInProcessCell {pcell_ind.name}")
 
 
                 # --- Identify the Resource (Line or Equipment) for the Event ---
@@ -1004,9 +948,9 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 eq_name = safe_cast(row.get('EQUIPMENT_NAME'), str)
                 eq_type = safe_cast(row.get('EQUIPMENT_TYPE'), str) # 'Line' or 'Equipment'
 
-                equipment_ind = None
-                resource_individual = None # This will hold the individual linked by EventRecord
-                resource_base_id = None  # Base ID used for naming related individuals (like Event, TimeInterval)
+                equipment_ind: Optional[Thing] = None
+                resource_individual: Optional[Thing] = None # This will hold the individual linked by EventRecord
+                resource_base_id: Optional[str] = None  # Base ID used for naming related individuals
 
                 if eq_type == 'Line' and line_ind:
                     resource_individual = line_ind
@@ -1016,68 +960,65 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 elif eq_type == 'Equipment' and eq_id_str and cls_Equipment:
                     pop_logger.debug(f"Row {row_num}: Identified as Equipment record for EQ_ID: {eq_id_str}, EQ_NAME: {eq_name}")
                     # Create Equipment individual
-                    eq_unique_base = eq_id_str # Assume equipment ID is unique enough globally or within plant context
+                    eq_unique_base = eq_id_str # Assume equipment ID is unique enough
                     eq_labels = [f"ID:{eq_id_str}"]
-                    if eq_name: eq_labels.insert(0, eq_name) # Add name as first label if present
+                    if eq_name: eq_labels.insert(0, eq_name)
 
                     equipment_ind = get_or_create_individual(cls_Equipment, eq_unique_base, onto, add_labels=eq_labels)
                     if equipment_ind:
                         resource_individual = equipment_ind
-                        resource_base_id = f"Eq_{eq_unique_base}" # Prefix for clarity in related names
+                        resource_base_id = f"Eq_{eq_unique_base}" # Prefix for clarity
 
-                        # Set Equipment properties (Functional where specified)
+                        # Set Equipment properties
                         prop_equipmentId = prop_map.get("equipmentId")
-                        if prop_equipmentId and equipment_ind.equipmentId != eq_id_str:
-                            is_functional = property_is_functional.get("equipmentId", True)  # Default to True if unknown
-                            if is_functional:
-                                equipment_ind.equipmentId = eq_id_str  # Direct assignment for functional
-                            else:
-                                if eq_id_str not in equipment_ind.equipmentId:
-                                    equipment_ind.equipmentId.append(eq_id_str)  # Append for non-functional
+                        if prop_equipmentId:
+                             # Functional Property: Use getattr/setattr
+                            if getattr(equipment_ind, "equipmentId", None) != eq_id_str:
+                                setattr(equipment_ind, "equipmentId", eq_id_str)
 
                         prop_equipmentName = prop_map.get("equipmentName")
                         if prop_equipmentName and eq_name:
-                            # Non-functional - append, but check first
+                            # Non-functional - append if not present
                             if eq_name not in equipment_ind.equipmentName:
                                 equipment_ind.equipmentName.append(eq_name)
 
                         prop_equipmentModel = prop_map.get("equipmentModel")
                         if prop_equipmentModel:
                             model = safe_cast(row.get('EQUIPMENT_MODEL'), str)
-                            if model and equipment_ind.equipmentModel != model: # Functional
-                                equipment_ind.equipmentModel = model
+                            if model:
+                                # Functional Property: Use getattr/setattr
+                                if getattr(equipment_ind, "equipmentModel", None) != model:
+                                    setattr(equipment_ind, "equipmentModel", model)
 
                         prop_complexity = prop_map.get("complexity")
                         if prop_complexity:
                             complexity = safe_cast(row.get('COMPLEXITY'), str)
                             if complexity:
-                                # Non-functional? Assume allows multiple values
+                                # Non-functional - append if not present
                                 if complexity not in equipment_ind.complexity:
                                      equipment_ind.complexity.append(complexity)
 
                         prop_alternativeModel = prop_map.get("alternativeModel")
                         if prop_alternativeModel:
-                            alt_model = safe_cast(row.get('MODEL'), str) # Assuming 'MODEL' is alt model? Check spec.
+                            alt_model = safe_cast(row.get('MODEL'), str)
                             if alt_model:
-                                # Non-functional? Assume allows multiple values
+                                # Non-functional - append if not present
                                 if alt_model not in equipment_ind.alternativeModel:
                                      equipment_ind.alternativeModel.append(alt_model)
 
                         # Link Equipment to ProductionLine (NON-FUNCTIONAL per spec)
                         prop_isPartOfProductionLine = prop_map.get("isPartOfProductionLine")
                         if prop_isPartOfProductionLine and line_ind:
-                            is_functional = property_is_functional.get("isPartOfProductionLine", False)  # Default to False if unknown
-                            if is_functional:
-                                if equipment_ind.isPartOfProductionLine != line_ind:  # Only assign if different
-                                    equipment_ind.isPartOfProductionLine = line_ind  # Direct assignment for functional
-                            else:
-                                # Use append for non-functional
-                                if line_ind not in equipment_ind.isPartOfProductionLine:
-                                     equipment_ind.isPartOfProductionLine.append(line_ind)
-                                     pop_logger.debug(f"Linked {equipment_ind.name} isPartOfProductionLine {line_ind.name}")
+                            # Non-Functional: Use append if not already present
+                            if line_ind not in equipment_ind.isPartOfProductionLine:
+                                equipment_ind.isPartOfProductionLine.append(line_ind)
+                                pop_logger.debug(f"Linked {equipment_ind.name} isPartOfProductionLine {line_ind.name}")
 
                         # Parse and link EquipmentClass
-                        if cls_EquipmentClass and prop_map.get("memberOfClass") and prop_map.get("equipmentClassId") and prop_map.get("defaultSequencePosition"):
+                        prop_memberOfClass = prop_map.get("memberOfClass")
+                        prop_equipmentClassId = prop_map.get("equipmentClassId")
+                        prop_defaultSequencePosition = prop_map.get("defaultSequencePosition")
+                        if cls_EquipmentClass and prop_memberOfClass and prop_equipmentClassId and prop_defaultSequencePosition:
                             eq_class_name = parse_equipment_class(eq_name)
                             if eq_class_name:
                                 pop_logger.debug(f"Attempting to get/create EquipmentClass: {eq_class_name}")
@@ -1091,58 +1032,30 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                                          created_equipment_class_inds[eq_class_name] = eq_class_ind
 
                                     # Assign equipmentClassId (FUNCTIONAL per spec)
-                                    prop_equipmentClassId = prop_map.get("equipmentClassId")
-                                    if prop_equipmentClassId:
-                                        is_functional = property_is_functional.get("equipmentClassId", True)  # Default to True if unknown
-                                        if is_functional:
-                                            if eq_class_ind.equipmentClassId != eq_class_name:  # Only assign if different
-                                                eq_class_ind.equipmentClassId = eq_class_name  # Direct assignment for functional
-                                        else:
-                                            if eq_class_name not in eq_class_ind.equipmentClassId:
-                                                eq_class_ind.equipmentClassId.append(eq_class_name)  # Append for non-functional
+                                    if getattr(eq_class_ind, "equipmentClassId", None) != eq_class_name:
+                                         setattr(eq_class_ind, "equipmentClassId", eq_class_name)
 
                                     # Link Equipment to EquipmentClass (FUNCTIONAL per spec)
-                                    prop_memberOfClass = prop_map.get("memberOfClass")
-                                    if prop_memberOfClass:
-                                        is_functional = property_is_functional.get("memberOfClass", True)  # Default to True if unknown
-                                        if is_functional:
-                                            if equipment_ind.memberOfClass != eq_class_ind:  # Only assign if different
-                                                equipment_ind.memberOfClass = eq_class_ind  # Direct assignment for functional
-                                                pop_logger.debug(f"Linking {equipment_ind.name} memberOfClass {eq_class_ind.name}")
-                                        else:
-                                            if eq_class_ind not in equipment_ind.memberOfClass:
-                                                equipment_ind.memberOfClass.append(eq_class_ind)  # Append for non-functional
-                                                pop_logger.debug(f"Linking {equipment_ind.name} memberOfClass {eq_class_ind.name}")
+                                    if getattr(equipment_ind, "memberOfClass", None) != eq_class_ind:
+                                        setattr(equipment_ind, "memberOfClass", eq_class_ind)
+                                        pop_logger.debug(f"Linking {equipment_ind.name} memberOfClass {eq_class_ind.name}")
 
                                     # Set default sequence position *on the class individual* (FUNCTIONAL per spec)
-                                    prop_defaultSequencePosition = prop_map.get("defaultSequencePosition")
-                                    if prop_defaultSequencePosition:
-                                        default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_name)
-                                        if default_pos is not None:
-                                            existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-                                            # Assign only if not already set or if forced update is desired
-                                            is_functional = property_is_functional.get("defaultSequencePosition", True)  # Default to True if unknown
-                                            if is_functional:
-                                                if existing_pos is None or existing_pos != default_pos:
-                                                    pop_logger.debug(f"Assigning default sequence position {default_pos} to class {eq_class_name} ({eq_class_ind.name})")
-                                                    eq_class_ind.defaultSequencePosition = default_pos
-                                            else:
-                                                # Non-functional would be unusual for a position, but handle it
-                                                if existing_pos is None:
-                                                    eq_class_ind.defaultSequencePosition = [default_pos]
-                                                elif default_pos not in eq_class_ind.defaultSequencePosition:
-                                                    eq_class_ind.defaultSequencePosition.append(default_pos)
-                                            
-                                            # Store in the positions dict for later relationship building (always update with latest seen/assigned)
-                                            equipment_class_positions[eq_class_name] = default_pos
-                                        else:
-                                            # Check if it already has a position set by other means maybe?
-                                            existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-                                            if existing_pos is not None and eq_class_name not in equipment_class_positions:
-                                                equipment_class_positions[eq_class_name] = existing_pos
-                                                pop_logger.debug(f"Class {eq_class_name} already had sequence position {existing_pos}, adding to tracking.")
-                                            # else: # Reduce noise
-                                            #      pop_logger.debug(f"No default sequence position in map for {eq_class_name}")
+                                    default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_name)
+                                    if default_pos is not None:
+                                        existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+                                        # Assign only if not already set or if forced update is desired
+                                        if existing_pos is None or existing_pos != default_pos:
+                                            pop_logger.debug(f"Assigning default sequence position {default_pos} to class {eq_class_name} ({eq_class_ind.name})")
+                                            setattr(eq_class_ind, "defaultSequencePosition", default_pos)
+                                        # Store in the positions dict for later relationship building
+                                        equipment_class_positions[eq_class_name] = default_pos
+                                    else:
+                                        # Check if it already has a position set by other means
+                                        existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+                                        if existing_pos is not None and eq_class_name not in equipment_class_positions:
+                                             equipment_class_positions[eq_class_name] = existing_pos
+                                             pop_logger.debug(f"Class {eq_class_name} already had sequence position {existing_pos}, adding to tracking.")
 
                                 else:
                                     pop_logger.error(f"Row {row_num}: Failed to create/retrieve EquipmentClass individual for name '{eq_class_name}'.")
@@ -1153,8 +1066,7 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
 
                     else:
                         pop_logger.error(f"Row {row_num}: Failed to create Equipment individual for ID '{eq_id_str}'.")
-                        # Cannot proceed with this row if resource cannot be determined
-                        raise ValueError("Failed to create Equipment individual.")
+                        raise ValueError("Failed to create Equipment individual.") # Fatal for this row
 
                 else:
                     pop_logger.warning(f"Row {row_num}: Could not determine resource. EQUIPMENT_TYPE='{eq_type}', EQUIPMENT_ID='{eq_id_raw}', LINE_NAME='{line_id}'. Skipping row.")
@@ -1168,59 +1080,57 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
 
                 # --- Create Material Individual ---
                 mat_id = safe_cast(row.get('MATERIAL_ID'), str)
-                mat_ind = None
+                mat_ind: Optional[Thing] = None
                 if mat_id and cls_Material:
-                    mat_desc = safe_cast(row.get('SHORT_MATERIAL_ID'), str) # Use short ID as description? Check spec.
+                    mat_desc = safe_cast(row.get('SHORT_MATERIAL_ID'), str)
                     mat_labels = [mat_id]
                     if mat_desc: mat_labels.append(mat_desc)
                     mat_ind = get_or_create_individual(cls_Material, mat_id, onto, add_labels=mat_labels)
                     if mat_ind:
-                        # Set Material properties (Functional where applicable)
+                        # Set Material properties
                         prop_materialId = prop_map.get("materialId")
-                        if prop_materialId and mat_ind.materialId != mat_id:
-                             mat_ind.materialId = mat_id # Functional
+                        if prop_materialId: # Functional
+                            if getattr(mat_ind, "materialId", None) != mat_id:
+                                setattr(mat_ind, "materialId", mat_id)
 
                         prop_materialDescription = prop_map.get("materialDescription")
-                        if prop_materialDescription and mat_desc:
-                            # Non-functional - append, checking first
+                        if prop_materialDescription and mat_desc: # Non-functional
                             if mat_desc not in mat_ind.materialDescription:
                                 mat_ind.materialDescription.append(mat_desc)
 
                         prop_sizeType = prop_map.get("sizeType")
-                        if prop_sizeType:
+                        if prop_sizeType: # Non-functional
                             size = safe_cast(row.get('SIZE_TYPE'), str)
-                            if size:
-                                # Non-functional - append, checking first
-                                if size not in mat_ind.sizeType:
-                                     mat_ind.sizeType.append(size)
+                            if size and size not in mat_ind.sizeType:
+                                 mat_ind.sizeType.append(size)
 
                         prop_materialUOM = prop_map.get("materialUOM")
-                        if prop_materialUOM:
+                        if prop_materialUOM: # Functional
                             material_uom = safe_cast(row.get('MATERIAL_UOM'), str)
-                            if material_uom and mat_ind.materialUOM != material_uom:
-                                mat_ind.materialUOM = material_uom # Functional
+                            if material_uom and getattr(mat_ind, "materialUOM", None) != material_uom:
+                                 setattr(mat_ind, "materialUOM", material_uom)
 
                         prop_standardUOM = prop_map.get("standardUOM")
-                        if prop_standardUOM:
+                        if prop_standardUOM: # Functional
                             uom_st = safe_cast(row.get('UOM_ST'), str) or safe_cast(row.get('UOM_ST_SAP'), str)
-                            if uom_st and mat_ind.standardUOM != uom_st:
-                                mat_ind.standardUOM = uom_st # Functional
+                            if uom_st and getattr(mat_ind, "standardUOM", None) != uom_st:
+                                 setattr(mat_ind, "standardUOM", uom_st)
 
                         prop_targetProductUOM = prop_map.get("targetProductUOM")
-                        if prop_targetProductUOM:
+                        if prop_targetProductUOM: # Functional
                             tp_uom = safe_cast(row.get('TP_UOM'), str)
-                            if tp_uom and mat_ind.targetProductUOM != tp_uom:
-                                mat_ind.targetProductUOM = tp_uom # Functional
+                            if tp_uom and getattr(mat_ind, "targetProductUOM", None) != tp_uom:
+                                 setattr(mat_ind, "targetProductUOM", tp_uom)
 
                         prop_conversionFactor = prop_map.get("conversionFactor")
-                        if prop_conversionFactor:
+                        if prop_conversionFactor: # Functional
                             factor = safe_cast(row.get('PRIMARY_CONV_FACTOR'), float)
-                            if factor is not None and mat_ind.conversionFactor != factor:
-                                mat_ind.conversionFactor = factor # Functional
+                            if factor is not None and getattr(mat_ind, "conversionFactor", None) != factor:
+                                 setattr(mat_ind, "conversionFactor", factor)
 
                 # --- Create Production Request Individual ---
                 req_id = safe_cast(row.get('PRODUCTION_ORDER_ID'), str)
-                req_ind = None
+                req_ind: Optional[Thing] = None
                 if req_id and cls_ProductionRequest:
                     req_desc = safe_cast(row.get('PRODUCTION_ORDER_DESC'), str)
                     req_labels = [f"ID:{req_id}"]
@@ -1228,173 +1138,154 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                     req_ind = get_or_create_individual(cls_ProductionRequest, req_id, onto, add_labels=req_labels)
                     if req_ind:
                         prop_requestId = prop_map.get("requestId")
-                        if prop_requestId and req_ind.requestId != req_id:
-                            req_ind.requestId = req_id # Functional
+                        if prop_requestId: # Functional
+                            if getattr(req_ind, "requestId", None) != req_id:
+                                setattr(req_ind, "requestId", req_id)
 
                         prop_requestDescription = prop_map.get("requestDescription")
-                        if prop_requestDescription and req_desc:
-                            # Non-functional - append, checking first
+                        if prop_requestDescription and req_desc: # Non-functional
                             if req_desc not in req_ind.requestDescription:
                                  req_ind.requestDescription.append(req_desc)
 
                         prop_requestRate = prop_map.get("requestRate")
-                        if prop_requestRate:
+                        if prop_requestRate: # Functional
                             rate = safe_cast(row.get('PRODUCTION_ORDER_RATE'), float)
-                            if rate is not None and req_ind.requestRate != rate:
-                                req_ind.requestRate = rate # Functional
+                            if rate is not None and getattr(req_ind, "requestRate", None) != rate:
+                                 setattr(req_ind, "requestRate", rate)
 
                         prop_requestRateUOM = prop_map.get("requestRateUOM")
-                        if prop_requestRateUOM:
+                        if prop_requestRateUOM: # Functional
                             rate_uom = safe_cast(row.get('PRODUCTION_ORDER_UOM'), str)
-                            if rate_uom and req_ind.requestRateUOM != rate_uom:
-                                req_ind.requestRateUOM = rate_uom # Functional
+                            if rate_uom and getattr(req_ind, "requestRateUOM", None) != rate_uom:
+                                 setattr(req_ind, "requestRateUOM", rate_uom)
 
                         # Link ProductionRequest to Material if needed (NON-FUNCTIONAL)
-                        prop_usesMaterialReq = prop_map.get("usesMaterial") # Property can apply to multiple classes
+                        prop_usesMaterialReq = prop_map.get("usesMaterial")
                         if prop_usesMaterialReq and mat_ind:
-                             # Check if Material is already linked to this Request
                              if mat_ind not in req_ind.usesMaterial:
-                                  req_ind.usesMaterial.append(mat_ind)
+                                 req_ind.usesMaterial.append(mat_ind)
 
 
                 # --- Create Shift Individual ---
                 shift_name = safe_cast(row.get('SHIFT_NAME'), str)
-                shift_ind = None
+                shift_ind: Optional[Thing] = None
                 if shift_name and cls_Shift:
-                    # Assume shift name is unique enough as base ID
                     shift_labels = [shift_name]
                     shift_ind = get_or_create_individual(cls_Shift, shift_name, onto, add_labels=shift_labels)
                     if shift_ind:
-                        # Populate shift details (only once needed per shift, Functional properties)
+                        # Populate shift details (Functional properties, assign only if needed/missing)
                         prop_shiftId = prop_map.get("shiftId")
-                        if prop_shiftId and shift_ind.shiftId != shift_name:
-                            shift_ind.shiftId = shift_name
+                        if prop_shiftId and getattr(shift_ind, "shiftId", None) != shift_name:
+                             setattr(shift_ind, "shiftId", shift_name)
 
                         prop_shiftStartTime = prop_map.get("shiftStartTime")
-                        if prop_shiftStartTime:
+                        if prop_shiftStartTime and getattr(shift_ind, "shiftStartTime", None) is None:
                             st = safe_cast(row.get('SHIFT_START_DATE_LOC'), datetime)
-                            if st and shift_ind.shiftStartTime is None: # Assign only if not set yet
-                                shift_ind.shiftStartTime = st
+                            if st: setattr(shift_ind, "shiftStartTime", st)
 
                         prop_shiftEndTime = prop_map.get("shiftEndTime")
-                        if prop_shiftEndTime:
+                        if prop_shiftEndTime and getattr(shift_ind, "shiftEndTime", None) is None:
                             et = safe_cast(row.get('SHIFT_END_DATE_LOC'), datetime)
-                            if et and shift_ind.shiftEndTime is None: # Assign only if not set yet
-                                shift_ind.shiftEndTime = et
+                            if et: setattr(shift_ind, "shiftEndTime", et)
 
                         prop_shiftDurationMinutes = prop_map.get("shiftDurationMinutes")
-                        if prop_shiftDurationMinutes:
+                        if prop_shiftDurationMinutes and getattr(shift_ind, "shiftDurationMinutes", None) is None:
                             dur = safe_cast(row.get('SHIFT_DURATION_MIN'), float)
-                            if dur is not None and shift_ind.shiftDurationMinutes is None: # Assign only if not set yet
-                                shift_ind.shiftDurationMinutes = dur
+                            if dur is not None: setattr(shift_ind, "shiftDurationMinutes", dur)
 
 
                 # --- Create Operational State and Reason Individuals ---
-                # First create OperationalState
+                # OperationalState
                 state_desc = safe_cast(row.get('UTIL_STATE_DESCRIPTION'), str)
-                state_ind = None
+                state_ind: Optional[Thing] = None
                 if state_desc and cls_OperationalState:
                     state_labels = [state_desc]
-                    # Create unique state instance based on description
                     state_ind = get_or_create_individual(cls_OperationalState, state_desc, onto, add_labels=state_labels)
                     if state_ind:
                         prop_stateDescription = prop_map.get("stateDescription")
-                        # stateDescription is non-functional? Append, check first
-                        if prop_stateDescription and state_desc:
+                        if prop_stateDescription and state_desc: # Non-functional
                              if state_desc not in state_ind.stateDescription:
-                                  state_ind.stateDescription.append(state_desc)
+                                 state_ind.stateDescription.append(state_desc)
 
-                # Then create OperationalReason as a separate individual
+                # OperationalReason
                 reason_desc = safe_cast(row.get('UTIL_REASON_DESCRIPTION'), str)
-                reason_ind = None
+                reason_ind: Optional[Thing] = None
                 if reason_desc and cls_OperationalReason:
                     reason_labels = [reason_desc]
-                    # Create unique reason instance based on description
                     reason_ind = get_or_create_individual(cls_OperationalReason, reason_desc, onto, add_labels=reason_labels)
                     if reason_ind:
                         prop_reasonDescription = prop_map.get("reasonDescription")
-                        # Add ReasonDescription (non-functional) - append, check first
-                        if prop_reasonDescription and reason_desc:
-                            if reason_desc not in reason_ind.reasonDescription:
+                        if prop_reasonDescription and reason_desc: # Non-functional
+                             if reason_desc not in reason_ind.reasonDescription:
                                  reason_ind.reasonDescription.append(reason_desc)
 
-                        # Handle AltReasonDescription with language tag based on plant country
+                        # Handle AltReasonDescription with language tag
                         prop_altReasonDescription = prop_map.get("altReasonDescription")
                         if prop_altReasonDescription:
                             alt_reason = safe_cast(row.get('UTIL_ALT_LANGUAGE_REASON'), str)
                             if alt_reason:
-                                # Get the plant country to determine language
                                 plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
-                                # Map country to language tag
                                 lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE)
                                 if lang_tag:
-                                    # Create localized string with language tag
                                     try:
                                         alt_reason_locstr = locstr(alt_reason, lang=lang_tag)
-                                        # Use append for non-functional property, check first
+                                        # Append non-functional property, check first
                                         if alt_reason_locstr not in reason_ind.altReasonDescription:
-                                             reason_ind.altReasonDescription.append(alt_reason_locstr)
-                                             pop_logger.debug(f"Added localized reason description '{alt_reason}' with language '{lang_tag}' to {reason_ind.name}")
-                                    except Exception as e:
-                                        pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e}")
-                                        # Fallback to plain string if locstr fails - check first
+                                            reason_ind.altReasonDescription.append(alt_reason_locstr)
+                                            pop_logger.debug(f"Added localized reason '{alt_reason}'@{lang_tag} to {reason_ind.name}")
+                                    except Exception as e_loc:
+                                        pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e_loc}")
+                                        # Fallback to plain string
                                         if alt_reason not in reason_ind.altReasonDescription:
                                              reason_ind.altReasonDescription.append(alt_reason)
-                                else:
-                                    # No language mapping found, use plain string - check first
-                                    pop_logger.warning(f"No language mapping for country '{plant_country}', using plain string")
+                                else: # No language mapping found
+                                    pop_logger.warning(f"No language mapping for country '{plant_country}', using plain string for alt reason.")
                                     if alt_reason not in reason_ind.altReasonDescription:
-                                         reason_ind.altReasonDescription.append(alt_reason)
+                                        reason_ind.altReasonDescription.append(alt_reason)
 
                         prop_downtimeDriver = prop_map.get("downtimeDriver")
-                        # Handle DowntimeDriver (non-functional) - append, check first
-                        if prop_downtimeDriver:
+                        if prop_downtimeDriver: # Non-functional
                             dt_driver = safe_cast(row.get('DOWNTIME_DRIVER'), str)
-                            if dt_driver:
-                                if dt_driver not in reason_ind.downtimeDriver:
-                                     reason_ind.downtimeDriver.append(dt_driver)
+                            if dt_driver and dt_driver not in reason_ind.downtimeDriver:
+                                 reason_ind.downtimeDriver.append(dt_driver)
 
                         prop_changeoverType = prop_map.get("changeoverType")
-                        # Handle ChangeoverType (non-functional) - append, check first
-                        if prop_changeoverType:
-                            # Handle combined CO_TYPE columns (check spec logic)
+                        if prop_changeoverType: # Non-functional
                             co_type = safe_cast(row.get('CO_TYPE'), str) or safe_cast(row.get('CO_ORIGINAL_TYPE'), str)
-                            if co_type:
-                                if co_type not in reason_ind.changeoverType:
-                                     reason_ind.changeoverType.append(co_type)
+                            if co_type and co_type not in reason_ind.changeoverType:
+                                 reason_ind.changeoverType.append(co_type)
 
 
                 # --- Create Time Interval ---
                 start_time = safe_cast(row.get('JOB_START_TIME_LOC'), datetime)
                 end_time = safe_cast(row.get('JOB_END_TIME_LOC'), datetime)
-                time_interval_ind = None
+                time_interval_ind: Optional[Thing] = None
                 if start_time and cls_TimeInterval:
-                    # Create a unique TimeInterval for each event record using resource and start time
-                    # Format datetime for IRI compatibility (basic example)
+                    # Create a unique TimeInterval using resource, start time, and row number
                     start_time_str = start_time.strftime('%Y%m%dT%H%M%S%f')[:-3] # Milliseconds precision
-                    interval_base = f"Interval_{resource_base_id}_{start_time_str}_{row_num}" # Add row num for absolute uniqueness
+                    interval_base = f"Interval_{resource_base_id}_{start_time_str}_{row_num}"
                     interval_labels = [f"Interval for {resource_base_id} starting {start_time}"]
                     time_interval_ind = get_or_create_individual(cls_TimeInterval, interval_base, onto, add_labels=interval_labels)
                     if time_interval_ind:
                         prop_startTime = prop_map.get("startTime")
-                        if prop_startTime and time_interval_ind.startTime != start_time:
-                            time_interval_ind.startTime = start_time # Functional
+                        if prop_startTime: # Functional
+                            if getattr(time_interval_ind, "startTime", None) != start_time:
+                                setattr(time_interval_ind, "startTime", start_time)
                         prop_endTime = prop_map.get("endTime")
-                        if prop_endTime and end_time and time_interval_ind.endTime != end_time:
-                            time_interval_ind.endTime = end_time # Functional
-                        # Calculate duration? Spec doesn't require it directly on TimeInterval here
+                        if prop_endTime and end_time: # Functional
+                             if getattr(time_interval_ind, "endTime", None) != end_time:
+                                 setattr(time_interval_ind, "endTime", end_time)
                     else:
                         pop_logger.error(f"Row {row_num}: Failed to create TimeInterval individual.")
-                        # Decide if this is fatal for the row
-                        raise ValueError("Failed to create TimeInterval.")
+                        raise ValueError("Failed to create TimeInterval.") # Fatal for this row
                 elif not start_time:
                     pop_logger.error(f"Row {row_num}: Missing JOB_START_TIME_LOC, cannot create TimeInterval or EventRecord. Skipping row.")
                     failed_rows += 1
                     continue # Cannot create event without start time
 
                 # --- Create Event Record Individual ---
-                # Use the same base name as the time interval for association
-                event_record_base = f"Event_{interval_base}" # Link event name to interval name
+                # Use a name derived from the interval base for clear association
+                event_record_base = f"Event_{interval_base}"
                 event_labels = [f"Event for {resource_base_id} at {start_time}"]
                 event_ind = get_or_create_individual(cls_EventRecord, event_record_base, onto, add_labels=event_labels)
 
@@ -1405,29 +1296,24 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
 
                 # --- Populate EventRecord Data Properties ---
                 prop_operationType = prop_map.get("operationType")
-                if prop_operationType:
+                if prop_operationType: # Non-functional
                     op_type = safe_cast(row.get('OPERA_TYPE'), str)
-                    if op_type:
-                        # Non-functional - append, check first
-                        if op_type not in event_ind.operationType:
-                             event_ind.operationType.append(op_type)
+                    if op_type and op_type not in event_ind.operationType:
+                         event_ind.operationType.append(op_type)
 
                 prop_rampUpFlag = prop_map.get("rampUpFlag")
-                if prop_rampUpFlag:
-                    # Default to False if missing/invalid
+                if prop_rampUpFlag: # Functional
                     ramp_flag = safe_cast(row.get('RAMPUP_FLAG'), bool, default=False)
-                    # Direct assignment for functional property
-                    event_ind.rampUpFlag = ramp_flag
+                    if getattr(event_ind, "rampUpFlag", None) != ramp_flag:
+                         setattr(event_ind, "rampUpFlag", ramp_flag)
 
-                # Time Metrics (handle units carefully based on spec)
-                # Assuming properties expect minutes (Functional)
+                # Time Metrics (Functional)
                 prop_reportedDurationMinutes = prop_map.get("reportedDurationMinutes")
                 if prop_reportedDurationMinutes:
-                    total_time_min = safe_cast(row.get('TOTAL_TIME'), float) # Assumed minutes
-                    if total_time_min is not None and event_ind.reportedDurationMinutes != total_time_min:
-                        event_ind.reportedDurationMinutes = total_time_min
+                    total_time_min = safe_cast(row.get('TOTAL_TIME'), float)
+                    if total_time_min is not None and getattr(event_ind, "reportedDurationMinutes", None) != total_time_min:
+                         setattr(event_ind, "reportedDurationMinutes", total_time_min)
 
-                # Assign other time metrics if properties exist (Functional)
                 time_metric_cols = {
                     "businessExternalTimeMinutes": "BUSINESS_EXTERNAL_TIME",
                     "plantAvailableTimeMinutes": "PLANT_AVAILABLE_TIME",
@@ -1440,104 +1326,74 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                     if prop_obj:
                         val = safe_cast(row.get(col_name), float)
                         if val is not None:
-                             # Use getattr/setattr for dynamic assignment, check difference
-                             if getattr(event_ind, prop_name, None) != val:
+                            # Use getattr/setattr for dynamic functional assignment
+                            if getattr(event_ind, prop_name, None) != val:
                                  setattr(event_ind, prop_name, val)
 
 
                 # --- Link EventRecord to other Individuals (Object Properties) ---
-                # Use append() for non-functional, direct assignment for functional
 
-                # Link to resource (Line or Equipment) - involvesResource (NON-FUNCTIONAL per spec)
+                # Link to resource (Line or Equipment) - involvesResource (NON-FUNCTIONAL)
                 prop_involvesResource = prop_map.get("involvesResource")
                 if prop_involvesResource and resource_individual:
-                     # Use append for non-functional (even if typically 1-to-1)
-                    if resource_individual not in event_ind.involvesResource:
+                     if resource_individual not in event_ind.involvesResource:
                          event_ind.involvesResource.append(resource_individual)
                          pop_logger.debug(f"Linked {event_ind.name} involvesResource {resource_individual.name}")
 
-                # Link to ProductionRequest - associatedWithProductionRequest (NON-FUNCTIONAL per spec)
+                # Link to ProductionRequest - associatedWithProductionRequest (NON-FUNCTIONAL)
                 prop_associatedWithProductionRequest = prop_map.get("associatedWithProductionRequest")
                 if prop_associatedWithProductionRequest and req_ind:
-                     # Use append for non-functional
-                    if req_ind not in event_ind.associatedWithProductionRequest:
+                     if req_ind not in event_ind.associatedWithProductionRequest:
                          event_ind.associatedWithProductionRequest.append(req_ind)
                          pop_logger.debug(f"Linked {event_ind.name} associatedWithProductionRequest {req_ind.name}")
 
-                # Link to Material - usesMaterial (NON-FUNCTIONAL per spec)
+                # Link to Material - usesMaterial (NON-FUNCTIONAL)
                 prop_usesMaterialEvent = prop_map.get("usesMaterial")
                 if prop_usesMaterialEvent and mat_ind:
-                     # Use append for non-functional
-                    if mat_ind not in event_ind.usesMaterial:
+                     if mat_ind not in event_ind.usesMaterial:
                          event_ind.usesMaterial.append(mat_ind)
                          pop_logger.debug(f"Linked {event_ind.name} usesMaterial {mat_ind.name}")
 
-                # Link to TimeInterval - occursDuring (FUNCTIONAL per spec)
+                # Link to TimeInterval - occursDuring (FUNCTIONAL)
                 prop_occursDuring = prop_map.get("occursDuring")
                 if prop_occursDuring and time_interval_ind:
-                    is_functional = property_is_functional.get("occursDuring", True)  # Default to True if unknown
-                    if is_functional:
-                        if event_ind.occursDuring != time_interval_ind:  # Only assign if different
-                            event_ind.occursDuring = time_interval_ind  # Direct assignment for functional
-                            pop_logger.debug(f"Set functional property occursDuring for {event_ind.name} to {time_interval_ind.name}")
-                    else:
-                        if time_interval_ind not in event_ind.occursDuring:
-                            event_ind.occursDuring.append(time_interval_ind)
-                            pop_logger.debug(f"Added non-functional property occursDuring for {event_ind.name} to {time_interval_ind.name}")
+                    if getattr(event_ind, "occursDuring", None) != time_interval_ind:
+                        setattr(event_ind, "occursDuring", time_interval_ind)
+                        pop_logger.debug(f"Set functional property occursDuring for {event_ind.name} to {time_interval_ind.name}")
 
-                # Link to Shift - duringShift (FUNCTIONAL per spec)
+                # Link to Shift - duringShift (FUNCTIONAL)
                 prop_duringShift = prop_map.get("duringShift")
                 if prop_duringShift and shift_ind:
-                    is_functional = property_is_functional.get("duringShift", True)  # Default to True if unknown
-                    if is_functional:
-                        if event_ind.duringShift != shift_ind:  # Only assign if different
-                            event_ind.duringShift = shift_ind  # Direct assignment for functional
-                            pop_logger.debug(f"Set functional property duringShift for {event_ind.name} to {shift_ind.name}")
-                    else:
-                        if shift_ind not in event_ind.duringShift:
-                            event_ind.duringShift.append(shift_ind)
-                            pop_logger.debug(f"Added non-functional property duringShift for {event_ind.name} to {shift_ind.name}")
+                    if getattr(event_ind, "duringShift", None) != shift_ind:
+                        setattr(event_ind, "duringShift", shift_ind)
+                        pop_logger.debug(f"Set functional property duringShift for {event_ind.name} to {shift_ind.name}")
 
-                # Link to OperationalState - eventHasState (FUNCTIONAL per spec)
+                # Link to OperationalState - eventHasState (FUNCTIONAL)
                 prop_eventHasState = prop_map.get("eventHasState")
                 if prop_eventHasState and state_ind:
-                    is_functional = property_is_functional.get("eventHasState", True)  # Default to True if unknown
-                    if is_functional:
-                        if event_ind.eventHasState != state_ind:  # Only assign if different
-                            event_ind.eventHasState = state_ind  # Direct assignment for functional
-                            pop_logger.debug(f"Set functional property eventHasState for {event_ind.name} to {state_ind.name}")
-                    else:
-                        if state_ind not in event_ind.eventHasState:
-                            event_ind.eventHasState.append(state_ind)
-                            pop_logger.debug(f"Added non-functional property eventHasState for {event_ind.name} to {state_ind.name}")
+                    if getattr(event_ind, "eventHasState", None) != state_ind:
+                        setattr(event_ind, "eventHasState", state_ind)
+                        pop_logger.debug(f"Set functional property eventHasState for {event_ind.name} to {state_ind.name}")
 
-                # Link to OperationalReason - eventHasReason (FUNCTIONAL per spec)
+                # Link to OperationalReason - eventHasReason (FUNCTIONAL)
                 prop_eventHasReason = prop_map.get("eventHasReason")
                 if prop_eventHasReason and reason_ind:
-                    is_functional = property_is_functional.get("eventHasReason", True)  # Default to True if unknown
-                    if is_functional:
-                        if event_ind.eventHasReason != reason_ind:  # Only assign if different
-                            event_ind.eventHasReason = reason_ind  # Direct assignment for functional
-                            pop_logger.debug(f"Set functional property eventHasReason for {event_ind.name} to {reason_ind.name}")
-                    else:
-                        if reason_ind not in event_ind.eventHasReason:
-                            event_ind.eventHasReason.append(reason_ind)
-                            pop_logger.debug(f"Added non-functional property eventHasReason for {event_ind.name} to {reason_ind.name}")
+                    if getattr(event_ind, "eventHasReason", None) != reason_ind:
+                        setattr(event_ind, "eventHasReason", reason_ind)
+                        pop_logger.debug(f"Set functional property eventHasReason for {event_ind.name} to {reason_ind.name}")
 
                 # Add links to Personnel, ProcessSegment etc. if data/properties exist
 
                 successful_rows += 1
-                # pop_logger.debug(f"--- Successfully Processed Row {row_num} ---") # Can be noisy
 
             except Exception as e:
                 failed_rows += 1
-                pop_logger.error(f"Error processing data row {row_num}: {row if len(str(row)) < 500 else str(row)[:500] + '...'}") # Avoid overly long logs
-                pop_logger.exception("Exception details:") # Log traceback for debugging
+                pop_logger.error(f"Error processing data row {row_num}: {row if len(str(row)) < 500 else str(row)[:500] + '...'}")
+                pop_logger.exception("Exception details:")
 
     # Log equipment class sequence position summary
     if equipment_class_positions:
         pop_logger.info("--- Equipment Class Sequence Position Summary (from population) ---")
-        # Sort by position value for clearer output
         sorted_classes_pos = sorted(equipment_class_positions.items(), key=lambda x: x[1])
         for eq_class, position in sorted_classes_pos:
             pop_logger.info(f"Equipment Class: {eq_class} - Default Sequence Position: {position}")
@@ -1546,100 +1402,87 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         pop_logger.warning("No equipment classes with sequence positions were processed or found during population.")
 
     pop_logger.info(f"Ontology population complete. Successfully processed {successful_rows} rows, failed to process {failed_rows} rows.")
-    # Return the count of failed rows and the collected class individuals and positions
     return failed_rows, created_equipment_class_inds, equipment_class_positions
 
 
-def setup_equipment_sequence_relationships(onto, equipment_class_positions, defined_classes, prop_map, created_equipment_class_inds):
+def setup_equipment_sequence_relationships(onto: Ontology,
+                                         equipment_class_positions: Dict[str, int],
+                                         defined_classes: Dict[str, ThingClass],
+                                         prop_map: Dict[str, Optional[PropertyClass]],
+                                         created_equipment_class_inds: Dict[str, Thing]):
     """
     Establish upstream/downstream relationships between equipment *classes* based on sequence positions.
-    Uses the dictionary of created/retrieved class individuals.
-
-    Args:
-        onto: The ontology object
-        equipment_class_positions: Dictionary mapping equipment class names to their sequence positions
-        defined_classes: Dictionary of defined class objects (used for logging/checking)
-        prop_map: Dictionary mapping property names to property objects
-        created_equipment_class_inds: Dictionary mapping class name strings to their individual objects.
     """
     pop_logger.info("Setting up CLASS-LEVEL equipment sequence relationships based on position...")
 
-    # Get the CLASS-LEVEL classIsUpstreamOf property (Domain: EquipmentClass)
-    # Assuming the same property name is used but domain restricts its application
+    # Get the CLASS-LEVEL properties
     prop_classIsUpstreamOf = prop_map.get("classIsUpstreamOf")
-    prop_classIsDownstreamOf = prop_map.get("classIsDownstreamOf") # Get the inverse property
+    prop_classIsDownstreamOf = prop_map.get("classIsDownstreamOf")
 
     if not prop_classIsUpstreamOf:
         pop_logger.error("Cannot establish CLASS-LEVEL sequence relationships: 'classIsUpstreamOf' property not found in prop_map.")
         return
-
     if not prop_classIsDownstreamOf:
         pop_logger.warning("'classIsDownstreamOf' inverse property not found in prop_map. Only forward relationships will be set.")
 
-    # Check if the fetched property has the correct domain (optional sanity check)
     cls_EquipmentClass = defined_classes.get("EquipmentClass")
     if cls_EquipmentClass and cls_EquipmentClass not in prop_classIsUpstreamOf.domain:
-         pop_logger.warning(f"Property 'classIsUpstreamOf' ({prop_classIsUpstreamOf}) does not have EquipmentClass in its domain {prop_classIsUpstreamOf.domain}. Class relationships might not be set correctly.")
+         pop_logger.warning(f"Property 'classIsUpstreamOf' ({prop_classIsUpstreamOf}) does not have EquipmentClass in its domain {prop_classIsUpstreamOf.domain}.")
     elif not cls_EquipmentClass:
          pop_logger.warning("EquipmentClass not found in defined_classes, cannot verify classIsUpstreamOf domain.")
-
 
     if not created_equipment_class_inds:
         pop_logger.warning("No created EquipmentClass individuals provided. Cannot establish class relationships.")
         return
-
-    # Sort equipment classes by position using the passed dictionary
     if not equipment_class_positions:
          pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish class relationships.")
          return
-    sorted_classes = sorted(equipment_class_positions.items(), key=lambda x: x[1])
 
+    sorted_classes = sorted(equipment_class_positions.items(), key=lambda x: x[1])
     if len(sorted_classes) < 2:
         pop_logger.warning("Not enough equipment classes with sequence positions (< 2) to establish relationships.")
         return
 
-    # Create upstream/downstream relationships based on sequence order using the provided dict
+    # Create relationships based on sequence order
     relationships_created = 0
     with onto:
         for i in range(len(sorted_classes) - 1):
             upstream_class_name, up_pos = sorted_classes[i]
             downstream_class_name, down_pos = sorted_classes[i + 1]
 
-            # Get individuals directly from the dictionary
             upstream_ind = created_equipment_class_inds.get(upstream_class_name)
             downstream_ind = created_equipment_class_inds.get(downstream_class_name)
 
             if not upstream_ind:
-                pop_logger.warning(f"Sequence setup: Upstream class individual '{upstream_class_name}' not found in provided dictionary.")
+                pop_logger.warning(f"Sequence setup: Upstream class individual '{upstream_class_name}' not found.")
                 continue
             if not downstream_ind:
-                pop_logger.warning(f"Sequence setup: Downstream class individual '{downstream_class_name}' not found in provided dictionary.")
+                pop_logger.warning(f"Sequence setup: Downstream class individual '{downstream_class_name}' not found.")
                 continue
 
-            pop_logger.debug(f"Found upstream: {upstream_ind.name} (Pos {up_pos}), downstream: {downstream_ind.name} (Pos {down_pos})") # DEBUG LOG ADDED
+            pop_logger.debug(f"Found upstream class: {upstream_ind.name} (Pos {up_pos}), downstream class: {downstream_ind.name} (Pos {down_pos})")
 
-            # Set upstream/downstream relationships (classIsUpstreamOf is NOT functional per spec)
-            # Ensure the property is treated correctly for EquipmentClass individuals
+            # Set relationships (classIsUpstreamOf is NOT functional per spec)
             try:
                 # Check if relationship already exists before appending
-                current_downstream = prop_classIsUpstreamOf[upstream_ind]
+                current_downstream = getattr(upstream_ind, "classIsUpstreamOf", []) # Use getattr for safety
                 if downstream_ind not in current_downstream:
                     pop_logger.debug(f"Attempting CLASS relationship: {upstream_ind.name} classIsUpstreamOf {downstream_ind.name}")
-                    prop_classIsUpstreamOf[upstream_ind].append(downstream_ind)
+                    upstream_ind.classIsUpstreamOf.append(downstream_ind) # Use direct access for append
                     pop_logger.debug(f"Set CLASS relationship: {upstream_class_name} ({upstream_ind.name}) classIsUpstreamOf {downstream_class_name} ({downstream_ind.name})")
-                    
-                    # Explicitly set the inverse relationship
+
+                    # Explicitly set the inverse relationship if available
                     if prop_classIsDownstreamOf:
-                        if upstream_ind not in prop_classIsDownstreamOf[downstream_ind]:
-                            prop_classIsDownstreamOf[downstream_ind].append(upstream_ind)
+                        if upstream_ind not in getattr(downstream_ind, "classIsDownstreamOf", []):
+                            downstream_ind.classIsDownstreamOf.append(upstream_ind)
                             pop_logger.debug(f"Set INVERSE CLASS relationship: {downstream_class_name} ({downstream_ind.name}) classIsDownstreamOf {upstream_class_name} ({upstream_ind.name})")
-                    
+
                     relationships_created += 1
                 else:
                     pop_logger.debug(f"CLASS relationship already exists: {upstream_class_name} classIsUpstreamOf {downstream_class_name}")
 
             except Exception as e:
-                 pop_logger.error(f"Error setting class relationship {upstream_class_name} -> {downstream_class_name}: {e}")
+                pop_logger.error(f"Error setting class relationship {upstream_class_name} -> {downstream_class_name}: {e}")
 
     pop_logger.info(f"Created {relationships_created} CLASS-LEVEL upstream/downstream relationships.")
 
@@ -1650,7 +1493,6 @@ def setup_equipment_sequence_relationships(onto, equipment_class_positions, defi
         for i in range(len(sorted_classes) - 1):
             upstream_class_name, _ = sorted_classes[i]
             downstream_class_name, _ = sorted_classes[i + 1]
-            # Verify individuals were found for printing
             if created_equipment_class_inds.get(upstream_class_name) and created_equipment_class_inds.get(downstream_class_name):
                 print(f"  {upstream_class_name} → {downstream_class_name}")
     else:
@@ -1658,30 +1500,24 @@ def setup_equipment_sequence_relationships(onto, equipment_class_positions, defi
     print(f"Total classes with positions considered: {len(sorted_classes)}")
 
 
-def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equipment_class_positions):
+def setup_equipment_instance_relationships(onto: Ontology,
+                                         defined_classes: Dict[str, ThingClass],
+                                         prop_map: Dict[str, Optional[PropertyClass]],
+                                         equipment_class_positions: Dict[str, int]):
     """
     Establish upstream/downstream relationships between equipment *instances* within the same production line.
-    This ensures that a Filler on Line A is only upstream of a Cartoner on Line A, not a Cartoner on Line B.
-
-    Args:
-        onto: The ontology object
-        defined_classes: Dictionary of defined class objects
-        prop_map: Dictionary mapping property names to property objects
-        equipment_class_positions: Dictionary mapping equipment class names to their sequence positions
     """
     pop_logger.info("Setting up INSTANCE-LEVEL equipment relationships within production lines...")
 
     # Get the required classes and properties
     cls_Equipment = defined_classes.get("Equipment")
     cls_ProductionLine = defined_classes.get("ProductionLine")
-    cls_EquipmentClass = defined_classes.get("EquipmentClass") # Needed for lookup via memberOfClass
-    prop_isPartOfProductionLine = prop_map.get("isPartOfProductionLine") # Non-functional
-    prop_memberOfClass = prop_map.get("memberOfClass") # Functional
-    prop_equipmentClassId = prop_map.get("equipmentClassId") # Functional DataProp
-
-    # Equipment-level equipmentIsUpstreamOf property (Domain: Equipment) (NON-FUNCTIONAL per spec)
+    cls_EquipmentClass = defined_classes.get("EquipmentClass")
+    prop_isPartOfProductionLine = prop_map.get("isPartOfProductionLine")
+    prop_memberOfClass = prop_map.get("memberOfClass")
+    prop_equipmentClassId = prop_map.get("equipmentClassId")
     prop_equipment_isUpstreamOf = prop_map.get("equipmentIsUpstreamOf")
-    prop_equipment_isDownstreamOf = prop_map.get("equipmentIsDownstreamOf") # Get the inverse property
+    prop_equipment_isDownstreamOf = prop_map.get("equipmentIsDownstreamOf")
 
     if not all([cls_Equipment, cls_ProductionLine, cls_EquipmentClass,
                 prop_isPartOfProductionLine, prop_memberOfClass, prop_equipmentClassId,
@@ -1690,13 +1526,11 @@ def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equi
         return
 
     if not prop_equipment_isDownstreamOf:
-        pop_logger.warning("'equipmentIsDownstreamOf' inverse property not found in prop_map. Only forward relationships will be set.")
+        pop_logger.warning("'equipmentIsDownstreamOf' inverse property not found in prop_map. Only forward instance relationships will be set.")
 
-    # Verify the domain of the fetched equipmentIsUpstreamOf property includes Equipment
     if cls_Equipment not in prop_equipment_isUpstreamOf.domain:
-         pop_logger.warning(f"Property 'equipmentIsUpstreamOf' ({prop_equipment_isUpstreamOf}) does not have Equipment in its domain {prop_equipment_isUpstreamOf.domain}. Instance relationships might not be set correctly.")
+         pop_logger.warning(f"Property 'equipmentIsUpstreamOf' ({prop_equipment_isUpstreamOf}) does not have Equipment in its domain {prop_equipment_isUpstreamOf.domain}.")
 
-    # Sort equipment classes by position
     if not equipment_class_positions:
          pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish instance relationships.")
          return
@@ -1705,70 +1539,59 @@ def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equi
         pop_logger.warning("Not enough equipment classes with sequence positions (< 2) to establish instance relationships.")
         return
 
-    # Get all production lines
-    production_lines = list(onto.search(type=cls_ProductionLine))
-    if not production_lines:
-        pop_logger.warning("No production lines found to establish equipment instance relationships within.")
-        return
-
-    # Dictionary to store equipment by line and class name
-    line_equipment_map = {}  # {line_individual: {class_name_str: [equipment_instances]}}
-
     # Group equipment instances by line and class name
     pop_logger.debug("Grouping equipment instances by production line and class name...")
+    line_equipment_map: Dict[Thing, Dict[str, List[Thing]]] = {} # {line_individual: {class_name_str: [equipment_instances]}}
+
     for equipment_inst in onto.search(type=cls_Equipment):
-        # Get the line this equipment belongs to (Non-functional, but usually 1 in this context)
-        equipment_lines = equipment_inst.isPartOfProductionLine
+        # Get the line(s) this equipment belongs to (Non-functional)
+        equipment_lines = getattr(equipment_inst, "isPartOfProductionLine", [])
         if not equipment_lines:
-            pop_logger.debug(f"Equipment {equipment_inst.name} is not linked to any ProductionLine via isPartOfProductionLine. Skipping.")
+            pop_logger.debug(f"Equipment {equipment_inst.name} is not linked to any ProductionLine. Skipping.")
             continue
-        # For simplicity, assume equipment belongs to only one line for sequencing. Take the first.
+        # Assume equipment belongs to only one line for sequencing.
         if len(equipment_lines) > 1:
             pop_logger.warning(f"Equipment {equipment_inst.name} linked to multiple lines: {[l.name for l in equipment_lines]}. Using first line '{equipment_lines[0].name}' for sequencing.")
         equipment_line = equipment_lines[0]
-        if not isinstance(equipment_line, cls_ProductionLine): # Sanity check
-            pop_logger.warning(f"Equipment {equipment_inst.name} has isPartOfProductionLine value '{equipment_line}' which is not a ProductionLine instance. Skipping.")
+        if not isinstance(equipment_line, cls_ProductionLine):
+            pop_logger.warning(f"Equipment {equipment_inst.name} linked to non-ProductionLine '{equipment_line}'. Skipping.")
             continue
 
         # Get the EquipmentClass this equipment belongs to (Functional)
         equipment_class_ind = getattr(equipment_inst, "memberOfClass", None)
         if not equipment_class_ind or not isinstance(equipment_class_ind, cls_EquipmentClass):
-             pop_logger.debug(f"Equipment {equipment_inst.name} is not linked to an EquipmentClass via memberOfClass. Skipping.")
-             continue
-        pop_logger.debug(f"Retrieved EquipmentClass {equipment_class_ind.name} for Equipment {equipment_inst.name} via memberOfClass.") # DEBUG LOG ADDED
+              pop_logger.debug(f"Equipment {equipment_inst.name} is not linked to an EquipmentClass. Skipping.")
+              continue
 
-        # Get the class name string from the EquipmentClass individual (Functional DataProp)
+        # Get the class name string from the EquipmentClass individual (Functional)
         class_name_str = getattr(equipment_class_ind, "equipmentClassId", None)
         if not class_name_str:
             pop_logger.warning(f"EquipmentClass {equipment_class_ind.name} (linked from {equipment_inst.name}) is missing 'equipmentClassId'. Skipping.")
             continue
-        pop_logger.debug(f"Retrieved equipmentClassId '{class_name_str}' from {equipment_class_ind.name}.") # DEBUG LOG ADDED
 
         # Check if this class name is in our sequence map
         if class_name_str not in equipment_class_positions:
-             pop_logger.debug(f"Equipment {equipment_inst.name} belongs to class '{class_name_str}' which is not in the sequence position map. Skipping.")
-             continue
+              pop_logger.debug(f"Equipment {equipment_inst.name}'s class '{class_name_str}' not in sequence map. Skipping.")
+              continue
 
-        # Add equipment to the map, keyed by line individual
+        # Add equipment to the map
         if equipment_line not in line_equipment_map:
             line_equipment_map[equipment_line] = {}
         if class_name_str not in line_equipment_map[equipment_line]:
             line_equipment_map[equipment_line][class_name_str] = []
 
-        # Avoid adding duplicates if script runs multiple times on same data somehow
         if equipment_inst not in line_equipment_map[equipment_line][class_name_str]:
             line_equipment_map[equipment_line][class_name_str].append(equipment_inst)
             pop_logger.debug(f"Mapped Equipment {equipment_inst.name} to Line {equipment_line.name} under Class '{class_name_str}'")
 
     # Create instance-level relationships within each line
     total_relationships = 0
-    line_relationship_counts = {} # Track per line
-
+    line_relationship_counts: Dict[str, int] = {}
     pop_logger.info(f"Found {len(line_equipment_map)} lines with sequenced equipment.")
 
     with onto:
         for line_ind, class_equipment_map in line_equipment_map.items():
-            line_id_str = getattr(line_ind, "lineId", line_ind.name) # Get readable line ID
+            line_id_str = getattr(line_ind, "lineId", line_ind.name)
             line_relationships = 0
             pop_logger.debug(f"Processing equipment instance relationships for line: {line_id_str}")
 
@@ -1777,35 +1600,30 @@ def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equi
                 upstream_class_name, _ = sorted_classes[i]
                 downstream_class_name, _ = sorted_classes[i + 1]
 
-                # Get the equipment instances for these classes ON THIS LINE
                 upstream_equipment_on_line = class_equipment_map.get(upstream_class_name, [])
                 downstream_equipment_on_line = class_equipment_map.get(downstream_class_name, [])
 
                 if not upstream_equipment_on_line or not downstream_equipment_on_line:
-                    # pop_logger.debug(f"Line {line_id_str}: Skipping pair ({upstream_class_name}, {downstream_class_name}) - one or both have no instances on this line.")
-                    continue
+                    continue # Skip pair if one class has no instances on this line
 
                 # Create relationships between all upstream instances and all downstream instances ON THIS LINE
                 for upstream_eq in upstream_equipment_on_line:
                     for downstream_eq in downstream_equipment_on_line:
-                        # Ensure the property is applied to Equipment individuals
                         # equipmentIsUpstreamOf is NON-FUNCTIONAL per spec, use append
                         try:
-                            current_downstream_rels = prop_equipment_isUpstreamOf[upstream_eq]
+                            current_downstream_rels = getattr(upstream_eq, "equipmentIsUpstreamOf", [])
                             if downstream_eq not in current_downstream_rels:
                                 pop_logger.debug(f"Attempting INSTANCE relationship: {upstream_eq.name} equipmentIsUpstreamOf {downstream_eq.name}")
-                                prop_equipment_isUpstreamOf[upstream_eq].append(downstream_eq)
-                                
+                                upstream_eq.equipmentIsUpstreamOf.append(downstream_eq)
+
                                 # Explicitly set the inverse relationship
                                 if prop_equipment_isDownstreamOf:
-                                    if upstream_eq not in prop_equipment_isDownstreamOf[downstream_eq]:
-                                        prop_equipment_isDownstreamOf[downstream_eq].append(upstream_eq)
+                                    if upstream_eq not in getattr(downstream_eq, "equipmentIsDownstreamOf", []):
+                                        downstream_eq.equipmentIsDownstreamOf.append(upstream_eq)
                                         pop_logger.debug(f"Set INVERSE INSTANCE relationship: {downstream_eq.name} equipmentIsDownstreamOf {upstream_eq.name}")
-                                
+
                                 line_relationships += 1
                                 pop_logger.debug(f"Set INSTANCE relationship: {upstream_eq.name} equipmentIsUpstreamOf {downstream_eq.name} on line {line_id_str}")
-                            # else:
-                                # pop_logger.debug(f"INSTANCE relationship already exists: {upstream_eq.name} equipmentIsUpstreamOf {downstream_eq.name}")
 
                         except Exception as e:
                             pop_logger.error(f"Error setting instance relationship {upstream_eq.name} -> {downstream_eq.name} on line {line_id_str}: {e}")
@@ -1821,7 +1639,6 @@ def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equi
     if total_relationships > 0:
         pop_logger.info(f"Created {total_relationships} equipment instance relationships across {len(line_relationship_counts)} production lines.")
         print(f"Created {total_relationships} equipment instance relationships on {len(line_relationship_counts)} lines:")
-        # Sort lines for consistent output
         for line_id_str, count in sorted(line_relationship_counts.items()):
             print(f"  Line {line_id_str}: {count} relationships")
     else:
@@ -1830,58 +1647,47 @@ def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equi
         print("Possible reasons: Equipment not linked to lines/classes, missing sequence positions, or no adjacent equipment found on the same line.")
 
 #======================================================================#
-#             create_ontology.py Module Code                         #
+#               create_ontology.py Module Code (Main)                #
 #======================================================================#
 
-def read_data(data_file_path):
+def read_data(data_file_path: str) -> List[Dict[str, str]]:
     """Reads the operational data CSV file."""
     main_logger.info(f"Reading data file: {data_file_path}")
-    data_rows = []
+    data_rows: List[Dict[str, str]] = []
     try:
-        # Use utf-8-sig to handle potential byte order mark (BOM) in CSV files
         with open(data_file_path, mode='r', encoding='utf-8-sig') as infile:
             reader = csv.DictReader(infile)
-            data_rows = list(reader) # Read all rows into memory
-        main_logger.info(f"Successfully read {len(data_rows)} data rows.")
-        return data_rows
+            data_rows = list(reader)
+            main_logger.info(f"Successfully read {len(data_rows)} data rows.")
+            return data_rows
     except FileNotFoundError:
         main_logger.error(f"Data file not found: {data_file_path}")
         raise
     except Exception as e:
         main_logger.error(f"Error reading data file {data_file_path}: {e}")
         raise
+    return [] # Return empty list on error if not raising
 
-def generate_reasoning_report(onto, pre_stats, post_stats, inconsistent_classes,
-                              inferred_hierarchy, inferred_properties, inferred_individuals):
+
+def generate_reasoning_report(onto: Ontology,
+                              pre_stats: Dict[str, int],
+                              post_stats: Dict[str, int],
+                              inconsistent_classes: List[ThingClass],
+                              inferred_hierarchy: Dict[str, Dict[str, List[str]]],
+                              inferred_properties: Dict[str, List[str]],
+                              inferred_individuals: Dict[str, Dict[str, Any]]
+                             ) -> Tuple[str, bool]:
     """
-    Generates a structured report from reasoning results.
-
-    Args:
-        onto: The ontology object
-        pre_stats: Dict with pre-reasoning statistics
-        post_stats: Dict with post-reasoning statistics
-        inconsistent_classes: List of inconsistent classes
-        inferred_hierarchy: Dict of inferred class relationships
-        inferred_properties: Dict of inferred property characteristics
-        inferred_individuals: Dict of inferred individual relationships
-
-    Returns:
-        tuple: (report_str, has_issues)
+    Generates a structured report from reasoning results. Returns report string and has_issues flag.
     """
     report_lines = []
     has_issues = False
 
     def add_section(title):
-        report_lines.extend([
-            "\n" + "="*80,
-            f"{title}",
-            "="*80
-        ])
+        report_lines.extend(["\n" + "="*80, f"{title}", "="*80])
 
     # 1. Executive Summary
     add_section("REASONING REPORT EXECUTIVE SUMMARY")
-
-    # Ontology Consistency Status
     if inconsistent_classes:
         has_issues = True
         report_lines.append("❌ ONTOLOGY STATUS: Inconsistent")
@@ -1889,20 +1695,14 @@ def generate_reasoning_report(onto, pre_stats, post_stats, inconsistent_classes,
     else:
         report_lines.append("✅ ONTOLOGY STATUS: Consistent")
 
-    # Changes Overview
     class_diff = post_stats['classes'] - pre_stats['classes']
     prop_diff = (post_stats['object_properties'] - pre_stats['object_properties'] +
                  post_stats['data_properties'] - pre_stats['data_properties'])
     ind_diff = post_stats['individuals'] - pre_stats['individuals']
-
     report_lines.extend([
         f"\nStructural Changes (Post-Reasoning vs Pre-Reasoning):",
-        f"  • Classes: {class_diff:+d}",
-        f"  • Properties (Obj + Data): {prop_diff:+d}",
-        f"  • Individuals: {ind_diff:+d}"
+        f"  • Classes: {class_diff:+d}", f"  • Properties (Obj + Data): {prop_diff:+d}", f"  • Individuals: {ind_diff:+d}"
     ])
-
-    # Inferences Overview
     inferences_made = bool(inferred_hierarchy or inferred_properties or inferred_individuals)
     report_lines.append(f"\nInferences Made: {'Yes' if inferences_made else 'No'}")
 
@@ -1910,111 +1710,80 @@ def generate_reasoning_report(onto, pre_stats, post_stats, inconsistent_classes,
     add_section("DETAILED STATISTICS")
     report_lines.extend([
         "\nPre-Reasoning:",
-        f"  • Classes: {pre_stats['classes']}",
-        f"  • Object Properties: {pre_stats['object_properties']}",
-        f"  • Data Properties: {pre_stats['data_properties']}",
-        f"  • Individuals: {pre_stats['individuals']}",
+        f"  • Classes: {pre_stats['classes']}", f"  • Object Properties: {pre_stats['object_properties']}",
+        f"  • Data Properties: {pre_stats['data_properties']}", f"  • Individuals: {pre_stats['individuals']}",
         "\nPost-Reasoning:",
-        f"  • Classes: {post_stats['classes']}",
-        f"  • Object Properties: {post_stats['object_properties']}",
-        f"  • Data Properties: {post_stats['data_properties']}",
-        f"  • Individuals: {post_stats['individuals']}"
+        f"  • Classes: {post_stats['classes']}", f"  • Object Properties: {post_stats['object_properties']}",
+        f"  • Data Properties: {post_stats['data_properties']}", f"  • Individuals: {post_stats['individuals']}"
     ])
 
     # 3. Consistency Issues
     if inconsistent_classes:
         add_section("CONSISTENCY ISSUES")
         report_lines.append("\nInconsistent Classes:")
-        for cls in inconsistent_classes:
-            report_lines.append(f"  • {cls.name} ({cls.iri})")
-        has_issues = True # Reiterate
+        for cls in inconsistent_classes: report_lines.append(f"  • {cls.name} ({cls.iri})")
+        has_issues = True
 
     # 4. Inferred Knowledge
     add_section("INFERRED KNOWLEDGE")
-
-    # Class Hierarchy
     if inferred_hierarchy:
         report_lines.append("\nClass Hierarchy Changes:")
         for parent, data in inferred_hierarchy.items():
             if data.get('subclasses') or data.get('equivalent'):
-                 report_lines.append(f"\n  Class: {parent}")
-                 if data.get('subclasses'):
-                      report_lines.append("    ↳ Inferred Subclasses:")
-                      for sub in data['subclasses']:
-                           report_lines.append(f"        • {sub}")
-                 if data.get('equivalent'):
-                      report_lines.append(f"    ≡ Inferred Equivalent Classes: {', '.join(data['equivalent'])}")
-    else:
-        report_lines.append("\nNo new class hierarchy relationships inferred.")
+                report_lines.append(f"\n  Class: {parent}")
+                if data.get('subclasses'):
+                    report_lines.append("    ↳ Inferred Subclasses:")
+                    for sub in data['subclasses']: report_lines.append(f"        • {sub}")
+                if data.get('equivalent'):
+                    report_lines.append(f"    ≡ Inferred Equivalent Classes: {', '.join(data['equivalent'])}")
+    else: report_lines.append("\nNo new class hierarchy relationships inferred.")
 
-    # Property Characteristics
     if inferred_properties:
         report_lines.append("\nInferred Property Characteristics:")
         for prop, chars in inferred_properties.items():
             report_lines.append(f"\n  Property: {prop}")
-            for char in chars:
-                report_lines.append(f"    • {char}")
-    else:
-        report_lines.append("\nNo new property characteristics inferred.")
+            for char in chars: report_lines.append(f"    • {char}")
+    else: report_lines.append("\nNo new property characteristics inferred.")
 
-    # Individual Classifications & Properties
     if inferred_individuals:
         report_lines.append("\nIndividual Inferences:")
         for ind_name, data in inferred_individuals.items():
             report_lines.append(f"\n  Individual: {ind_name}")
             if data.get('types'):
                 report_lines.append("    Inferred Types:")
-                for t in data['types']:
-                    report_lines.append(f"      • {t}")
+                for t in data['types']: report_lines.append(f"      • {t}")
             if data.get('properties'):
                 report_lines.append("    Inferred Property Values:")
                 for p, vals in data['properties'].items():
-                    # Format values nicely, handle individuals vs literals
-                    formatted_vals = []
-                    for v in vals:
-                         if hasattr(v, 'name'): # Check if it's likely an individual
-                             formatted_vals.append(v.name)
-                         else:
-                             formatted_vals.append(repr(v)) # Use repr for literals
-                    report_lines.append(f"      • {p}: {', '.join(formatted_vals)}")
-    else:
-        report_lines.append("\nNo new individual types or property values inferred.")
+                     report_lines.append(f"      • {p}: {', '.join(vals)}") # vals are pre-formatted
+    else: report_lines.append("\nNo new individual types or property values inferred.")
 
     # 5. Recommendations
     add_section("RECOMMENDATIONS")
     recommendations = []
-
     if inconsistent_classes:
-        recommendations.append("❗ HIGH PRIORITY: Resolve inconsistencies in classes listed above. Check class definitions, restrictions, and individual assertions.")
-
-    # Only suggest enriching axioms if consistent but no inferences
+        recommendations.append("❗ HIGH PRIORITY: Resolve inconsistencies listed above.")
     if not inconsistent_classes and not inferences_made:
-        recommendations.append("⚠️ No inferences made - Ontology is consistent but may lack richness. Consider adding more specific axioms (e.g., restrictions, disjointness, property characteristics) to enable the reasoner to derive more knowledge.")
-        has_issues = True # Consider lack of inference an 'issue' for reporting
-
-    if class_diff == 0 and prop_diff == 0 and ind_diff == 0 and use_reasoner:
-         recommendations.append("ℹ️ No structural changes (counts of classes/props/inds) after reasoning - verify if this is expected.")
-
+        recommendations.append("⚠️ No inferences made - Ontology is consistent but may lack richness. Consider adding more specific axioms.")
+        has_issues = True
+    if class_diff == 0 and prop_diff == 0 and ind_diff == 0 and use_reasoner: # Check use_reasoner flag
+         recommendations.append("ℹ️ No structural changes after reasoning - verify if this is expected.")
     if recommendations:
         report_lines.extend(["\n" + rec for rec in recommendations])
-    else:
-        report_lines.append("\nNo critical issues or major inference gaps found. Ontology appears reasonably consistent and structured based on reasoning results.")
+    else: report_lines.append("\nNo critical issues or major inference gaps found.")
 
     return "\n".join(report_lines), has_issues
 
 
-def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, ontology_iri=DEFAULT_ONTOLOGY_IRI, save_format="rdfxml", use_reasoner=False, world_db_path=None):
+def main_ontology_generation(spec_file_path: str,
+                             data_file_path: str,
+                             output_owl_path: str,
+                             ontology_iri: str = DEFAULT_ONTOLOGY_IRI,
+                             save_format: str = "rdfxml",
+                             use_reasoner: bool = False,
+                             world_db_path: Optional[str] = None) -> bool:
     """
-    Main function to generate the ontology.
-
-    Args:
-        spec_file_path (str): Path to the ontology specification CSV file.
-        data_file_path (str): Path to the operational data CSV file.
-        output_owl_path (str): Path to save the generated OWL file.
-        ontology_iri (str): Base IRI for the new ontology.
-        save_format (str): Format to save ontology ('rdfxml', 'ntriples', etc.)
-        use_reasoner (bool): Whether to run the reasoner after population.
-        world_db_path (str): Optional path to use a persistent World DB (e.g., 'ontology.sqlite3').
+    Main function to generate the ontology. Returns True on success, False on failure.
     """
     start_time = timing.time()
     main_logger.info("--- Starting Ontology Generation ---")
@@ -2027,58 +1796,49 @@ def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, on
     if world_db_path:
         main_logger.info(f"Using persistent world DB: {world_db_path}")
 
+    world: Optional[World] = None # Define world variable outside try block
+
     try:
         # 1. Parse Specification
         specification = parse_specification(spec_file_path)
         if not specification:
             main_logger.error("Specification parsing failed or resulted in empty spec. Aborting.")
-            return False # Indicate failure
+            return False
 
         # 2. Create Ontology World and Ontology Object
-        world = None # Define world variable
         if world_db_path:
-            # Use a persistent world (SQLite backend)
             main_logger.info(f"Initializing persistent World at: {world_db_path}")
-            # Ensure directory exists if needed for the db path
             db_dir = os.path.dirname(world_db_path)
             if db_dir and not os.path.exists(db_dir):
                  os.makedirs(db_dir, exist_ok=True)
                  main_logger.info(f"Created directory for world DB: {db_dir}")
-
             world = World(filename=world_db_path)
-            onto = world.get_ontology(ontology_iri).load() # Load if exists, create otherwise
+            onto = world.get_ontology(ontology_iri).load()
             main_logger.info(f"Ontology object obtained from persistent world: {onto}")
         else:
-            # Use default in-memory world
             main_logger.info("Initializing in-memory World.")
-            # It's safer to create a new world for each run unless merging is intended
             world = World() # Create a fresh world
             onto = world.get_ontology(ontology_iri)
             main_logger.info(f"Ontology object created in memory: {onto}")
 
         # 3. Define Ontology Structure (TBox)
-        # Pass the 'onto' object created above
         defined_classes, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
-        if not defined_classes: # Check if class definition was minimally successful
+        if not defined_classes:
             main_logger.warning("Ontology structure definition resulted in no classes. Population might be empty.")
-            # Continue for now, but population will likely fail checks
 
         # 4. Read Operational Data
         data_rows = read_data(data_file_path)
 
-        # Track population success status
+        # 5. Populate Ontology (ABox)
         population_successful = True
         failed_rows_count = 0
-        created_eq_classes = {} # Initialize dict for created equipment classes
-        eq_class_positions = {} # Initialize dict for sequence positions
+        created_eq_classes = {}
+        eq_class_positions = {}
 
         if not data_rows:
             main_logger.warning("No data rows read from data file. Ontology will be populated with structure only.")
-            # Population is technically successful if there's no data to populate
         else:
-            # 5. Populate Ontology (ABox)
             try:
-                # Get number of failed rows and the created equipment class info
                 failed_rows_count, created_eq_classes, eq_class_positions = populate_ontology_from_data(
                     onto, data_rows, defined_classes, defined_properties, property_is_functional
                 )
@@ -2088,50 +1848,26 @@ def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, on
                 elif failed_rows_count > 0:
                     main_logger.warning(f"Population completed with {failed_rows_count} out of {len(data_rows)} failed rows.")
                 else:
-                     main_logger.info(f"Population completed successfully for all {len(data_rows)} rows.")
+                    main_logger.info(f"Population completed successfully for all {len(data_rows)} rows.")
 
-                # Check if equipment classes were actually created/found
-                if not created_eq_classes:
-                     main_logger.warning("Population finished, but NO EquipmentClass individuals were created or found.")
-                else:
-                     main_logger.info(f"Population found/created {len(created_eq_classes)} unique EquipmentClass individuals.")
-
-                # Check if positions were found
-                if not eq_class_positions:
-                     main_logger.warning("Population finished, but NO sequence positions were assigned to EquipmentClasses.")
-                else:
-                     main_logger.info(f"Population assigned sequence positions to {len(eq_class_positions)} EquipmentClasses.")
+                if not created_eq_classes: main_logger.warning("Population finished, but NO EquipmentClass individuals were created or found.")
+                else: main_logger.info(f"Population found/created {len(created_eq_classes)} unique EquipmentClass individuals.")
+                if not eq_class_positions: main_logger.warning("Population finished, but NO sequence positions were assigned to EquipmentClasses.")
+                else: main_logger.info(f"Population assigned sequence positions to {len(eq_class_positions)} EquipmentClasses.")
 
             except Exception as pop_exc:
                 main_logger.error(f"Critical error during population: {pop_exc}", exc_info=True)
                 population_successful = False
 
         # --- Setup Sequence Relationships AFTER population ---
-        # Only proceed if population was at least partially successful and we have positions/classes
         if population_successful and created_eq_classes and eq_class_positions:
             main_logger.info("Proceeding to setup sequence relationships...")
             try:
-                # Setup CLASS-level relationships
-                setup_equipment_sequence_relationships(
-                    onto,
-                    eq_class_positions,
-                    defined_classes,
-                    defined_properties, # Pass prop_map equivalent
-                    created_eq_classes  # Pass the dict of created classes
-                 )
-
-                # Setup INSTANCE-level relationships
-                setup_equipment_instance_relationships(
-                    onto,
-                    defined_classes,
-                    defined_properties, # Pass prop_map equivalent
-                    eq_class_positions
-                )
+                setup_equipment_sequence_relationships(onto, eq_class_positions, defined_classes, defined_properties, created_eq_classes)
+                setup_equipment_instance_relationships(onto, defined_classes, defined_properties, eq_class_positions)
             except Exception as seq_exc:
-                 main_logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
-                 # Decide if this failure makes the overall process fail
-                 # population_successful = False # Optional: Mark as failure if sequences are critical
-
+                main_logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
+                # Continue, but log error
         elif population_successful:
             main_logger.warning("Skipping sequence relationship setup because no EquipmentClass individuals or positions were generated during population.")
         else:
@@ -2140,207 +1876,121 @@ def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, on
 
         # 6. Apply Reasoning (Optional)
         reasoning_successful = True
-        if use_reasoner and population_successful: # Optionally skip reasoning if population failed
-            main_logger.info("Applying reasoner (ensure HermiT or other compatible reasoner is installed and configured)...")
+        if use_reasoner and population_successful:
+            main_logger.info("Applying reasoner (ensure HermiT or compatible reasoner is installed)...")
             try:
-                # Use with onto context for reasoning as well
                 with onto:
-                    # Collect pre-reasoning statistics
                     pre_stats = {
-                        'classes': len(list(onto.classes())),
-                        'object_properties': len(list(onto.object_properties())),
-                        'data_properties': len(list(onto.data_properties())),
-                        'individuals': len(list(onto.individuals()))
+                        'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
+                        'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
                     }
-
-                    # Log basic pre-reasoning info
                     main_logger.info("Starting reasoning process...")
                     reasoning_start_time = timing.time()
-                    # Use Pellet if available and configured, otherwise default (HermiT usually)
-                    # sync_reasoner_pellet(infer_property_values=True, infer_data_property_values=True)
-                    sync_reasoner(infer_property_values=True, infer_data_property_values=False, debug=0) # Debug=2 is very verbose
+                    sync_reasoner(infer_property_values=True, debug=0)
                     reasoning_end_time = timing.time()
                     main_logger.info(f"Reasoning finished in {reasoning_end_time - reasoning_start_time:.2f} seconds.")
 
-                    # Collect reasoning results
+                    # Collect results
                     inconsistent = list(default_world.inconsistent_classes())
-
-                    # Collect inferred hierarchy (simplified check for new direct subclasses)
                     inferred_hierarchy = {}
-                    initial_subclasses = {} # Store initial state for comparison if needed
-                    # for c in onto.classes(): initial_subclasses[c] = set(c.subclasses(direct=True))
-
-                    for cls in onto.classes():
-                         # Get current direct subclasses after reasoning
-                         current_subclasses = set(cls.subclasses(direct=True))
-                         # Compare with initial state if stored, or just list current inferred state
-                         # For simplicity, just list post-reasoning direct subs
-                         inferred_subs = [sub.name for sub in current_subclasses]
-                         # Also check for inferred equivalent classes
-                         equivalent_classes = [eq.name for eq in cls.equivalent_to if eq != cls and isinstance(eq, ThingClass)]
-
-                         if inferred_subs or equivalent_classes:
-                              inferred_hierarchy[cls.name] = {
-                                   'subclasses': inferred_subs,
-                                   'equivalent': equivalent_classes
-                              }
-
-
-                    # Collect property inferences (check characteristics)
                     inferred_properties = {}
-                    # Characteristics that can be inferred (not exhaustive)
+                    inferred_individuals = {}
+                    # Simplified post-reasoning state collection (as before)
+                    for cls in onto.classes():
+                         current_subclasses = set(cls.subclasses(direct=True))
+                         inferred_subs = [sub.name for sub in current_subclasses]
+                         equivalent_classes = [eq.name for eq in cls.equivalent_to if eq != cls and isinstance(eq, ThingClass)]
+                         if inferred_subs or equivalent_classes:
+                             inferred_hierarchy[cls.name] = {'subclasses': inferred_subs, 'equivalent': equivalent_classes}
+
                     inferrable_chars = {
-                         'FunctionalProperty': FunctionalProperty,
-                         'InverseFunctionalProperty': InverseFunctionalProperty,
-                         'TransitiveProperty': TransitiveProperty,
-                         'SymmetricProperty': SymmetricProperty,
-                         'AsymmetricProperty': AsymmetricProperty,
-                         'ReflexiveProperty': ReflexiveProperty,
+                         'FunctionalProperty': FunctionalProperty, 'InverseFunctionalProperty': InverseFunctionalProperty,
+                         'TransitiveProperty': TransitiveProperty, 'SymmetricProperty': SymmetricProperty,
+                         'AsymmetricProperty': AsymmetricProperty, 'ReflexiveProperty': ReflexiveProperty,
                          'IrreflexiveProperty': IrreflexiveProperty,
                     }
                     for prop in list(onto.object_properties()) + list(onto.data_properties()):
-                        inferred_chars_for_prop = []
-                        # Get declared types before reasoning if needed for comparison
-                        # For simplicity, just list post-reasoning types
-                        current_types = set(prop.is_a)
-                        for char_name, char_class in inferrable_chars.items():
-                             if char_class in current_types:
-                                  # Check if it was explicitly defined or inferred
-                                  # This requires storing pre-reasoning state or checking definition logic
-                                  # Simplified: list all found characteristics post-reasoning
-                                  inferred_chars_for_prop.append(char_name)
-                        if inferred_chars_for_prop:
-                             inferred_properties[prop.name] = inferred_chars_for_prop
+                         inferred_chars_for_prop = [char_name for char_name, char_class in inferrable_chars.items() if char_class in prop.is_a]
+                         if inferred_chars_for_prop: inferred_properties[prop.name] = inferred_chars_for_prop
 
-                    # Collect individual inferences (new types, new property values)
-                    inferred_individuals = {}
-                    # This requires comparing pre/post reasoning state, which is complex.
-                    # Simplified approach: List all types and properties post-reasoning.
-                    # A more advanced approach would diff the quad store before/after.
-                    main_logger.info("Individual inference reporting is simplified (shows post-reasoning state).")
+                    main_logger.info("Collecting simplified individual inferences (post-reasoning state).")
                     for ind in onto.individuals():
-                        current_types = [c.name for c in ind.is_a if c is not Thing]
-                        current_props = {}
-                        for prop in list(onto.object_properties()) + list(onto.data_properties()):
+                         current_types = [c.name for c in ind.is_a if c is not Thing]
+                         current_props = {}
+                         for prop in list(onto.object_properties()) + list(onto.data_properties()):
                              try:
-                                 # Use the property directly on the individual
                                  values = getattr(ind, prop.python_name, [])
-                                 # Ensure values is iterable (might be single object for functional)
-                                 if not isinstance(values, list):
-                                      values = [values] if values is not None else []
-
+                                 if not isinstance(values, list): values = [values] if values is not None else []
                                  if values:
-                                     # Format values
                                      formatted_values = []
                                      for v in values:
-                                          if isinstance(v, Thing): # It's an individual
-                                               formatted_values.append(v.name)
-                                          elif isinstance(v, locstr):
-                                               formatted_values.append(f'"{v}"@{v.lang}')
-                                          else: # Literal
-                                               formatted_values.append(repr(v))
-                                     if formatted_values:
-                                        current_props[prop.name] = formatted_values
-                             except AttributeError:
-                                 continue # Property might not apply or exist on instance
-                             except Exception as e_ind_prop:
-                                  pop_logger.warning(f"Error accessing property {prop.name} for individual {ind.name}: {e_ind_prop}")
+                                         if isinstance(v, Thing): formatted_values.append(v.name)
+                                         elif isinstance(v, locstr): formatted_values.append(f'"{v}"@{v.lang}')
+                                         else: formatted_values.append(repr(v))
+                                     if formatted_values: current_props[prop.name] = formatted_values
+                             except Exception: continue # Ignore props not applicable
+                         if current_types or current_props:
+                             inferred_individuals[ind.name] = {'types': current_types, 'properties': current_props}
 
 
-                        # For this simplified report, just record the state if non-empty
-                        if current_types or current_props:
-                            inferred_individuals[ind.name] = {'types': current_types, 'properties': current_props}
-
-
-                    # Collect post-reasoning statistics
                     post_stats = {
-                        'classes': len(list(onto.classes())),
-                        'object_properties': len(list(onto.object_properties())),
-                        'data_properties': len(list(onto.data_properties())),
-                        'individuals': len(list(onto.individuals()))
+                        'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
+                        'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
                     }
-
-                    # Generate and log the report
-                    report, has_issues = generate_reasoning_report(
-                        onto, pre_stats, post_stats, inconsistent,
-                        inferred_hierarchy, inferred_properties, inferred_individuals
-                    )
-
-                    # Log the report
+                    report, has_issues = generate_reasoning_report(onto, pre_stats, post_stats, inconsistent, inferred_hierarchy, inferred_properties, inferred_individuals)
                     main_logger.info("\nReasoning Report:\n" + report)
 
-                    # Update reasoning_successful based on issues
                     if has_issues or inconsistent:
                         main_logger.warning("Reasoning completed but potential issues or inconsistencies were identified.")
-                        if inconsistent: reasoning_successful = False # Mark as failed if inconsistent
-                    else:
-                        main_logger.info("Reasoning completed successfully with no inconsistencies identified.")
+                        if inconsistent: reasoning_successful = False
+                    else: main_logger.info("Reasoning completed successfully with no inconsistencies identified.")
 
             except OwlReadyInconsistentOntologyError:
                 main_logger.error("REASONING FAILED: Ontology is inconsistent!")
                 reasoning_successful = False
-                # Optionally check inconsistent classes:
                 try:
-                    # Access world based on whether persistent path was used
                     current_world = world if world_db_path else default_world
                     inconsistent = list(current_world.inconsistent_classes())
-                    main_logger.error(f"Inconsistent classes detected by reasoner: {[c.name for c in inconsistent]}")
-                except Exception as e_inc:
-                    main_logger.error(f"Could not retrieve inconsistent classes after inconsistency error: {e_inc}")
-                # Consider not saving an inconsistent ontology or saving to a different file
-                # return False # Indicate failure
+                    main_logger.error(f"Inconsistent classes detected: {[c.name for c in inconsistent]}")
+                except Exception as e_inc: main_logger.error(f"Could not retrieve inconsistent classes: {e_inc}")
             except NameError as ne:
-                 if "sync_reasoner" in str(ne) or "Pellet" in str(ne):
-                     main_logger.error("Reasoning failed: Reasoner (e.g., HermiT, Pellet) might not be installed or found by owlready2. Ensure Java is installed and Pellet JAR path is correct if using Pellet.")
-                 else:
-                     main_logger.error(f"Unexpected NameError during reasoning: {ne}")
+                 if "sync_reasoner" in str(ne): main_logger.error("Reasoning failed: Reasoner not found. Ensure Java/HermiT are installed.")
+                 else: main_logger.error(f"Unexpected NameError during reasoning: {ne}")
                  reasoning_successful = False
             except Exception as e:
                 main_logger.error(f"An error occurred during reasoning: {e}", exc_info=True)
                 reasoning_successful = False
 
         # 7. Save Ontology
-        # Decide whether to save based on success flags
         should_save = population_successful and (not use_reasoner or reasoning_successful)
+        final_output_path = output_owl_path
         if not should_save:
              main_logger.error("Ontology generation encountered errors (population or reasoning). Ontology will NOT be saved to the primary output file.")
-             # Optionally save to a debug file instead:
              debug_output_path = output_owl_path.replace(".owl", "_debug.owl")
+             if debug_output_path == output_owl_path: # Avoid overwriting if extension isn't .owl
+                 debug_output_path += "_debug"
              main_logger.info(f"Attempting to save potentially problematic ontology to: {debug_output_path}")
-             output_owl_path = debug_output_path
+             final_output_path = debug_output_path
              should_save = True # Force save to debug file
 
         if should_save:
-            main_logger.info(f"Saving ontology to {output_owl_path} in '{save_format}' format...")
+            main_logger.info(f"Saving ontology to {final_output_path} in '{save_format}' format...")
             try:
-                 onto.save(file=output_owl_path, format=save_format)
-                 main_logger.info("Ontology saved successfully.")
+                onto.save(file=final_output_path, format=save_format)
+                main_logger.info("Ontology saved successfully.")
             except Exception as save_err:
-                 main_logger.error(f"Failed to save ontology to {output_owl_path}: {save_err}", exc_info=True)
-                 return False # Saving failed
+                main_logger.error(f"Failed to save ontology to {final_output_path}: {save_err}", exc_info=True)
+                return False # Saving failed
 
-        # Close world only if it was explicitly created (in-memory or persistent)
-        if world and world_db_path:
-            # Explicitly close the world database connection
-            try:
-                world.close()
-                main_logger.info(f"Persistent world DB {world_db_path} closed.")
-            except Exception as e_close:
-                main_logger.warning(f"Could not explicitly close world DB: {e_close}")
-        elif world:
-            # In-memory world will be garbage collected automatically
-            main_logger.info("In-memory world will be garbage collected.")
-
-
-        # Return success status based on all critical steps
-        return should_save
+        # Overall success is true if we reached here without returning False
+        return should_save # Will be True if saved, potentially to debug file
 
     except Exception as e:
         main_logger.exception("A critical error occurred during the overall ontology generation process.")
-        # No sys.exit here, return False to indicate failure to the caller
         return False
 
     finally:
+        # Removed world cleanup logic as requested
         end_time = timing.time()
         main_logger.info(f"--- Ontology Generation Finished ---")
         main_logger.info(f"Total time: {end_time - start_time:.2f} seconds")
@@ -2353,57 +2003,39 @@ if __name__ == "__main__":
     parser.add_argument("output_file", help="Path to save the generated OWL ontology file (e.g., manufacturing.owl).")
     parser.add_argument("--iri", default=DEFAULT_ONTOLOGY_IRI, help=f"Base IRI for the ontology (default: {DEFAULT_ONTOLOGY_IRI}).")
     parser.add_argument("--format", default="rdfxml", choices=["rdfxml", "ntriples", "nquads", "owlxml"], help="Format for saving the ontology (default: rdfxml).")
-    parser.add_argument("--reasoner", action="store_true", help="Run the reasoner (e.g., HermiT or Pellet if configured) after population.")
+    parser.add_argument("--reasoner", action="store_true", help="Run the reasoner after population.")
     parser.add_argument("--worlddb", default=None, help="Path to use/create a persistent SQLite world database (e.g., my_ontology.sqlite3).")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging for all modules.")
-    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging, only show warnings and errors.")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging.")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging.")
 
     args = parser.parse_args()
 
-    # Setup Logging Level based on arguments
+    # Setup Logging Level
     log_level = logging.INFO
-    if args.verbose:
-        log_level = logging.DEBUG
-    elif args.quiet:
-        log_level = logging.WARNING
+    if args.verbose: log_level = logging.DEBUG
+    elif args.quiet: log_level = logging.WARNING
 
-    # Configure logging BEFORE any logging calls in modules
-    # Remove existing handlers if re-running in interactive session
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-    # Add the new handler
-    logging.basicConfig(level=log_level, format=LOG_FORMAT, stream=sys.stdout) # Log to stdout
-
-    # Set level for all loggers obtained via getLogger
-    # This ensures modules imported earlier also adhere to the command line level
-    logging.getLogger().setLevel(log_level)
-    for handler in logging.getLogger().handlers:
-        handler.setLevel(log_level)
+    # Configure logging
+    root_logger_instance = logging.getLogger()
+    for handler in root_logger_instance.handlers[:]: root_logger_instance.removeHandler(handler)
+    logging.basicConfig(level=log_level, format=LOG_FORMAT, stream=sys.stdout)
+    logging.getLogger().setLevel(log_level) # Ensure root logger level is set
+    for handler in logging.getLogger().handlers: handler.setLevel(log_level) # Ensure handler level is set
 
     main_logger.info("Logging configured.")
-    if args.verbose:
-        main_logger.info("Verbose logging enabled (DEBUG level).")
-    elif args.quiet:
-        main_logger.info("Quiet logging enabled (WARNING level).")
-    else:
-        main_logger.info("Standard logging enabled (INFO level).")
-
+    if args.verbose: main_logger.info("Verbose logging enabled (DEBUG level).")
+    elif args.quiet: main_logger.info("Quiet logging enabled (WARNING level).")
+    else: main_logger.info("Standard logging enabled (INFO level).")
 
     # Execute main function
     success = main_ontology_generation(
-        args.spec_file,
-        args.data_file,
-        args.output_file,
-        args.iri,
-        args.format,
-        args.reasoner,
-        args.worlddb
+        args.spec_file, args.data_file, args.output_file,
+        args.iri, args.format, args.reasoner, args.worlddb
     )
 
     # Exit with appropriate code
     if success:
-        main_logger.info("Ontology generation process completed successfully.")
+        main_logger.info("Ontology generation process completed.")
         sys.exit(0)
     else:
         main_logger.error("Ontology generation process failed or encountered errors.")
@@ -2411,41 +2043,87 @@ if __name__ == "__main__":
 
 ### Execution Logs: Logs/log.txt
 ```
-2025-03-30 21:56:24,440 - INFO - create_ontology - Logging configured.
-2025-03-30 21:56:24,440 - INFO - create_ontology - Standard logging enabled (INFO level).
-2025-03-30 21:56:24,440 - INFO - create_ontology - --- Starting Ontology Generation ---
-2025-03-30 21:56:24,440 - INFO - create_ontology - Specification file: OPERA_ISA95_OWL_ONT_V8.csv
-2025-03-30 21:56:24,440 - INFO - create_ontology - Data file: mx_toothpaste_finishing_sample_100lines.csv
-2025-03-30 21:56:24,440 - INFO - create_ontology - Output OWL file: output_ontology.owl
-2025-03-30 21:56:24,440 - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
-2025-03-30 21:56:24,440 - INFO - create_ontology - Save format: rdfxml
-2025-03-30 21:56:24,440 - INFO - create_ontology - Run reasoner: False
-2025-03-30 21:56:24,440 - INFO - __main__ - Parsing specification file: OPERA_ISA95_OWL_ONT_V8.csv
-2025-03-30 21:56:24,441 - INFO - __main__ - Successfully parsed 98 rows from specification.
-2025-03-30 21:56:24,441 - INFO - create_ontology - Initializing in-memory World.
-2025-03-30 21:56:24,442 - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
-2025-03-30 21:56:24,442 - INFO - __main__ - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
-2025-03-30 21:56:24,450 - WARNING - __main__ - Overriding existing inverse property for classIsUpstreamOf from classIsUpstreamOf to classIsDownstreamOf as specified in the spec.
-2025-03-30 21:56:24,450 - WARNING - __main__ - Overriding existing inverse property for equipmentIsUpstreamOf from equipmentIsUpstreamOf to equipmentIsDownstreamOf as specified in the spec.
-2025-03-30 21:56:24,450 - WARNING - __main__ - Overriding existing inverse property for previousSegment from previousSegment to nextSegment as specified in the spec.
-2025-03-30 21:56:24,450 - INFO - __main__ - Ontology structure definition complete.
-2025-03-30 21:56:24,450 - INFO - create_ontology - Reading data file: mx_toothpaste_finishing_sample_100lines.csv
-2025-03-30 21:56:24,452 - INFO - create_ontology - Successfully read 100 data rows.
-2025-03-30 21:56:24,452 - INFO - ontology_population - Starting ontology population with 100 data rows.
-2025-03-30 21:56:24,452 - WARNING - ontology_population - Property 'isDownstreamOf' not found in ontology definition. Population using this property will be skipped.
-2025-03-30 21:56:24,452 - ERROR - ontology_population - Cannot reliably proceed with population. Missing essential properties definitions: ['isUpstreamOf']
-2025-03-30 21:56:24,452 - ERROR - create_ontology - Population failed for all 100 data rows.
-2025-03-30 21:56:24,452 - WARNING - create_ontology - Population finished, but NO EquipmentClass individuals were created or found.
-2025-03-30 21:56:24,452 - WARNING - create_ontology - Population finished, but NO sequence positions were assigned to EquipmentClasses.
-2025-03-30 21:56:24,452 - WARNING - create_ontology - Skipping sequence relationship setup due to population failure.
-2025-03-30 21:56:24,452 - ERROR - create_ontology - Ontology generation encountered errors (population or reasoning). Ontology will NOT be saved to the primary output file.
-2025-03-30 21:56:24,452 - INFO - create_ontology - Attempting to save potentially problematic ontology to: output_ontology_debug.owl
-2025-03-30 21:56:24,452 - INFO - create_ontology - Saving ontology to output_ontology_debug.owl in 'rdfxml' format...
-2025-03-30 21:56:24,454 - INFO - create_ontology - Ontology saved successfully.
-2025-03-30 21:56:24,454 - WARNING - create_ontology - Could not explicitly destroy in-memory world: 'World' object has no attribute 'destroy'
-2025-03-30 21:56:24,454 - INFO - create_ontology - --- Ontology Generation Finished ---
-2025-03-30 21:56:24,454 - INFO - create_ontology - Total time: 0.01 seconds
-2025-03-30 21:56:24,454 - INFO - create_ontology - Ontology generation process completed successfully.
+2025-03-30 22:10:57,897 - INFO - create_ontology - Logging configured.
+2025-03-30 22:10:57,897 - INFO - create_ontology - Standard logging enabled (INFO level).
+2025-03-30 22:10:57,897 - INFO - create_ontology - --- Starting Ontology Generation ---
+2025-03-30 22:10:57,897 - INFO - create_ontology - Specification file: OPERA_ISA95_OWL_ONT_V8.csv
+2025-03-30 22:10:57,897 - INFO - create_ontology - Data file: mx_toothpaste_finishing_sample_100lines.csv
+2025-03-30 22:10:57,897 - INFO - create_ontology - Output OWL file: output_ontology.owl
+2025-03-30 22:10:57,897 - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
+2025-03-30 22:10:57,897 - INFO - create_ontology - Save format: rdfxml
+2025-03-30 22:10:57,897 - INFO - create_ontology - Run reasoner: True
+2025-03-30 22:10:57,897 - INFO - __main__ - Parsing specification file: OPERA_ISA95_OWL_ONT_V8.csv
+2025-03-30 22:10:57,898 - INFO - __main__ - Successfully parsed 98 rows from specification.
+2025-03-30 22:10:57,898 - INFO - create_ontology - Initializing in-memory World.
+2025-03-30 22:10:57,899 - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
+2025-03-30 22:10:57,899 - INFO - __main__ - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
+2025-03-30 22:10:57,908 - INFO - __main__ - Ontology structure definition complete.
+2025-03-30 22:10:57,908 - INFO - create_ontology - Reading data file: mx_toothpaste_finishing_sample_100lines.csv
+2025-03-30 22:10:57,909 - INFO - create_ontology - Successfully read 100 data rows.
+2025-03-30 22:10:57,909 - INFO - ontology_population - Starting ontology population with 100 data rows.
+2025-03-30 22:10:57,950 - INFO - ontology_population - --- Equipment Class Sequence Position Summary (from population) ---
+2025-03-30 22:10:57,950 - INFO - ontology_population - Equipment Class: Filler - Default Sequence Position: 1
+2025-03-30 22:10:57,950 - INFO - ontology_population - Equipment Class: Cartoner - Default Sequence Position: 2
+2025-03-30 22:10:57,950 - INFO - ontology_population - Equipment Class: Bundler - Default Sequence Position: 3
+2025-03-30 22:10:57,950 - INFO - ontology_population - Equipment Class: CasePacker - Default Sequence Position: 5
+2025-03-30 22:10:57,950 - INFO - ontology_population - Equipment Class: Palletizer - Default Sequence Position: 7
+2025-03-30 22:10:57,950 - INFO - ontology_population - Total equipment classes with sequence positions found: 5
+2025-03-30 22:10:57,950 - INFO - ontology_population - Ontology population complete. Successfully processed 100 rows, failed to process 0 rows.
+2025-03-30 22:10:57,950 - INFO - create_ontology - Population completed successfully for all 100 rows.
+2025-03-30 22:10:57,950 - INFO - create_ontology - Population found/created 6 unique EquipmentClass individuals.
+2025-03-30 22:10:57,950 - INFO - create_ontology - Population assigned sequence positions to 5 EquipmentClasses.
+2025-03-30 22:10:57,950 - INFO - create_ontology - Proceeding to setup sequence relationships...
+2025-03-30 22:10:57,950 - INFO - ontology_population - Setting up CLASS-LEVEL equipment sequence relationships based on position...
+2025-03-30 22:10:57,950 - INFO - ontology_population - Created 4 CLASS-LEVEL upstream/downstream relationships.
+
+=== EQUIPMENT CLASS SEQUENCE RELATIONSHIP REPORT ===
+Created 4 upstream/downstream relationships between Equipment Classes:
+  Filler → Cartoner
+  Cartoner → Bundler
+  Bundler → CasePacker
+  CasePacker → Palletizer
+Total classes with positions considered: 5
+2025-03-30 22:10:57,950 - INFO - ontology_population - Setting up INSTANCE-LEVEL equipment relationships within production lines...
+2025-03-30 22:10:57,951 - INFO - ontology_population - Found 12 lines with sequenced equipment.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 4 instance relationships for line FIPCO009.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 1 instance relationships for line FIPCO00G.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 3 instance relationships for line FIPCO00I.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 3 instance relationships for line FIPCO004.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 3 instance relationships for line FIPCO002.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 2 instance relationships for line FIPCO00E.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 2 instance relationships for line FIPCO00F.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 2 instance relationships for line FIPCO003.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 1 instance relationships for line FIPCO00H.
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 1 instance relationships for line FIPCO00J.
+
+=== EQUIPMENT INSTANCE RELATIONSHIP REPORT ===
+2025-03-30 22:10:57,951 - INFO - ontology_population - Created 22 equipment instance relationships across 10 production lines.
+Created 22 equipment instance relationships on 10 lines:
+  Line FIPCO002: 3 relationships
+  Line FIPCO003: 2 relationships
+  Line FIPCO004: 3 relationships
+  Line FIPCO009: 4 relationships
+  Line FIPCO00E: 2 relationships
+  Line FIPCO00F: 2 relationships
+  Line FIPCO00G: 1 relationships
+  Line FIPCO00H: 1 relationships
+  Line FIPCO00I: 3 relationships
+  Line FIPCO00J: 1 relationships
+2025-03-30 22:10:57,951 - INFO - create_ontology - Applying reasoner (ensure HermiT or compatible reasoner is installed)...
+2025-03-30 22:10:57,951 - INFO - create_ontology - Starting reasoning process...
+2025-03-30 22:10:57,951 - ERROR - create_ontology - An error occurred during reasoning: sync_reasoner_hermit() got an unexpected keyword argument 'infer_data_property_values'. Did you mean 'infer_property_values'?
+Traceback (most recent call last):
+  File "/Users/MikeFitzgerald/Documents/GitHub/opera_onto/new_onto.py", line 1654, in main_ontology_generation
+    sync_reasoner(infer_property_values=True, infer_data_property_values=False, debug=0)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: sync_reasoner_hermit() got an unexpected keyword argument 'infer_data_property_values'. Did you mean 'infer_property_values'?
+2025-03-30 22:10:57,954 - ERROR - create_ontology - Ontology generation encountered errors (population or reasoning). Ontology will NOT be saved to the primary output file.
+2025-03-30 22:10:57,954 - INFO - create_ontology - Attempting to save potentially problematic ontology to: output_ontology_debug.owl
+2025-03-30 22:10:57,954 - INFO - create_ontology - Saving ontology to output_ontology_debug.owl in 'rdfxml' format...
+2025-03-30 22:10:57,962 - INFO - create_ontology - Ontology saved successfully.
+2025-03-30 22:10:57,962 - INFO - create_ontology - --- Ontology Generation Finished ---
+2025-03-30 22:10:57,962 - INFO - create_ontology - Total time: 0.06 seconds
+2025-03-30 22:10:57,962 - INFO - create_ontology - Ontology generation process completed.
 ```
 
 ## Questions
