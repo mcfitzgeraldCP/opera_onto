@@ -43,12 +43,12 @@ Equipment Capability,N/A,EquipmentCapability,capabilityType,DatatypeProperty,xsd
 Equipment Capability,N/A,Equipment,hasCapability,ObjectProperty,EquipmentCapability,,isCapabilityOf,Equipment,,Operations Capability,Equipment,Links Equipment to capabilities per Section 6.4. Define inverse? (e.g. capabilityOf)
 Equipment Class,EQUIPMENT_NAME (parsed),EquipmentClass,equipmentClassId,DatatypeProperty,xsd:string,Functional,,EquipmentClass,,EquipmentClass ID,owl:Thing,Parse from EQUIPMENT_NAME to create appropriate EquipmentClass.
 Equipment Class,N/A,Equipment,memberOfClass,ObjectProperty,EquipmentClass,Functional,hasInstance,Equipment,,EquipmentClass Hierarchy,Equipment,Links Equipment instances to their EquipmentClass. Define inverse? (e.g. classMember)
-Equipment Sequence,N/A,EquipmentClass,isUpstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",isDownstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines upstream relationship between equipment classes. Needs inverseOf: isDownstreamOf
-Equipment Sequence,N/A,EquipmentClass,isDownstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",isUpstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines downstream relationship between equipment classes.
+Equipment Sequence,N/A,EquipmentClass,classIsUpstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",classIsDownstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines upstream relationship between equipment classes. Needs inverseOf: classIsDownstreamOf
+Equipment Sequence,N/A,EquipmentClass,classIsDownstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",classIsUpstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines downstream relationship between equipment classes.
 Equipment Sequence,N/A,EquipmentClass,isParallelWith,ObjectProperty,EquipmentClass,"Symmetric, Irreflexive",,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines equipment classes that operate in parallel.
 Equipment Sequence,N/A,EquipmentClass,defaultSequencePosition,DatatypeProperty,xsd:integer,Functional,,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Optional numerical position in default sequence (1-based). Functional per class in sequence context.
-Equipment Sequence,N/A,Equipment,isUpstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",isDownstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Instance-level relationship. Needs inverseOf: isDownstreamOf. Transitivity often inferred/applied via class or sequence logic.
-Equipment Sequence,N/A,Equipment,isDownstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",isUpstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Instance-level relationship. Transitivity often inferred/applied via class or sequence logic.
+Equipment Sequence,N/A,Equipment,equipmentIsUpstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",equipmentIsDownstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Instance-level relationship. Needs inverseOf: equipmentIsDownstreamOf. Transitivity often inferred/applied via class or sequence logic.
+Equipment Sequence,N/A,Equipment,equipmentIsDownstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",equipmentIsUpstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Instance-level relationship. Transitivity often inferred/applied via class or sequence logic.
 Equipment Sequence,N/A,Equipment,isParallelWith,ObjectProperty,Equipment,"Symmetric, Irreflexive",,Equipment,,Equipment Hierarchy Instance,Equipment,Instance-level relationship. Mirrors class property.
 Equipment Sequence,N/A,Equipment,actualSequencePosition,DatatypeProperty,xsd:integer,Functional,,Equipment,,Equipment Hierarchy Instance,Equipment,Actual position in sequence for this specific line configuration. Functional per equipment instance in sequence.
 Equipment Sequence,N/A,ProductionLine,hasSequenceDefinition,ObjectProperty,SequenceDefinition,-,,ProductionLine,,Equipment Hierarchy Context,ProductionLine,Links a line to its defined equipment sequence. Define inverse? (e.g. sequenceForLine)
@@ -332,6 +332,7 @@ def define_ontology_structure(onto, specification):
     logger.info(f"Defining ontology structure in: {onto.base_iri}")
     defined_classes = {}
     defined_properties = {}
+    property_is_functional = {}  # Track which properties are functional based on spec
     class_metadata = {} # Store metadata like notes per class
 
     # --- Pre-process Spec for Class Metadata and Hierarchy ---
@@ -465,7 +466,15 @@ def define_ontology_structure(onto, specification):
 
             # Add characteristics - check using lowercased string for robustness
             # Note: owlready2 might implicitly handle some characteristic implications
-            if 'functional' in characteristics_str: parent_classes.append(FunctionalProperty)
+            is_functional = 'functional' in characteristics_str
+            if is_functional: 
+                parent_classes.append(FunctionalProperty)
+                # Store functional status for later use in population
+                property_is_functional[prop_name] = True
+            else:
+                # Explicitly mark as non-functional
+                property_is_functional[prop_name] = False
+                
             if 'inversefunctional' in characteristics_str: parent_classes.append(InverseFunctionalProperty)
             if 'transitive' in characteristics_str: parent_classes.append(TransitiveProperty)
             if 'symmetric' in characteristics_str: parent_classes.append(SymmetricProperty)
@@ -554,17 +563,13 @@ def define_ontology_structure(onto, specification):
 
             if prop and inverse_prop:
                 try:
-                    # Check if already set (e.g., if spec defines inverse on both sides)
-                    if not prop.inverse_property:
-                        prop.inverse_property = inverse_prop
-                        logger.debug(f"Set inverse_property for {prop.name} to {inverse_prop.name}")
-                    elif prop.inverse_property == inverse_prop:
-                         logger.debug(f"Inverse property for {prop.name} already correctly set to {inverse_prop.name}.")
-                    else:
-                         # This warning from the previous log indicates a potential issue in the spec
-                         # where the same property might be listed as its own inverse, OR
-                         # where inverses are defined redundantly. Owlready2 might pick one.
-                         logger.warning(f"Inverse property for {prop.name} is already set to {prop.inverse_property.name}, but spec also suggests {inverse_prop.name}. Keeping the existing assignment.")
+                    # Check if already set to a different value than what's in the spec
+                    if prop.inverse_property and prop.inverse_property != inverse_prop:
+                        logger.warning(f"Overriding existing inverse property for {prop.name} from {prop.inverse_property.name} to {inverse_prop.name} as specified in the spec.")
+                    
+                    # Always set the inverse property according to the spec
+                    prop.inverse_property = inverse_prop
+                    logger.debug(f"Set inverse_property for {prop.name} to {inverse_prop.name}")
 
                 except Exception as e:
                     logger.error(f"Error setting inverse property for '{prop_name}' and '{inverse_name}': {e}")
@@ -581,7 +586,7 @@ def define_ontology_structure(onto, specification):
     logger.debug("--- Skipping complex property restrictions (add implementation if needed based on spec) ---")
 
     logger.info("Ontology structure definition complete.")
-    return defined_classes, defined_properties
+    return defined_classes, defined_properties, property_is_functional
 
 #======================================================================#
 #             ontology_population.py Module Code                     #
@@ -789,7 +794,7 @@ def get_or_create_individual(onto_class, individual_name_base, onto, add_labels=
 
 # --- Main Population Function ---
 
-def populate_ontology_from_data(onto, data_rows, defined_classes, defined_properties):
+def populate_ontology_from_data(onto, data_rows, defined_classes, defined_properties, property_is_functional):
     """
     Populates the ontology with individuals and relations from data rows.
 
@@ -798,6 +803,7 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         data_rows: A list of dictionaries (rows from data CSV).
         defined_classes: Dictionary mapping class names to owlready2 class objects.
         defined_properties: Dictionary mapping property names to owlready2 property objects.
+        property_is_functional: Dictionary mapping property names to boolean indicating if they're functional.
 
     Returns:
         tuple: (failed_rows_count, created_equipment_class_inds, equipment_class_positions)
@@ -863,33 +869,6 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         "isUpstreamOf", "isDownstreamOf"
     ]
 
-    # Define which properties are functional based STRICTLY on the provided spec.
-    # This is critical to avoid the ValueError seen in the logs.
-    spec_functional_properties = {
-        # Datatype properties (marked Functional in spec or assumed functional)
-         "plantId", "areaId", "processCellId", "lineId", "equipmentId", "equipmentClassId",
-         "equipmentModel", # Often functional per equipment
-         "materialId", "materialUOM", "standardUOM", "targetProductUOM",
-         "conversionFactor", "requestId", "requestRate", "requestRateUOM", "startTime",
-         "endTime", "shiftId", "shiftStartTime", "shiftEndTime", "shiftDurationMinutes",
-         "rampUpFlag", "reportedDurationMinutes", "businessExternalTimeMinutes",
-         "plantAvailableTimeMinutes", "effectiveRuntimeMinutes", "plantDecisionTimeMinutes",
-         "productionAvailableTimeMinutes", "defaultSequencePosition",
-         "actualSequencePosition", # Assuming this would be functional per instance
-
-        # Object properties MARKED AS FUNCTIONAL in the spec
-        "memberOfClass",
-        "occursDuring",
-        "duringShift",
-        "eventHasState",
-        "eventHasReason",
-        "previousSegment", # Added based on spec check
-        "nextSegment", # Added based on spec check
-    }
-    # Properties NOT marked as functional in the spec (must use append)
-    # locatedInPlant, partOfArea, locatedInProcessCell, isPartOfProductionLine,
-    # involvesResource, associatedWithProductionRequest, usesMaterial, etc.
-
     essential_prop_names = { # Define props critical for basic structure/linking
         "equipmentId", "lineId", "involvesResource", "occursDuring", "startTime",
         "memberOfClass", "equipmentClassId", "isPartOfProductionLine", # Needed for hierarchy & sequencing
@@ -927,7 +906,12 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 plant_ind = get_or_create_individual(cls_Plant, plant_id, onto, add_labels=plant_labels)
                 if plant_ind and prop_map["plantId"]:
                     if plant_ind.plantId != plant_id: # Assign only if different
-                        plant_ind.plantId = plant_id # Functional
+                        is_functional = property_is_functional.get("plantId", True)  # Default to True if unknown
+                        if is_functional:
+                            plant_ind.plantId = plant_id  # Direct assignment for functional properties
+                        else:
+                            if plant_id not in plant_ind.plantId:
+                                plant_ind.plantId.append(plant_id)  # Append for non-functional
 
                 area_id = safe_cast(row.get('GH_FOCUSFACTORY'), str) # Using FocusFactory as Area ID based on spec assumption
                 if not area_id: area_id = "UnknownArea" # Fallback if missing
@@ -937,14 +921,24 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 if area_ind:
                     prop_areaId = prop_map.get("areaId")
                     if prop_areaId and area_ind.areaId != area_id:
-                        area_ind.areaId = area_id # Functional
+                        is_functional = property_is_functional.get("areaId", True)  # Default to True if unknown
+                        if is_functional:
+                            area_ind.areaId = area_id  # Direct assignment for functional properties
+                        else:
+                            if area_id not in area_ind.areaId:
+                                area_ind.areaId.append(area_id)  # Append for non-functional
                     # Add relationship: Area locatedInPlant Plant (NON-FUNCTIONAL per spec)
                     prop_locatedInPlant = prop_map.get("locatedInPlant")
                     if prop_locatedInPlant and plant_ind:
-                        # Use append for non-functional
-                        if plant_ind not in area_ind.locatedInPlant:
-                             area_ind.locatedInPlant.append(plant_ind)
-                             pop_logger.debug(f"Linked {area_ind.name} locatedInPlant {plant_ind.name}")
+                        is_functional = property_is_functional.get("locatedInPlant", False)  # Default to False if unknown
+                        if is_functional:
+                            if area_ind.locatedInPlant != plant_ind:  # Only assign if different
+                                area_ind.locatedInPlant = plant_ind  # Direct assignment for functional
+                        else:
+                            # Use append for non-functional
+                            if plant_ind not in area_ind.locatedInPlant:
+                                 area_ind.locatedInPlant.append(plant_ind)
+                                 pop_logger.debug(f"Linked {area_ind.name} locatedInPlant {plant_ind.name}")
 
                 pcell_id = safe_cast(row.get('PHYSICAL_AREA'), str) # Using PhysicalArea as ProcessCell ID assumption
                 if not pcell_id: pcell_id = "UnknownProcessCell" # Fallback
@@ -954,14 +948,24 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 if pcell_ind:
                     prop_processCellId = prop_map.get("processCellId")
                     if prop_processCellId and pcell_ind.processCellId != pcell_id:
-                        pcell_ind.processCellId = pcell_id # Functional
+                        is_functional = property_is_functional.get("processCellId", True)  # Default to True if unknown
+                        if is_functional:
+                            pcell_ind.processCellId = pcell_id  # Direct assignment for functional properties
+                        else:
+                            if pcell_id not in pcell_ind.processCellId:
+                                pcell_ind.processCellId.append(pcell_id)  # Append for non-functional
                     # Add relationship: ProcessCell partOfArea Area (NON-FUNCTIONAL per spec)
                     prop_partOfArea = prop_map.get("partOfArea")
                     if prop_partOfArea and area_ind:
-                        # Use append for non-functional
-                        if area_ind not in pcell_ind.partOfArea:
-                             pcell_ind.partOfArea.append(area_ind)
-                             pop_logger.debug(f"Linked {pcell_ind.name} partOfArea {area_ind.name}")
+                        is_functional = property_is_functional.get("partOfArea", False)  # Default to False if unknown
+                        if is_functional:
+                            if pcell_ind.partOfArea != area_ind:  # Only assign if different
+                                pcell_ind.partOfArea = area_ind  # Direct assignment for functional
+                        else:
+                            # Use append for non-functional
+                            if area_ind not in pcell_ind.partOfArea:
+                                 pcell_ind.partOfArea.append(area_ind)
+                                 pop_logger.debug(f"Linked {pcell_ind.name} partOfArea {area_ind.name}")
 
                 line_id = safe_cast(row.get('LINE_NAME'), str)
                 if not line_id:
@@ -974,14 +978,24 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 if line_ind:
                     prop_lineId = prop_map.get("lineId")
                     if prop_lineId and line_ind.lineId != line_id:
-                        line_ind.lineId = line_id # Functional
+                        is_functional = property_is_functional.get("lineId", True)  # Default to True if unknown
+                        if is_functional:
+                            line_ind.lineId = line_id  # Direct assignment for functional properties
+                        else:
+                            if line_id not in line_ind.lineId:
+                                line_ind.lineId.append(line_id)  # Append for non-functional
                     # Add relationship: ProductionLine locatedInProcessCell ProcessCell (NON-FUNCTIONAL per spec)
                     prop_locatedInProcessCell = prop_map.get("locatedInProcessCell")
                     if prop_locatedInProcessCell and pcell_ind:
-                        # Use append for non-functional
-                        if pcell_ind not in line_ind.locatedInProcessCell:
-                             line_ind.locatedInProcessCell.append(pcell_ind)
-                             pop_logger.debug(f"Linked {line_ind.name} locatedInProcessCell {pcell_ind.name}")
+                        is_functional = property_is_functional.get("locatedInProcessCell", False)  # Default to False if unknown
+                        if is_functional:
+                            if line_ind.locatedInProcessCell != pcell_ind:  # Only assign if different
+                                line_ind.locatedInProcessCell = pcell_ind  # Direct assignment for functional
+                        else:
+                            # Use append for non-functional
+                            if pcell_ind not in line_ind.locatedInProcessCell:
+                                 line_ind.locatedInProcessCell.append(pcell_ind)
+                                 pop_logger.debug(f"Linked {line_ind.name} locatedInProcessCell {pcell_ind.name}")
 
 
                 # --- Identify the Resource (Line or Equipment) for the Event ---
@@ -1014,7 +1028,12 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                         # Set Equipment properties (Functional where specified)
                         prop_equipmentId = prop_map.get("equipmentId")
                         if prop_equipmentId and equipment_ind.equipmentId != eq_id_str:
-                            equipment_ind.equipmentId = eq_id_str # Functional
+                            is_functional = property_is_functional.get("equipmentId", True)  # Default to True if unknown
+                            if is_functional:
+                                equipment_ind.equipmentId = eq_id_str  # Direct assignment for functional
+                            else:
+                                if eq_id_str not in equipment_ind.equipmentId:
+                                    equipment_ind.equipmentId.append(eq_id_str)  # Append for non-functional
 
                         prop_equipmentName = prop_map.get("equipmentName")
                         if prop_equipmentName and eq_name:
@@ -1047,10 +1066,15 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                         # Link Equipment to ProductionLine (NON-FUNCTIONAL per spec)
                         prop_isPartOfProductionLine = prop_map.get("isPartOfProductionLine")
                         if prop_isPartOfProductionLine and line_ind:
-                            # Use append for non-functional
-                            if line_ind not in equipment_ind.isPartOfProductionLine:
-                                 equipment_ind.isPartOfProductionLine.append(line_ind)
-                                 pop_logger.debug(f"Linked {equipment_ind.name} isPartOfProductionLine {line_ind.name}")
+                            is_functional = property_is_functional.get("isPartOfProductionLine", False)  # Default to False if unknown
+                            if is_functional:
+                                if equipment_ind.isPartOfProductionLine != line_ind:  # Only assign if different
+                                    equipment_ind.isPartOfProductionLine = line_ind  # Direct assignment for functional
+                            else:
+                                # Use append for non-functional
+                                if line_ind not in equipment_ind.isPartOfProductionLine:
+                                     equipment_ind.isPartOfProductionLine.append(line_ind)
+                                     pop_logger.debug(f"Linked {equipment_ind.name} isPartOfProductionLine {line_ind.name}")
 
                         # Parse and link EquipmentClass
                         if cls_EquipmentClass and prop_map.get("memberOfClass") and prop_map.get("equipmentClassId") and prop_map.get("defaultSequencePosition"):
@@ -1068,15 +1092,27 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
 
                                     # Assign equipmentClassId (FUNCTIONAL per spec)
                                     prop_equipmentClassId = prop_map.get("equipmentClassId")
-                                    if prop_equipmentClassId and eq_class_ind.equipmentClassId != eq_class_name:
-                                        eq_class_ind.equipmentClassId = eq_class_name
+                                    if prop_equipmentClassId:
+                                        is_functional = property_is_functional.get("equipmentClassId", True)  # Default to True if unknown
+                                        if is_functional:
+                                            if eq_class_ind.equipmentClassId != eq_class_name:  # Only assign if different
+                                                eq_class_ind.equipmentClassId = eq_class_name  # Direct assignment for functional
+                                        else:
+                                            if eq_class_name not in eq_class_ind.equipmentClassId:
+                                                eq_class_ind.equipmentClassId.append(eq_class_name)  # Append for non-functional
 
                                     # Link Equipment to EquipmentClass (FUNCTIONAL per spec)
                                     prop_memberOfClass = prop_map.get("memberOfClass")
                                     if prop_memberOfClass:
-                                        if equipment_ind.memberOfClass != eq_class_ind: # Direct assignment ok
-                                            equipment_ind.memberOfClass = eq_class_ind
-                                            pop_logger.debug(f"Linking {equipment_ind.name} memberOfClass {eq_class_ind.name}") # DEBUG LOG ADDED
+                                        is_functional = property_is_functional.get("memberOfClass", True)  # Default to True if unknown
+                                        if is_functional:
+                                            if equipment_ind.memberOfClass != eq_class_ind:  # Only assign if different
+                                                equipment_ind.memberOfClass = eq_class_ind  # Direct assignment for functional
+                                                pop_logger.debug(f"Linking {equipment_ind.name} memberOfClass {eq_class_ind.name}")
+                                        else:
+                                            if eq_class_ind not in equipment_ind.memberOfClass:
+                                                equipment_ind.memberOfClass.append(eq_class_ind)  # Append for non-functional
+                                                pop_logger.debug(f"Linking {equipment_ind.name} memberOfClass {eq_class_ind.name}")
 
                                     # Set default sequence position *on the class individual* (FUNCTIONAL per spec)
                                     prop_defaultSequencePosition = prop_map.get("defaultSequencePosition")
@@ -1085,20 +1121,28 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                                         if default_pos is not None:
                                             existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
                                             # Assign only if not already set or if forced update is desired
-                                            if existing_pos is None or existing_pos != default_pos:
-                                                pop_logger.debug(f"Assigning default sequence position {default_pos} to class {eq_class_name} ({eq_class_ind.name})")
-                                                eq_class_ind.defaultSequencePosition = default_pos
-
+                                            is_functional = property_is_functional.get("defaultSequencePosition", True)  # Default to True if unknown
+                                            if is_functional:
+                                                if existing_pos is None or existing_pos != default_pos:
+                                                    pop_logger.debug(f"Assigning default sequence position {default_pos} to class {eq_class_name} ({eq_class_ind.name})")
+                                                    eq_class_ind.defaultSequencePosition = default_pos
+                                            else:
+                                                # Non-functional would be unusual for a position, but handle it
+                                                if existing_pos is None:
+                                                    eq_class_ind.defaultSequencePosition = [default_pos]
+                                                elif default_pos not in eq_class_ind.defaultSequencePosition:
+                                                    eq_class_ind.defaultSequencePosition.append(default_pos)
+                                            
                                             # Store in the positions dict for later relationship building (always update with latest seen/assigned)
                                             equipment_class_positions[eq_class_name] = default_pos
                                         else:
-                                             # Check if it already has a position set by other means maybe?
-                                             existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-                                             if existing_pos is not None and eq_class_name not in equipment_class_positions:
-                                                  equipment_class_positions[eq_class_name] = existing_pos
-                                                  pop_logger.debug(f"Class {eq_class_name} already had sequence position {existing_pos}, adding to tracking.")
-                                             # else: # Reduce noise
-                                             #      pop_logger.debug(f"No default sequence position in map for {eq_class_name}")
+                                            # Check if it already has a position set by other means maybe?
+                                            existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+                                            if existing_pos is not None and eq_class_name not in equipment_class_positions:
+                                                equipment_class_positions[eq_class_name] = existing_pos
+                                                pop_logger.debug(f"Class {eq_class_name} already had sequence position {existing_pos}, adding to tracking.")
+                                            # else: # Reduce noise
+                                            #      pop_logger.debug(f"No default sequence position in map for {eq_class_name}")
 
                                 else:
                                     pop_logger.error(f"Row {row_num}: Failed to create/retrieve EquipmentClass individual for name '{eq_class_name}'.")
@@ -1431,30 +1475,54 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 # Link to TimeInterval - occursDuring (FUNCTIONAL per spec)
                 prop_occursDuring = prop_map.get("occursDuring")
                 if prop_occursDuring and time_interval_ind:
-                     if event_ind.occursDuring != time_interval_ind: # Direct assignment ok
-                         event_ind.occursDuring = time_interval_ind
-                         pop_logger.debug(f"Set functional property occursDuring for {event_ind.name} to {time_interval_ind.name}")
+                    is_functional = property_is_functional.get("occursDuring", True)  # Default to True if unknown
+                    if is_functional:
+                        if event_ind.occursDuring != time_interval_ind:  # Only assign if different
+                            event_ind.occursDuring = time_interval_ind  # Direct assignment for functional
+                            pop_logger.debug(f"Set functional property occursDuring for {event_ind.name} to {time_interval_ind.name}")
+                    else:
+                        if time_interval_ind not in event_ind.occursDuring:
+                            event_ind.occursDuring.append(time_interval_ind)
+                            pop_logger.debug(f"Added non-functional property occursDuring for {event_ind.name} to {time_interval_ind.name}")
 
                 # Link to Shift - duringShift (FUNCTIONAL per spec)
                 prop_duringShift = prop_map.get("duringShift")
                 if prop_duringShift and shift_ind:
-                     if event_ind.duringShift != shift_ind: # Direct assignment ok
-                         event_ind.duringShift = shift_ind
-                         pop_logger.debug(f"Set functional property duringShift for {event_ind.name} to {shift_ind.name}")
+                    is_functional = property_is_functional.get("duringShift", True)  # Default to True if unknown
+                    if is_functional:
+                        if event_ind.duringShift != shift_ind:  # Only assign if different
+                            event_ind.duringShift = shift_ind  # Direct assignment for functional
+                            pop_logger.debug(f"Set functional property duringShift for {event_ind.name} to {shift_ind.name}")
+                    else:
+                        if shift_ind not in event_ind.duringShift:
+                            event_ind.duringShift.append(shift_ind)
+                            pop_logger.debug(f"Added non-functional property duringShift for {event_ind.name} to {shift_ind.name}")
 
                 # Link to OperationalState - eventHasState (FUNCTIONAL per spec)
                 prop_eventHasState = prop_map.get("eventHasState")
                 if prop_eventHasState and state_ind:
-                     if event_ind.eventHasState != state_ind: # Direct assignment ok
-                         event_ind.eventHasState = state_ind
-                         pop_logger.debug(f"Set functional property eventHasState for {event_ind.name} to {state_ind.name}")
+                    is_functional = property_is_functional.get("eventHasState", True)  # Default to True if unknown
+                    if is_functional:
+                        if event_ind.eventHasState != state_ind:  # Only assign if different
+                            event_ind.eventHasState = state_ind  # Direct assignment for functional
+                            pop_logger.debug(f"Set functional property eventHasState for {event_ind.name} to {state_ind.name}")
+                    else:
+                        if state_ind not in event_ind.eventHasState:
+                            event_ind.eventHasState.append(state_ind)
+                            pop_logger.debug(f"Added non-functional property eventHasState for {event_ind.name} to {state_ind.name}")
 
                 # Link to OperationalReason - eventHasReason (FUNCTIONAL per spec)
                 prop_eventHasReason = prop_map.get("eventHasReason")
                 if prop_eventHasReason and reason_ind:
-                     if event_ind.eventHasReason != reason_ind: # Direct assignment ok
-                         event_ind.eventHasReason = reason_ind
-                         pop_logger.debug(f"Set functional property eventHasReason for {event_ind.name} to {reason_ind.name}")
+                    is_functional = property_is_functional.get("eventHasReason", True)  # Default to True if unknown
+                    if is_functional:
+                        if event_ind.eventHasReason != reason_ind:  # Only assign if different
+                            event_ind.eventHasReason = reason_ind  # Direct assignment for functional
+                            pop_logger.debug(f"Set functional property eventHasReason for {event_ind.name} to {reason_ind.name}")
+                    else:
+                        if reason_ind not in event_ind.eventHasReason:
+                            event_ind.eventHasReason.append(reason_ind)
+                            pop_logger.debug(f"Added non-functional property eventHasReason for {event_ind.name} to {reason_ind.name}")
 
                 # Add links to Personnel, ProcessSegment etc. if data/properties exist
 
@@ -1496,21 +1564,24 @@ def setup_equipment_sequence_relationships(onto, equipment_class_positions, defi
     """
     pop_logger.info("Setting up CLASS-LEVEL equipment sequence relationships based on position...")
 
-    # Get the CLASS-LEVEL isUpstreamOf property (Domain: EquipmentClass)
+    # Get the CLASS-LEVEL classIsUpstreamOf property (Domain: EquipmentClass)
     # Assuming the same property name is used but domain restricts its application
-    prop_isUpstreamOf = prop_map.get("isUpstreamOf")
-    # prop_isDownstreamOf = prop_map.get("isDownstreamOf") # Inverse should be handled automatically
+    prop_classIsUpstreamOf = prop_map.get("classIsUpstreamOf")
+    prop_classIsDownstreamOf = prop_map.get("classIsDownstreamOf") # Get the inverse property
 
-    if not prop_isUpstreamOf:
-        pop_logger.error("Cannot establish CLASS-LEVEL sequence relationships: 'isUpstreamOf' property not found in prop_map.")
+    if not prop_classIsUpstreamOf:
+        pop_logger.error("Cannot establish CLASS-LEVEL sequence relationships: 'classIsUpstreamOf' property not found in prop_map.")
         return
+
+    if not prop_classIsDownstreamOf:
+        pop_logger.warning("'classIsDownstreamOf' inverse property not found in prop_map. Only forward relationships will be set.")
 
     # Check if the fetched property has the correct domain (optional sanity check)
     cls_EquipmentClass = defined_classes.get("EquipmentClass")
-    if cls_EquipmentClass and cls_EquipmentClass not in prop_isUpstreamOf.domain:
-         pop_logger.warning(f"Property 'isUpstreamOf' ({prop_isUpstreamOf}) does not have EquipmentClass in its domain {prop_isUpstreamOf.domain}. Class relationships might not be set correctly.")
+    if cls_EquipmentClass and cls_EquipmentClass not in prop_classIsUpstreamOf.domain:
+         pop_logger.warning(f"Property 'classIsUpstreamOf' ({prop_classIsUpstreamOf}) does not have EquipmentClass in its domain {prop_classIsUpstreamOf.domain}. Class relationships might not be set correctly.")
     elif not cls_EquipmentClass:
-         pop_logger.warning("EquipmentClass not found in defined_classes, cannot verify isUpstreamOf domain.")
+         pop_logger.warning("EquipmentClass not found in defined_classes, cannot verify classIsUpstreamOf domain.")
 
 
     if not created_equipment_class_inds:
@@ -1547,25 +1618,25 @@ def setup_equipment_sequence_relationships(onto, equipment_class_positions, defi
 
             pop_logger.debug(f"Found upstream: {upstream_ind.name} (Pos {up_pos}), downstream: {downstream_ind.name} (Pos {down_pos})") # DEBUG LOG ADDED
 
-            # Set upstream/downstream relationships (isUpstreamOf is NOT functional per spec)
+            # Set upstream/downstream relationships (classIsUpstreamOf is NOT functional per spec)
             # Ensure the property is treated correctly for EquipmentClass individuals
             try:
                 # Check if relationship already exists before appending
-                current_downstream = prop_isUpstreamOf[upstream_ind]
+                current_downstream = prop_classIsUpstreamOf[upstream_ind]
                 if downstream_ind not in current_downstream:
-                    pop_logger.debug(f"Attempting CLASS relationship: {upstream_ind.name} isUpstreamOf {downstream_ind.name}")
-                    prop_isUpstreamOf[upstream_ind].append(downstream_ind)
-                    pop_logger.debug(f"Set CLASS relationship: {upstream_class_name} ({upstream_ind.name}) isUpstreamOf {downstream_class_name} ({downstream_ind.name})")
+                    pop_logger.debug(f"Attempting CLASS relationship: {upstream_ind.name} classIsUpstreamOf {downstream_ind.name}")
+                    prop_classIsUpstreamOf[upstream_ind].append(downstream_ind)
+                    pop_logger.debug(f"Set CLASS relationship: {upstream_class_name} ({upstream_ind.name}) classIsUpstreamOf {downstream_class_name} ({downstream_ind.name})")
+                    
+                    # Explicitly set the inverse relationship
+                    if prop_classIsDownstreamOf:
+                        if upstream_ind not in prop_classIsDownstreamOf[downstream_ind]:
+                            prop_classIsDownstreamOf[downstream_ind].append(upstream_ind)
+                            pop_logger.debug(f"Set INVERSE CLASS relationship: {downstream_class_name} ({downstream_ind.name}) classIsDownstreamOf {upstream_class_name} ({upstream_ind.name})")
+                    
                     relationships_created += 1
                 else:
-                    pop_logger.debug(f"CLASS relationship already exists: {upstream_class_name} isUpstreamOf {downstream_class_name}")
-
-                # owlready2 should handle the inverse automatically if defined correctly
-                # We can add a check for debugging:
-                prop_isDownstreamOf = prop_map.get("isDownstreamOf")
-                if prop_isDownstreamOf:
-                     if upstream_ind not in prop_isDownstreamOf[downstream_ind]:
-                          pop_logger.warning(f"Inverse CLASS relationship (isDownstreamOf) not automatically set for {downstream_ind.name} -> {upstream_ind.name}")
+                    pop_logger.debug(f"CLASS relationship already exists: {upstream_class_name} classIsUpstreamOf {downstream_class_name}")
 
             except Exception as e:
                  pop_logger.error(f"Error setting class relationship {upstream_class_name} -> {downstream_class_name}: {e}")
@@ -1608,19 +1679,22 @@ def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equi
     prop_memberOfClass = prop_map.get("memberOfClass") # Functional
     prop_equipmentClassId = prop_map.get("equipmentClassId") # Functional DataProp
 
-    # Equipment-level isUpstreamOf property (Domain: Equipment) (NON-FUNCTIONAL per spec)
-    prop_equipment_isUpstreamOf = prop_map.get("isUpstreamOf")
-    # prop_equipment_isDownstreamOf = prop_map.get("isDownstreamOf") # Inverse handled automatically
+    # Equipment-level equipmentIsUpstreamOf property (Domain: Equipment) (NON-FUNCTIONAL per spec)
+    prop_equipment_isUpstreamOf = prop_map.get("equipmentIsUpstreamOf")
+    prop_equipment_isDownstreamOf = prop_map.get("equipmentIsDownstreamOf") # Get the inverse property
 
     if not all([cls_Equipment, cls_ProductionLine, cls_EquipmentClass,
                 prop_isPartOfProductionLine, prop_memberOfClass, prop_equipmentClassId,
                 prop_equipment_isUpstreamOf]):
-        pop_logger.error("Missing required classes or properties for equipment instance relationships. Check: Equipment, ProductionLine, EquipmentClass, isPartOfProductionLine, memberOfClass, equipmentClassId, isUpstreamOf")
+        pop_logger.error("Missing required classes or properties for equipment instance relationships. Check: Equipment, ProductionLine, EquipmentClass, isPartOfProductionLine, memberOfClass, equipmentClassId, equipmentIsUpstreamOf")
         return
 
-    # Verify the domain of the fetched isUpstreamOf property includes Equipment
+    if not prop_equipment_isDownstreamOf:
+        pop_logger.warning("'equipmentIsDownstreamOf' inverse property not found in prop_map. Only forward relationships will be set.")
+
+    # Verify the domain of the fetched equipmentIsUpstreamOf property includes Equipment
     if cls_Equipment not in prop_equipment_isUpstreamOf.domain:
-         pop_logger.warning(f"Property 'isUpstreamOf' ({prop_equipment_isUpstreamOf}) does not have Equipment in its domain {prop_equipment_isUpstreamOf.domain}. Instance relationships might not be set correctly.")
+         pop_logger.warning(f"Property 'equipmentIsUpstreamOf' ({prop_equipment_isUpstreamOf}) does not have Equipment in its domain {prop_equipment_isUpstreamOf.domain}. Instance relationships might not be set correctly.")
 
     # Sort equipment classes by position
     if not equipment_class_positions:
@@ -1715,22 +1789,23 @@ def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equi
                 for upstream_eq in upstream_equipment_on_line:
                     for downstream_eq in downstream_equipment_on_line:
                         # Ensure the property is applied to Equipment individuals
-                        # isUpstreamOf is NON-FUNCTIONAL per spec, use append
+                        # equipmentIsUpstreamOf is NON-FUNCTIONAL per spec, use append
                         try:
                             current_downstream_rels = prop_equipment_isUpstreamOf[upstream_eq]
                             if downstream_eq not in current_downstream_rels:
-                                pop_logger.debug(f"Attempting INSTANCE relationship: {upstream_eq.name} isUpstreamOf {downstream_eq.name}")
+                                pop_logger.debug(f"Attempting INSTANCE relationship: {upstream_eq.name} equipmentIsUpstreamOf {downstream_eq.name}")
                                 prop_equipment_isUpstreamOf[upstream_eq].append(downstream_eq)
+                                
+                                # Explicitly set the inverse relationship
+                                if prop_equipment_isDownstreamOf:
+                                    if upstream_eq not in prop_equipment_isDownstreamOf[downstream_eq]:
+                                        prop_equipment_isDownstreamOf[downstream_eq].append(upstream_eq)
+                                        pop_logger.debug(f"Set INVERSE INSTANCE relationship: {downstream_eq.name} equipmentIsDownstreamOf {upstream_eq.name}")
+                                
                                 line_relationships += 1
-                                pop_logger.debug(f"Set INSTANCE relationship: {upstream_eq.name} isUpstreamOf {downstream_eq.name} on line {line_id_str}")
+                                pop_logger.debug(f"Set INSTANCE relationship: {upstream_eq.name} equipmentIsUpstreamOf {downstream_eq.name} on line {line_id_str}")
                             # else:
-                                # pop_logger.debug(f"INSTANCE relationship already exists: {upstream_eq.name} isUpstreamOf {downstream_eq.name}")
-
-                            # Check inverse (optional debug)
-                            prop_equipment_isDownstreamOf = prop_map.get("isDownstreamOf")
-                            if prop_equipment_isDownstreamOf:
-                                 if upstream_eq not in prop_equipment_isDownstreamOf[downstream_eq]:
-                                      pop_logger.warning(f"Inverse INSTANCE relationship (isDownstreamOf) not set for {downstream_eq.name} -> {upstream_eq.name}")
+                                # pop_logger.debug(f"INSTANCE relationship already exists: {upstream_eq.name} equipmentIsUpstreamOf {downstream_eq.name}")
 
                         except Exception as e:
                             pop_logger.error(f"Error setting instance relationship {upstream_eq.name} -> {downstream_eq.name} on line {line_id_str}: {e}")
@@ -1983,7 +2058,7 @@ def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, on
 
         # 3. Define Ontology Structure (TBox)
         # Pass the 'onto' object created above
-        defined_classes, defined_properties = define_ontology_structure(onto, specification)
+        defined_classes, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
         if not defined_classes: # Check if class definition was minimally successful
             main_logger.warning("Ontology structure definition resulted in no classes. Population might be empty.")
             # Continue for now, but population will likely fail checks
@@ -2005,7 +2080,7 @@ def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, on
             try:
                 # Get number of failed rows and the created equipment class info
                 failed_rows_count, created_eq_classes, eq_class_positions = populate_ontology_from_data(
-                    onto, data_rows, defined_classes, defined_properties
+                    onto, data_rows, defined_classes, defined_properties, property_is_functional
                 )
                 if failed_rows_count == len(data_rows) and len(data_rows) > 0:
                     main_logger.error(f"Population failed for all {len(data_rows)} data rows.")
@@ -2253,12 +2328,8 @@ def main_ontology_generation(spec_file_path, data_file_path, output_owl_path, on
             except Exception as e_close:
                 main_logger.warning(f"Could not explicitly close world DB: {e_close}")
         elif world:
-            # Destroy in-memory world to release resources (optional but good practice)
-            try:
-                 world.destroy()
-                 main_logger.info("In-memory world destroyed.")
-            except Exception as e_destroy:
-                 main_logger.warning(f"Could not explicitly destroy in-memory world: {e_destroy}")
+            # In-memory world will be garbage collected automatically
+            main_logger.info("In-memory world will be garbage collected.")
 
 
         # Return success status based on all critical steps
@@ -2340,109 +2411,41 @@ if __name__ == "__main__":
 
 ### Execution Logs: Logs/log.txt
 ```
-2025-03-30 21:31:22,427 - INFO - create_ontology - Logging configured.
-2025-03-30 21:31:22,427 - INFO - create_ontology - Standard logging enabled (INFO level).
-2025-03-30 21:31:22,427 - INFO - create_ontology - --- Starting Ontology Generation ---
-2025-03-30 21:31:22,427 - INFO - create_ontology - Specification file: OPERA_ISA95_OWL_ONT_V7.csv
-2025-03-30 21:31:22,427 - INFO - create_ontology - Data file: mx_toothpaste_finishing_sample_100lines.csv
-2025-03-30 21:31:22,427 - INFO - create_ontology - Output OWL file: output_ontology.owl
-2025-03-30 21:31:22,427 - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
-2025-03-30 21:31:22,427 - INFO - create_ontology - Save format: rdfxml
-2025-03-30 21:31:22,427 - INFO - create_ontology - Run reasoner: False
-2025-03-30 21:31:22,427 - INFO - __main__ - Parsing specification file: OPERA_ISA95_OWL_ONT_V7.csv
-2025-03-30 21:31:22,427 - INFO - __main__ - Successfully parsed 98 rows from specification.
-2025-03-30 21:31:22,427 - INFO - create_ontology - Initializing in-memory World.
-2025-03-30 21:31:22,428 - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
-2025-03-30 21:31:22,428 - INFO - __main__ - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
-2025-03-30 21:31:22,436 - WARNING - __main__ - Inverse property for isUpstreamOf is already set to isUpstreamOf, but spec also suggests isDownstreamOf. Keeping the existing assignment.
-2025-03-30 21:31:22,436 - WARNING - __main__ - Inverse property for isDownstreamOf is already set to isDownstreamOf, but spec also suggests isUpstreamOf. Keeping the existing assignment.
-2025-03-30 21:31:22,436 - WARNING - __main__ - Inverse property for previousSegment is already set to previousSegment, but spec also suggests nextSegment. Keeping the existing assignment.
-2025-03-30 21:31:22,436 - WARNING - __main__ - Inverse property for nextSegment is already set to nextSegment, but spec also suggests previousSegment. Keeping the existing assignment.
-2025-03-30 21:31:22,436 - INFO - __main__ - Ontology structure definition complete.
-2025-03-30 21:31:22,436 - INFO - create_ontology - Reading data file: mx_toothpaste_finishing_sample_100lines.csv
-2025-03-30 21:31:22,437 - INFO - create_ontology - Successfully read 100 data rows.
-2025-03-30 21:31:22,437 - INFO - ontology_population - Starting ontology population with 100 data rows.
-2025-03-30 21:31:22,478 - INFO - ontology_population - --- Equipment Class Sequence Position Summary (from population) ---
-2025-03-30 21:31:22,478 - INFO - ontology_population - Equipment Class: Filler - Default Sequence Position: 1
-2025-03-30 21:31:22,478 - INFO - ontology_population - Equipment Class: Cartoner - Default Sequence Position: 2
-2025-03-30 21:31:22,478 - INFO - ontology_population - Equipment Class: Bundler - Default Sequence Position: 3
-2025-03-30 21:31:22,478 - INFO - ontology_population - Equipment Class: CasePacker - Default Sequence Position: 5
-2025-03-30 21:31:22,478 - INFO - ontology_population - Equipment Class: Palletizer - Default Sequence Position: 7
-2025-03-30 21:31:22,478 - INFO - ontology_population - Total equipment classes with sequence positions found: 5
-2025-03-30 21:31:22,478 - INFO - ontology_population - Ontology population complete. Successfully processed 100 rows, failed to process 0 rows.
-2025-03-30 21:31:22,478 - INFO - create_ontology - Population completed successfully for all 100 rows.
-2025-03-30 21:31:22,478 - INFO - create_ontology - Population found/created 6 unique EquipmentClass individuals.
-2025-03-30 21:31:22,478 - INFO - create_ontology - Population assigned sequence positions to 5 EquipmentClasses.
-2025-03-30 21:31:22,478 - INFO - create_ontology - Proceeding to setup sequence relationships...
-2025-03-30 21:31:22,478 - INFO - ontology_population - Setting up CLASS-LEVEL equipment sequence relationships based on position...
-2025-03-30 21:31:22,478 - WARNING - ontology_population - Inverse CLASS relationship (isDownstreamOf) not automatically set for EquipmentClass_Cartoner -> EquipmentClass_Filler
-2025-03-30 21:31:22,478 - WARNING - ontology_population - Inverse CLASS relationship (isDownstreamOf) not automatically set for EquipmentClass_Bundler -> EquipmentClass_Cartoner
-2025-03-30 21:31:22,478 - WARNING - ontology_population - Inverse CLASS relationship (isDownstreamOf) not automatically set for EquipmentClass_CasePacker -> EquipmentClass_Bundler
-2025-03-30 21:31:22,478 - WARNING - ontology_population - Inverse CLASS relationship (isDownstreamOf) not automatically set for EquipmentClass_Palletizer -> EquipmentClass_CasePacker
-2025-03-30 21:31:22,478 - INFO - ontology_population - Created 4 CLASS-LEVEL upstream/downstream relationships.
-
-=== EQUIPMENT CLASS SEQUENCE RELATIONSHIP REPORT ===
-Created 4 upstream/downstream relationships between Equipment Classes:
-  Filler → Cartoner
-  Cartoner → Bundler
-  Bundler → CasePacker
-  CasePacker → Palletizer
-Total classes with positions considered: 5
-2025-03-30 21:31:22,478 - INFO - ontology_population - Setting up INSTANCE-LEVEL equipment relationships within production lines...
-2025-03-30 21:31:22,478 - WARNING - ontology_population - Property 'isUpstreamOf' (manufacturing_ontology.isUpstreamOf) does not have Equipment in its domain [manufacturing_ontology.EquipmentClass]. Instance relationships might not be set correctly.
-2025-03-30 21:31:22,479 - INFO - ontology_population - Found 12 lines with sequenced equipment.
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_150.0 -> Equipment_152.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_149.0 -> Equipment_150.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_151.0 -> Equipment_149.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_153.0 -> Equipment_151.0
-2025-03-30 21:31:22,479 - INFO - ontology_population - Created 4 instance relationships for line FIPCO009.
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_195.0 -> Equipment_193.0
-2025-03-30 21:31:22,479 - INFO - ontology_population - Created 1 instance relationships for line FIPCO00G.
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_206.0 -> Equipment_208.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_205.0 -> Equipment_206.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_207.0 -> Equipment_205.0
-2025-03-30 21:31:22,479 - INFO - ontology_population - Created 3 instance relationships for line FIPCO00I.
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_145.0 -> Equipment_143.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_144.0 -> Equipment_145.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_146.0 -> Equipment_144.0
-2025-03-30 21:31:22,479 - INFO - ontology_population - Created 3 instance relationships for line FIPCO004.
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_164.0 -> Equipment_166.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_163.0 -> Equipment_164.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_165.0 -> Equipment_163.0
-2025-03-30 21:31:22,479 - INFO - ontology_population - Created 3 instance relationships for line FIPCO002.
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_178.0 -> Equipment_180.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_177.0 -> Equipment_178.0
-2025-03-30 21:31:22,479 - INFO - ontology_population - Created 2 instance relationships for line FIPCO00E.
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_185.0 -> Equipment_187.0
-2025-03-30 21:31:22,479 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_184.0 -> Equipment_185.0
-2025-03-30 21:31:22,479 - INFO - ontology_population - Created 2 instance relationships for line FIPCO00F.
-2025-03-30 21:31:22,480 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_170.0 -> Equipment_171.0
-2025-03-30 21:31:22,480 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_172.0 -> Equipment_170.0
-2025-03-30 21:31:22,480 - INFO - ontology_population - Created 2 instance relationships for line FIPCO003.
-2025-03-30 21:31:22,480 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_199.0 -> Equipment_201.0
-2025-03-30 21:31:22,480 - INFO - ontology_population - Created 1 instance relationships for line FIPCO00H.
-2025-03-30 21:31:22,480 - WARNING - ontology_population - Inverse INSTANCE relationship (isDownstreamOf) not set for Equipment_767.0 -> Equipment_769.0
-2025-03-30 21:31:22,480 - INFO - ontology_population - Created 1 instance relationships for line FIPCO00J.
-
-=== EQUIPMENT INSTANCE RELATIONSHIP REPORT ===
-2025-03-30 21:31:22,480 - INFO - ontology_population - Created 22 equipment instance relationships across 10 production lines.
-Created 22 equipment instance relationships on 10 lines:
-  Line FIPCO002: 3 relationships
-  Line FIPCO003: 2 relationships
-  Line FIPCO004: 3 relationships
-  Line FIPCO009: 4 relationships
-  Line FIPCO00E: 2 relationships
-  Line FIPCO00F: 2 relationships
-  Line FIPCO00G: 1 relationships
-  Line FIPCO00H: 1 relationships
-  Line FIPCO00I: 3 relationships
-  Line FIPCO00J: 1 relationships
-2025-03-30 21:31:22,480 - INFO - create_ontology - Saving ontology to output_ontology.owl in 'rdfxml' format...
-2025-03-30 21:31:22,488 - INFO - create_ontology - Ontology saved successfully.
-2025-03-30 21:31:22,488 - WARNING - create_ontology - Could not explicitly destroy in-memory world: 'World' object has no attribute 'destroy'
-2025-03-30 21:31:22,488 - INFO - create_ontology - --- Ontology Generation Finished ---
-2025-03-30 21:31:22,488 - INFO - create_ontology - Total time: 0.06 seconds
-2025-03-30 21:31:22,488 - INFO - create_ontology - Ontology generation process completed successfully.
+2025-03-30 21:56:24,440 - INFO - create_ontology - Logging configured.
+2025-03-30 21:56:24,440 - INFO - create_ontology - Standard logging enabled (INFO level).
+2025-03-30 21:56:24,440 - INFO - create_ontology - --- Starting Ontology Generation ---
+2025-03-30 21:56:24,440 - INFO - create_ontology - Specification file: OPERA_ISA95_OWL_ONT_V8.csv
+2025-03-30 21:56:24,440 - INFO - create_ontology - Data file: mx_toothpaste_finishing_sample_100lines.csv
+2025-03-30 21:56:24,440 - INFO - create_ontology - Output OWL file: output_ontology.owl
+2025-03-30 21:56:24,440 - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
+2025-03-30 21:56:24,440 - INFO - create_ontology - Save format: rdfxml
+2025-03-30 21:56:24,440 - INFO - create_ontology - Run reasoner: False
+2025-03-30 21:56:24,440 - INFO - __main__ - Parsing specification file: OPERA_ISA95_OWL_ONT_V8.csv
+2025-03-30 21:56:24,441 - INFO - __main__ - Successfully parsed 98 rows from specification.
+2025-03-30 21:56:24,441 - INFO - create_ontology - Initializing in-memory World.
+2025-03-30 21:56:24,442 - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
+2025-03-30 21:56:24,442 - INFO - __main__ - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
+2025-03-30 21:56:24,450 - WARNING - __main__ - Overriding existing inverse property for classIsUpstreamOf from classIsUpstreamOf to classIsDownstreamOf as specified in the spec.
+2025-03-30 21:56:24,450 - WARNING - __main__ - Overriding existing inverse property for equipmentIsUpstreamOf from equipmentIsUpstreamOf to equipmentIsDownstreamOf as specified in the spec.
+2025-03-30 21:56:24,450 - WARNING - __main__ - Overriding existing inverse property for previousSegment from previousSegment to nextSegment as specified in the spec.
+2025-03-30 21:56:24,450 - INFO - __main__ - Ontology structure definition complete.
+2025-03-30 21:56:24,450 - INFO - create_ontology - Reading data file: mx_toothpaste_finishing_sample_100lines.csv
+2025-03-30 21:56:24,452 - INFO - create_ontology - Successfully read 100 data rows.
+2025-03-30 21:56:24,452 - INFO - ontology_population - Starting ontology population with 100 data rows.
+2025-03-30 21:56:24,452 - WARNING - ontology_population - Property 'isDownstreamOf' not found in ontology definition. Population using this property will be skipped.
+2025-03-30 21:56:24,452 - ERROR - ontology_population - Cannot reliably proceed with population. Missing essential properties definitions: ['isUpstreamOf']
+2025-03-30 21:56:24,452 - ERROR - create_ontology - Population failed for all 100 data rows.
+2025-03-30 21:56:24,452 - WARNING - create_ontology - Population finished, but NO EquipmentClass individuals were created or found.
+2025-03-30 21:56:24,452 - WARNING - create_ontology - Population finished, but NO sequence positions were assigned to EquipmentClasses.
+2025-03-30 21:56:24,452 - WARNING - create_ontology - Skipping sequence relationship setup due to population failure.
+2025-03-30 21:56:24,452 - ERROR - create_ontology - Ontology generation encountered errors (population or reasoning). Ontology will NOT be saved to the primary output file.
+2025-03-30 21:56:24,452 - INFO - create_ontology - Attempting to save potentially problematic ontology to: output_ontology_debug.owl
+2025-03-30 21:56:24,452 - INFO - create_ontology - Saving ontology to output_ontology_debug.owl in 'rdfxml' format...
+2025-03-30 21:56:24,454 - INFO - create_ontology - Ontology saved successfully.
+2025-03-30 21:56:24,454 - WARNING - create_ontology - Could not explicitly destroy in-memory world: 'World' object has no attribute 'destroy'
+2025-03-30 21:56:24,454 - INFO - create_ontology - --- Ontology Generation Finished ---
+2025-03-30 21:56:24,454 - INFO - create_ontology - Total time: 0.01 seconds
+2025-03-30 21:56:24,454 - INFO - create_ontology - Ontology generation process completed successfully.
 ```
 
 ## Questions
