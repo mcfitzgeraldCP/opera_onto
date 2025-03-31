@@ -364,23 +364,60 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
 def parse_equipment_class(equipment_name: Optional[str]) -> Optional[str]:
     """
     Parses the EquipmentClass from the EQUIPMENT_NAME.
-    Rule: Extracts the part after the last underscore. Returns None if input is invalid.
-    Example: FIPCO009_Filler -> Filler
+    Rules:
+    1. Extracts the part after the last underscore
+    2. Removes trailing digits from class name to handle instance identifiers
+    3. Validates the resulting class name has letters
+    4. Falls back to appropriate alternatives if validation fails
+
+    Examples:
+    - FIPCO009_Filler -> Filler
+    - FIPCO009_Filler2 -> Filler
+    - FIPCO009_CaseFormer3 -> CaseFormer
+    - FIPCO009_123 -> FIPCO009 (fallback to part before underscore if after is all digits)
     """
     if not equipment_name or not isinstance(equipment_name, str):
         return None
+
     if '_' in equipment_name:
         parts = equipment_name.split('_')
         class_part = parts[-1]
-        # Basic sanity check - is the class part reasonable? (e.g., not just digits, has letters)
-        if class_part and re.search(r'[a-zA-Z]', class_part):
-            pop_logger.debug(f"Parsed equipment class '{class_part}' from '{equipment_name}'")
-            return class_part
+        
+        # Try to extract base class name by removing trailing digits
+        base_class = re.sub(r'\d+$', '', class_part)
+        
+        # Validate the base class name
+        if base_class and re.search(r'[a-zA-Z]', base_class):
+            pop_logger.debug(f"Parsed equipment class '{base_class}' from '{equipment_name}' (original part: '{class_part}')")
+            return base_class
         else:
-            pop_logger.warning(f"Parsed part '{class_part}' from '{equipment_name}' seems invalid (e.g., digits only or empty after split). Treating whole name as class.")
-            return equipment_name # Fallback
-    pop_logger.debug(f"No underscore found in EQUIPMENT_NAME '{equipment_name}', using whole name as class.")
-    return equipment_name # Fallback if no underscore
+            # If stripping digits results in empty/invalid class, try the part before underscore
+            if len(parts) > 1 and re.search(r'[a-zA-Z]', parts[-2]):
+                fallback_class = parts[-2]
+                pop_logger.warning(f"Class part '{class_part}' became invalid after stripping digits. Using fallback from previous part: '{fallback_class}'")
+                return fallback_class
+            else:
+                # Last resort: use original class_part if it has letters, otherwise whole name
+                if re.search(r'[a-zA-Z]', class_part):
+                    pop_logger.warning(f"Using original class part '{class_part}' as class name (could not extract better alternative)")
+                    return class_part
+                else:
+                    pop_logger.warning(f"No valid class name found in parts of '{equipment_name}'. Using full name as class.")
+                    return equipment_name
+
+    # No underscore case
+    if re.search(r'[a-zA-Z]', equipment_name):
+        # If the full name has letters, try to extract base class by removing trailing digits
+        base_class = re.sub(r'\d+$', '', equipment_name)
+        if base_class and re.search(r'[a-zA-Z]', base_class):
+            pop_logger.debug(f"Extracted base class '{base_class}' from non-underscore name '{equipment_name}'")
+            return base_class
+        else:
+            pop_logger.debug(f"Using full name '{equipment_name}' as class (no underscore, has letters)")
+            return equipment_name
+    else:
+        pop_logger.warning(f"Equipment name '{equipment_name}' contains no letters. Using as is.")
+        return equipment_name
 
 def safe_cast(value: Any, target_type: type, default: Any = None) -> Any:
     """Safely casts a value to a target type, returning default on failure."""
@@ -1270,6 +1307,13 @@ def setup_equipment_instance_relationships(onto: Ontology,
                                            equipment_class_positions: Dict[str, int]):
     """
     Establish upstream/downstream relationships between equipment *instances* within the same production line.
+    
+    The refactored approach:
+    1. Group equipment instances by production line and equipment class
+    2. For each line, sequence equipment classes based on DEFAULT_EQUIPMENT_SEQUENCE
+    3. For each class on a line, sort its instances by equipmentId
+    4. Chain instances within the same class sequentially
+    5. Chain the last instance of one class to the first instance of the next class
     """
     pop_logger.info("Setting up INSTANCE-LEVEL equipment relationships within production lines...")
 
@@ -1283,13 +1327,14 @@ def setup_equipment_instance_relationships(onto: Ontology,
     prop_isPartOfProductionLine = context.get_prop("isPartOfProductionLine")
     prop_memberOfClass = context.get_prop("memberOfClass")
     prop_equipmentClassId = context.get_prop("equipmentClassId") # Needed to get class name string
+    prop_equipmentId = context.get_prop("equipmentId") # Needed for sorting instances
     prop_equipment_isUpstreamOf = context.get_prop("equipmentIsUpstreamOf")
     prop_equipment_isDownstreamOf = context.get_prop("equipmentIsDownstreamOf") # Optional for inverse
 
     # Check essentials
     if not all([cls_Equipment, cls_ProductionLine, cls_EquipmentClass,
                 prop_isPartOfProductionLine, prop_memberOfClass, prop_equipmentClassId,
-                prop_equipment_isUpstreamOf]):
+                prop_equipmentId, prop_equipment_isUpstreamOf]):
         pop_logger.error("Missing required classes or properties for equipment instance relationships.")
         return
 
@@ -1299,11 +1344,12 @@ def setup_equipment_instance_relationships(onto: Ontology,
     if not equipment_class_positions:
         pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish instance relationships.")
         return
+
     # Sort class names by position
     sorted_class_names_by_pos = [item[0] for item in sorted(equipment_class_positions.items(), key=lambda item: item[1])]
 
-    if len(sorted_class_names_by_pos) < 2:
-        pop_logger.warning("Not enough equipment classes with sequence positions (< 2) to establish instance relationships.")
+    if len(sorted_class_names_by_pos) < 1:  # Changed from 2 to 1 since we now chain within classes too
+        pop_logger.warning("No equipment classes with sequence positions found. Cannot establish instance relationships.")
         return
 
     # Group equipment instances by line and class name
@@ -1352,48 +1398,88 @@ def setup_equipment_instance_relationships(onto: Ontology,
                  line_equipment_map[equipment_line][class_name_str].append(equipment_inst)
                  pop_logger.debug(f"Mapped Equipment {equipment_inst.name} to Line {equipment_line.name} under Class '{class_name_str}'")
 
-
     # Create instance-level relationships within each line
     total_relationships = 0
     line_relationship_counts: Dict[str, int] = {}
     pop_logger.info(f"Found {len(line_equipment_map)} lines with sequenced equipment.")
 
+    def safe_get_equipment_id(equipment: Thing) -> str:
+        """Helper to safely get equipmentId or fallback to name for sorting."""
+        equipment_id = getattr(equipment, "equipmentId", None)
+        if equipment_id:
+            return str(equipment_id)
+        return equipment.name
+
     with onto:
         for line_ind, class_equipment_map_on_line in line_equipment_map.items():
             line_id_str = getattr(line_ind, "lineId", line_ind.name)
             line_relationships = 0
-            pop_logger.debug(f"Processing equipment instance relationships for line: {line_id_str}")
-
-            # For each pair of adjacent equipment classes in the defined sequence
-            for i in range(len(sorted_class_names_by_pos) - 1):
-                upstream_class_name = sorted_class_names_by_pos[i]
-                downstream_class_name = sorted_class_names_by_pos[i + 1]
-
-                upstream_equipment_on_line = class_equipment_map_on_line.get(upstream_class_name, [])
-                downstream_equipment_on_line = class_equipment_map_on_line.get(downstream_class_name, [])
-
-                if not upstream_equipment_on_line or not downstream_equipment_on_line:
-                    continue # Skip pair if one class has no instances on this specific line
-
-                # Create relationships between ALL upstream instances and ALL downstream instances ON THIS LINE
-                for upstream_eq in upstream_equipment_on_line:
-                    for downstream_eq in downstream_equipment_on_line:
-                        # equipmentIsUpstreamOf is NON-FUNCTIONAL per spec, use helper
+            pop_logger.info(f"Processing equipment instance relationships for line: {line_id_str}")
+            
+            # Track the last instance in the chain to link between classes
+            last_instance_in_chain = None
+            
+            # Process each equipment class in sequence order
+            for class_name in sorted_class_names_by_pos:
+                equipment_instances = class_equipment_map_on_line.get(class_name, [])
+                
+                if not equipment_instances:
+                    pop_logger.debug(f"No instances of '{class_name}' found on line {line_id_str}. Continuing to next class.")
+                    continue  # No instances for this class on this line, but keep last_instance_in_chain
+                
+                # Sort equipment instances by equipmentId for sequential chaining
+                sorted_instances = sorted(equipment_instances, key=safe_get_equipment_id)
+                
+                # Log the instances being chained
+                instance_ids = [safe_get_equipment_id(e) for e in sorted_instances]
+                pop_logger.info(f"Chaining {len(sorted_instances)} instances of '{class_name}' on line '{line_id_str}' by equipmentId: {', '.join(instance_ids)}")
+                
+                # If there's a previous class's last instance, link it to the first instance of this class
+                if last_instance_in_chain:
+                    try:
+                        # Link the last instance of previous class to first instance of current class
+                        _set_property_value(last_instance_in_chain, prop_equipment_isUpstreamOf, sorted_instances[0], is_functional=False)
+                        
+                        # Set the inverse relation if available
+                        if prop_equipment_isDownstreamOf:
+                            _set_property_value(sorted_instances[0], prop_equipment_isDownstreamOf, last_instance_in_chain, is_functional=False)
+                        
+                        line_relationships += 1
+                        prev_class = getattr(last_instance_in_chain.memberOfClass, "equipmentClassId", "Unknown")
+                        pop_logger.info(f"Linked end of '{prev_class}' chain ({safe_get_equipment_id(last_instance_in_chain)}) " +
+                                        f"to start of '{class_name}' chain ({safe_get_equipment_id(sorted_instances[0])}) on line '{line_id_str}'")
+                    except Exception as e:
+                        pop_logger.error(f"Error linking between class chains on line {line_id_str}: {e}")
+                
+                # Chain instances within this class sequentially
+                if len(sorted_instances) > 1:  # Only need to chain if there are multiple instances
+                    internal_links = 0
+                    for i in range(len(sorted_instances) - 1):
                         try:
+                            upstream_eq = sorted_instances[i]
+                            downstream_eq = sorted_instances[i + 1]
+                            
+                            # Create forward relationship
                             _set_property_value(upstream_eq, prop_equipment_isUpstreamOf, downstream_eq, is_functional=False)
-
-                            # Explicitly set the inverse relationship if defined
+                            
+                            # Create inverse relationship if property exists
                             if prop_equipment_isDownstreamOf:
                                 _set_property_value(downstream_eq, prop_equipment_isDownstreamOf, upstream_eq, is_functional=False)
-
-                            # Check if forward relationship exists now
-                            if downstream_eq in getattr(upstream_eq, "equipmentIsUpstreamOf", []):
-                                line_relationships += 1
-                                pop_logger.debug(f"Confirmed INSTANCE relationship: {upstream_eq.name} equipmentIsUpstreamOf {downstream_eq.name} on line {line_id_str}")
-
+                            
+                            line_relationships += 1
+                            internal_links += 1
+                            
+                            # Debug level for internal chainings as there could be many
+                            pop_logger.debug(f"Chained {class_name} instances: {safe_get_equipment_id(upstream_eq)} → {safe_get_equipment_id(downstream_eq)}")
                         except Exception as e:
-                            pop_logger.error(f"Error setting instance relationship {upstream_eq.name} -> {downstream_eq.name} on line {line_id_str}: {e}")
-
+                            pop_logger.error(f"Error chaining instances within {class_name} on line {line_id_str}: {e}")
+                    
+                    if internal_links > 0:
+                        pop_logger.info(f"Created {internal_links} internal chain links among {class_name} instances on line {line_id_str}")
+                
+                # Update last_instance_in_chain to the last instance of the current class
+                last_instance_in_chain = sorted_instances[-1]
+            
             # Record relationships for this line
             if line_relationships > 0:
                 line_relationship_counts[line_id_str] = line_relationships
@@ -1407,10 +1493,16 @@ def setup_equipment_instance_relationships(onto: Ontology,
         print(f"Established/verified {total_relationships} equipment instance relationships on {len(line_relationship_counts)} lines:")
         for line_id_str, count in sorted(line_relationship_counts.items()):
             print(f"  Line {line_id_str}: {count} relationships")
+        
+        # Print info about the chaining approach
+        print("\nChaining approach:")
+        print("  • Equipment instances of the same class are chained in sequence by their equipmentId")
+        print("  • Last instance of each class is linked to first instance of the next class in sequence")
+        print("  • Class sequence is determined by the DEFAULT_EQUIPMENT_SEQUENCE dictionary")
     else:
         pop_logger.warning("No equipment instance relationships were created or verified.")
         print("No equipment instance relationships could be established or verified.")
-        print("Possible reasons: Equipment not linked to lines/classes, missing sequence positions, or no adjacent equipment found on the same line.")
+        print("Possible reasons: Equipment not linked to lines/classes, missing sequence positions, or no equipment found on the same line.")
 
 
 #======================================================================#
