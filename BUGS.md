@@ -1,0 +1,1 @@
+code skips rows with missing data fields, this appears to be about 1% of rows in large data samples
