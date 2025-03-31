@@ -32,6 +32,18 @@ COUNTRY_TO_LANGUAGE = {
 }
 DEFAULT_LANGUAGE = "en"  # Default language if country not found in mapping
 
+# --- Default Equipment Class Sequencing ---
+DEFAULT_EQUIPMENT_SEQUENCE = {
+    "Filler": 1,
+    "Cartoner": 2,
+    "Bundler": 3,
+    "CaseFormer": 4,
+    "CasePacker": 5,
+    "CaseSealer": 6,
+    "Palletizer": 7,
+    # Add any other classes with default positions if needed
+}
+
 # --- Logging Setup ---
 # Basic config will be set in create_ontology.py's main block
 # Get root logger for module-level logging configuration
@@ -518,6 +530,9 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
     """
     pop_logger.info(f"Starting ontology population with {len(data_rows)} data rows.")
 
+    # Track equipment class sequence positions for verification
+    equipment_class_positions = {}
+
     # --- Get Class Objects ---
     # Fetch classes needed for population, checking they were defined
     cls_Plant = defined_classes.get("Plant")
@@ -562,11 +577,12 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         "operationType", "reportedDurationMinutes", "businessExternalTimeMinutes",
         "plantAvailableTimeMinutes", "effectiveRuntimeMinutes", "plantDecisionTimeMinutes",
         "productionAvailableTimeMinutes", "stateDescription", "reasonDescription",
-        "altReasonDescription", "downtimeDriver", "changeoverType",
+        "altReasonDescription", "downtimeDriver", "changeoverType", "defaultSequencePosition",
         # Relationships (Object Props - verify these names match your spec exactly!)
         "memberOfClass", "locatedInPlant", "partOfArea", "locatedInProcessCell",
         "isPartOfProductionLine", "involvesResource", "associatedWithProductionRequest",
-        "usesMaterial", "occursDuring", "duringShift", "eventHasState", "eventHasReason"
+        "usesMaterial", "occursDuring", "duringShift", "eventHasState", "eventHasReason",
+        "isUpstreamOf", "isDownstreamOf"
     ]
     
     # Define which properties are functional (should be directly assigned vs. appended)
@@ -578,7 +594,7 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
         "endTime", "shiftId", "shiftStartTime", "shiftEndTime", "shiftDurationMinutes", 
         "rampUpFlag", "reportedDurationMinutes", "businessExternalTimeMinutes",
         "plantAvailableTimeMinutes", "effectiveRuntimeMinutes", "plantDecisionTimeMinutes",
-        "productionAvailableTimeMinutes",
+        "productionAvailableTimeMinutes", "defaultSequencePosition",
         
         # Object properties marked as Functional in the spec
         "memberOfClass", "locatedInPlant", "partOfArea", "locatedInProcessCell", 
@@ -722,6 +738,31 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                                     if prop_memberOfClass and equipment_ind and eq_class_ind:
                                         if eq_class_ind not in prop_memberOfClass[equipment_ind]:
                                             prop_memberOfClass[equipment_ind].append(eq_class_ind)
+                                    
+                                    # Set default sequence position if property exists and not already set
+                                    prop_defaultSequencePosition = prop_map.get("defaultSequencePosition")
+                                    if prop_defaultSequencePosition:
+                                        pop_logger.debug(f"Checking default sequence position for equipment class: {eq_class_name}")
+                                        default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_name)
+                                        if default_pos is not None:
+                                            existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+                                            if existing_pos is None:
+                                                setattr(eq_class_ind, "defaultSequencePosition", default_pos)
+                                                pop_logger.debug(f"Set default sequence position for {eq_class_name} to {default_pos}")
+                                                equipment_class_positions[eq_class_name] = default_pos
+                                            elif existing_pos != default_pos:
+                                                pop_logger.warning(f"Equipment class {eq_class_name} already has sequence position {existing_pos}, different from default {default_pos}")
+                                                equipment_class_positions[eq_class_name] = existing_pos
+                                            else:
+                                                pop_logger.debug(f"Equipment class {eq_class_name} already has correct sequence position {existing_pos}")
+                                                equipment_class_positions[eq_class_name] = existing_pos
+                                        else:
+                                            pop_logger.info(f"No default sequence position found in mapping for equipment class: {eq_class_name}")
+                                            # Check if it already has a position set
+                                            existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+                                            if existing_pos is not None:
+                                                equipment_class_positions[eq_class_name] = existing_pos
+                                                pop_logger.debug(f"Equipment class {eq_class_name} has manually set sequence position: {existing_pos}")
                             else:
                                 pop_logger.warning(f"Row {row_num}: Could not parse EquipmentClass from EQUIPMENT_NAME: {eq_name}")
 
@@ -1060,9 +1101,252 @@ def populate_ontology_from_data(onto, data_rows, defined_classes, defined_proper
                 pop_logger.error(f"Error processing data row {row_num}: {row}")
                 pop_logger.exception("Exception details:") # Log traceback for debugging
 
+    # Log equipment class sequence position summary
+    if equipment_class_positions:
+        pop_logger.info("--- Equipment Class Sequence Position Summary ---")
+        # Sort by position value for clearer output
+        sorted_classes = sorted(equipment_class_positions.items(), key=lambda x: x[1])
+        for eq_class, position in sorted_classes:
+            pop_logger.info(f"Equipment Class: {eq_class} - Sequence Position: {position}")
+        pop_logger.info(f"Total equipment classes with sequence positions: {len(equipment_class_positions)}")
+        
+        # Use sequence positions to establish upstream/downstream relationships
+        setup_equipment_sequence_relationships(onto, equipment_class_positions, defined_classes, prop_map)
+        
+        # Set up instance-level relationships between equipment within the same line
+        setup_equipment_instance_relationships(onto, defined_classes, prop_map, equipment_class_positions)
+    else:
+        pop_logger.warning("No equipment classes with sequence positions were processed")
+
+    # Force the report to stdout regardless of logging configuration
+    if equipment_class_positions:
+        print("\n=== EQUIPMENT CLASS SEQUENCE POSITION REPORT ===")
+        sorted_classes = sorted(equipment_class_positions.items(), key=lambda x: x[1])
+        for eq_class, position in sorted_classes:
+            print(f"Equipment Class: {eq_class} - Sequence Position: {position}")
+        print(f"Total: {len(equipment_class_positions)} equipment classes")
+    else:
+        print("No equipment classes with sequence positions were processed")
+
     pop_logger.info(f"Ontology population complete. Successfully processed {successful_rows} rows, failed to process {failed_rows} rows.")
     return failed_rows  # Return the count of failed rows
 
+def setup_equipment_sequence_relationships(onto, equipment_class_positions, defined_classes, prop_map):
+    """
+    Establish upstream/downstream relationships between equipment classes based on their sequence positions.
+    
+    Args:
+        onto: The ontology object
+        equipment_class_positions: Dictionary mapping equipment class names to their sequence positions
+        defined_classes: Dictionary of defined class objects
+        prop_map: Dictionary mapping property names to property objects
+    """
+    pop_logger.info("Setting up equipment sequence relationships based on position values...")
+    
+    # Get the relevant properties
+    prop_isUpstreamOf = prop_map.get("isUpstreamOf")
+    prop_isDownstreamOf = prop_map.get("isDownstreamOf")
+    
+    if not prop_isUpstreamOf or not prop_isDownstreamOf:
+        pop_logger.error("Cannot establish equipment sequence relationships: isUpstreamOf and/or isDownstreamOf properties not found")
+        return
+    
+    # Sort equipment classes by position
+    sorted_classes = sorted(equipment_class_positions.items(), key=lambda x: x[1])
+    
+    if len(sorted_classes) < 2:
+        pop_logger.warning("Not enough equipment classes with sequence positions to establish relationships")
+        return
+    
+    # Create a dictionary to map class names to their individuals
+    eqclass_individuals = {}
+    for class_name, _ in sorted_classes:
+        # Ensure the class exists in defined_classes
+        if class_name not in defined_classes:
+            pop_logger.warning(f"Equipment class '{class_name}' not found in defined classes")
+            continue
+            
+        # Look up the class individual that was created
+        eqclass_ind = None
+        for ind in onto.search(type=defined_classes["EquipmentClass"]):
+            if getattr(ind, "equipmentClassId", None) == class_name:
+                eqclass_ind = ind
+                break
+                
+        if not eqclass_ind:
+            pop_logger.warning(f"No individual found for equipment class '{class_name}'")
+            continue
+            
+        eqclass_individuals[class_name] = eqclass_ind
+    
+    # Create upstream/downstream relationships based on sequence order
+    relationships_created = 0
+    with onto:
+        for i in range(len(sorted_classes) - 1):
+            upstream_class_name, _ = sorted_classes[i]
+            downstream_class_name, _ = sorted_classes[i + 1]
+            
+            upstream_ind = eqclass_individuals.get(upstream_class_name)
+            downstream_ind = eqclass_individuals.get(downstream_class_name)
+            
+            if not upstream_ind or not downstream_ind:
+                continue
+                
+            # Set upstream/downstream relationships
+            if downstream_ind not in prop_isUpstreamOf[upstream_ind]:
+                prop_isUpstreamOf[upstream_ind].append(downstream_ind)
+                pop_logger.debug(f"Set {upstream_class_name} isUpstreamOf {downstream_class_name}")
+                relationships_created += 1
+                
+            # The inverse relationship should be handled automatically if setup correctly
+            # But check to be safe
+            if upstream_ind not in prop_isDownstreamOf[downstream_ind]:
+                pop_logger.debug(f"Checking inverse relationship {downstream_class_name} isDownstreamOf {upstream_class_name}")
+    
+    pop_logger.info(f"Created {relationships_created} upstream/downstream relationships based on sequence positions")
+    
+    # Print relationship summary to stdout
+    print("\n=== EQUIPMENT SEQUENCE RELATIONSHIP REPORT ===")
+    print(f"Created {relationships_created} upstream/downstream relationships")
+    for i in range(len(sorted_classes) - 1):
+        upstream_class_name, _ = sorted_classes[i]
+        downstream_class_name, _ = sorted_classes[i + 1]
+        print(f"{upstream_class_name} → {downstream_class_name}")
+    print(f"Total: {relationships_created} relationships")
+
+def setup_equipment_instance_relationships(onto, defined_classes, prop_map, equipment_class_positions):
+    """
+    Establish upstream/downstream relationships between equipment instances within the same production line.
+    This ensures that a Filler on Line A is only upstream of a Cartoner on Line A, not a Cartoner on Line B.
+    
+    Args:
+        onto: The ontology object
+        defined_classes: Dictionary of defined class objects
+        prop_map: Dictionary mapping property names to property objects
+        equipment_class_positions: Dictionary mapping equipment class names to their sequence positions
+    """
+    pop_logger.info("Setting up equipment instance relationships within production lines...")
+    
+    # Get the required classes and properties
+    cls_Equipment = defined_classes.get("Equipment")
+    cls_ProductionLine = defined_classes.get("ProductionLine")
+    prop_isPartOfProductionLine = prop_map.get("isPartOfProductionLine")
+    prop_memberOfClass = prop_map.get("memberOfClass")
+    
+    # Equipment-level isUpstreamOf and isDownstreamOf properties (instance relationships)
+    # These are different from the class-level properties
+    prop_equipment_isUpstreamOf = prop_map.get("isUpstreamOf") 
+    prop_equipment_isDownstreamOf = prop_map.get("isDownstreamOf")
+    
+    if not all([cls_Equipment, cls_ProductionLine, prop_isPartOfProductionLine, 
+               prop_memberOfClass, prop_equipment_isUpstreamOf, prop_equipment_isDownstreamOf]):
+        pop_logger.error("Missing required classes or properties for equipment instance relationships")
+        return
+    
+    # Sort equipment classes by position
+    sorted_classes = sorted(equipment_class_positions.items(), key=lambda x: x[1])
+    if len(sorted_classes) < 2:
+        pop_logger.warning("Not enough equipment classes to establish instance relationships")
+        return
+    
+    # Get all production lines
+    production_lines = list(onto.search(type=cls_ProductionLine))
+    if not production_lines:
+        pop_logger.warning("No production lines found to establish equipment instance relationships")
+        return
+    
+    # Dictionary to store equipment by line and class
+    line_equipment_map = {}  # {line_id: {class_name: [equipment_instances]}}
+    
+    # Group equipment instances by line and class
+    for equipment in onto.search(type=cls_Equipment):
+        # Check which line this equipment belongs to
+        equipment_lines = []
+        if prop_isPartOfProductionLine and hasattr(equipment, "isPartOfProductionLine"):
+            if isinstance(equipment.isPartOfProductionLine, list):
+                equipment_lines = equipment.isPartOfProductionLine
+            else:
+                equipment_lines = [equipment.isPartOfProductionLine]
+        
+        # Skip equipment not assigned to any line
+        if not equipment_lines:
+            continue
+            
+        # Check which equipment class this equipment belongs to
+        equipment_class = None
+        if prop_memberOfClass and hasattr(equipment, "memberOfClass"):
+            if isinstance(equipment.memberOfClass, list):
+                if equipment.memberOfClass:  # Take first class if multiple
+                    equipment_class = equipment.memberOfClass[0]
+            else:
+                equipment_class = equipment.memberOfClass
+        
+        # Skip equipment not assigned to any class
+        if not equipment_class:
+            continue
+            
+        # Get the class name
+        class_name = getattr(equipment_class, "equipmentClassId", None)
+        if not class_name or class_name not in equipment_class_positions:
+            continue
+        
+        # Add equipment to line and class mapping
+        for line in equipment_lines:
+            line_id = getattr(line, "lineId", str(line))
+            if line_id not in line_equipment_map:
+                line_equipment_map[line_id] = {}
+            if class_name not in line_equipment_map[line_id]:
+                line_equipment_map[line_id][class_name] = []
+            line_equipment_map[line_id][class_name].append(equipment)
+    
+    # Create instance-level relationships within each line
+    total_relationships = 0
+    line_relationship_counts = {}
+    
+    with onto:
+        for line_id, class_equipment_map in line_equipment_map.items():
+            line_relationships = 0
+            pop_logger.debug(f"Processing equipment relationships for line: {line_id}")
+            
+            # For each pair of adjacent equipment classes in the sequence
+            for i in range(len(sorted_classes) - 1):
+                upstream_class_name, _ = sorted_classes[i]
+                downstream_class_name, _ = sorted_classes[i + 1]
+                
+                # Skip if either class doesn't have equipment on this line
+                if (upstream_class_name not in class_equipment_map or 
+                    downstream_class_name not in class_equipment_map):
+                    continue
+                
+                upstream_equipment = class_equipment_map[upstream_class_name]
+                downstream_equipment = class_equipment_map[downstream_class_name]
+                
+                # Create relationships between all equipment of adjacent classes on this line
+                for upstream_eq in upstream_equipment:
+                    for downstream_eq in downstream_equipment:
+                        # Check if relationship already exists
+                        if downstream_eq not in prop_equipment_isUpstreamOf[upstream_eq]:
+                            prop_equipment_isUpstreamOf[upstream_eq].append(downstream_eq)
+                            line_relationships += 1
+                            pop_logger.debug(f"Set equipment relationship: {upstream_eq.name} isUpstreamOf {downstream_eq.name} on line {line_id}")
+            
+            # Record relationships for this line
+            line_relationship_counts[line_id] = line_relationships
+            total_relationships += line_relationships
+    
+    # Print summary report
+    if total_relationships > 0:
+        pop_logger.info(f"Created {total_relationships} equipment instance relationships across {len(line_relationship_counts)} production lines")
+        print("\n=== EQUIPMENT INSTANCE RELATIONSHIP REPORT ===")
+        print(f"Created equipment instance relationships on {len(line_relationship_counts)} lines:")
+        for line_id, count in line_relationship_counts.items():
+            print(f"Line {line_id}: {count} equipment relationships")
+        print(f"Total: {total_relationships} instance-level relationships")
+    else:
+        pop_logger.warning("No equipment instance relationships were created")
+        print("\n=== EQUIPMENT INSTANCE RELATIONSHIP REPORT ===")
+        print("No equipment instance relationships could be established")
+        print("Possible reasons: equipment not assigned to lines or classes, or missing sequence positions")
 
 #======================================================================#
 #                  create_ontology.py Module Code                      #

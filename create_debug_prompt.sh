@@ -3,11 +3,11 @@
 # Show usage if no arguments provided
 usage() {
     echo "Usage: $0 <code_file> <spec_file> <data_file>"
-    echo "Example: $0 create_ontology.py OPERA_ISA95_OWL_ONT_V6.csv mx_toothpaste_finishing_sample_100lines.csv"
+    echo "Example: $0 create_ontology.py OPERA_ISA95_OWL_ONT.csv mx_toothpaste_finishing_sample_100lines.csv"
     echo ""
     echo "Arguments:"
     echo "  code_file  : Path to the source code file (e.g., create_ontology.py)"
-    echo "  spec_file  : Path to the ontology specification file (e.g., OPERA_ISA95_OWL_ONT_V6.csv)"
+    echo "  spec_file  : Path to the ontology specification file (e.g., OPERA_ISA95_OWL_ONT.csv)"
     echo "  data_file  : Path to the sample data file (e.g., mx_toothpaste_finishing_sample_100lines.csv)"
     exit 1
 }
