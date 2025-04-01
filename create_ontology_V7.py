@@ -820,7 +820,8 @@ class PopulationContext:
             is_func = self.is_functional.get(prop_name, False) # Default to non-functional if not specified
             _set_property_value(individual, prop, value, is_func)
 
-def process_asset_hierarchy(row: Dict[str, Any], context: PopulationContext) -> Tuple[Optional[Thing], Optional[Thing], Optional[Thing], Optional[Thing]]:
+def process_asset_hierarchy(row: Dict[str, Any], context: PopulationContext, 
+                            property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) -> Tuple[Optional[Thing], Optional[Thing], Optional[Thing], Optional[Thing]]:
     """Processes Plant, Area, ProcessCell, ProductionLine from a row."""
     # Get Classes
     cls_Plant = context.get_class("Plant")
@@ -837,7 +838,13 @@ def process_asset_hierarchy(row: Dict[str, Any], context: PopulationContext) -> 
     plant_labels = [plant_id]
     plant_ind = get_or_create_individual(cls_Plant, plant_id, context.onto, add_labels=plant_labels)
     if plant_ind:
-        context.set_prop(plant_ind, "plantId", plant_id)
+        # Check if we can use dynamic property mappings for Plant
+        if property_mappings and "Plant" in property_mappings:
+            plant_mappings = property_mappings["Plant"]
+            apply_property_mappings(plant_ind, plant_mappings, row, context, "Plant")
+        else:
+            # Fallback to hardcoded property assignments
+            context.set_prop(plant_ind, "plantId", plant_id)
     else: return None, None, None, None # Failed to create plant
 
     # Area
@@ -846,14 +853,22 @@ def process_asset_hierarchy(row: Dict[str, Any], context: PopulationContext) -> 
     area_labels = [area_id]
     area_ind = get_or_create_individual(cls_Area, area_unique_base, context.onto, add_labels=area_labels)
     if area_ind:
-        context.set_prop(area_ind, "areaId", area_id)
-        context.set_prop(area_ind, "locatedInPlant", plant_ind) # Object Property
-        
-        # Added Area physical category name & category code to Area (Focus Factory)
-        area_physical_name = safe_cast(row.get('PHYSICAL_AREA'), str)
-        if area_physical_name: context.set_prop(area_ind, "areaPhysicalCategoryName", area_physical_name) # non-functional
-        area_cat_code = safe_cast(row.get('GH_CATEGORY'), str)
-        if area_cat_code: context.set_prop(area_ind, "areaCategoryCode", area_cat_code) # functional
+        # Check if we can use dynamic property mappings for Area
+        if property_mappings and "Area" in property_mappings:
+            area_mappings = property_mappings["Area"]
+            apply_property_mappings(area_ind, area_mappings, row, context, "Area")
+            # Also set the link to Plant (not in mappings)
+            context.set_prop(area_ind, "locatedInPlant", plant_ind)
+        else:
+            # Fallback to hardcoded property assignments
+            context.set_prop(area_ind, "areaId", area_id)
+            context.set_prop(area_ind, "locatedInPlant", plant_ind) # Object Property
+            
+            # Added Area physical category name & category code to Area (Focus Factory)
+            area_physical_name = safe_cast(row.get('PHYSICAL_AREA'), str)
+            if area_physical_name: context.set_prop(area_ind, "areaPhysicalCategoryName", area_physical_name) # non-functional
+            area_cat_code = safe_cast(row.get('GH_CATEGORY'), str)
+            if area_cat_code: context.set_prop(area_ind, "areaCategoryCode", area_cat_code) # functional
 
     # ProcessCell (Corrected Source Column: GH_AREA)
     pcell_id = safe_cast(row.get('GH_AREA'), str) or "UnknownProcessCell"
@@ -883,7 +898,8 @@ def process_asset_hierarchy(row: Dict[str, Any], context: PopulationContext) -> 
     return plant_ind, area_ind, pcell_ind, line_ind
 
 
-def process_equipment(row: Dict[str, Any], context: PopulationContext, line_ind: Optional[Thing]) -> Tuple[Optional[Thing], Optional[Thing], Optional[str]]:
+def process_equipment(row: Dict[str, Any], context: PopulationContext, line_ind: Optional[Thing], 
+                       property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) -> Tuple[Optional[Thing], Optional[Thing], Optional[str]]:
     """Processes Equipment and its associated EquipmentClass from a row."""
     cls_Equipment = context.get_class("Equipment")
     cls_EquipmentClass = context.get_class("EquipmentClass")
@@ -904,18 +920,28 @@ def process_equipment(row: Dict[str, Any], context: PopulationContext, line_ind:
         pop_logger.error(f"Failed to create Equipment individual for ID '{eq_id_str}'.")
         return None, None, None # Cannot proceed without equipment individual
 
-    # --- Set Equipment Properties ---
-    context.set_prop(equipment_ind, "equipmentId", eq_id_str)
-    if eq_name: context.set_prop(equipment_ind, "equipmentName", eq_name)
-    context.set_prop(equipment_ind, "equipmentModel", safe_cast(row.get('EQUIPMENT_MODEL'), str))
-    context.set_prop(equipment_ind, "complexity", safe_cast(row.get('COMPLEXITY'), str))
-    context.set_prop(equipment_ind, "alternativeModel", safe_cast(row.get('MODEL'), str))
-
-    # Link Equipment to ProductionLine
-    if line_ind:
-        context.set_prop(equipment_ind, "isPartOfProductionLine", line_ind)
+    # Check if we can use dynamic property mappings for Equipment
+    if property_mappings and "Equipment" in property_mappings:
+        equipment_mappings = property_mappings["Equipment"]
+        apply_property_mappings(equipment_ind, equipment_mappings, row, context, "Equipment")
+        # Link Equipment to ProductionLine (not in mappings)
+        if line_ind:
+            context.set_prop(equipment_ind, "isPartOfProductionLine", line_ind)
     else:
-        pop_logger.warning(f"Equipment {equipment_ind.name} cannot be linked to line: ProductionLine individual missing.")
+        # Fallback to hardcoded property assignments
+        pop_logger.debug("Using hardcoded property assignments for Equipment (no dynamic mappings available)")
+        # --- Set Equipment Properties ---
+        context.set_prop(equipment_ind, "equipmentId", eq_id_str)
+        if eq_name: context.set_prop(equipment_ind, "equipmentName", eq_name)
+        context.set_prop(equipment_ind, "equipmentModel", safe_cast(row.get('EQUIPMENT_MODEL'), str))
+        context.set_prop(equipment_ind, "complexity", safe_cast(row.get('COMPLEXITY'), str))
+        context.set_prop(equipment_ind, "alternativeModel", safe_cast(row.get('MODEL'), str))
+
+        # Link Equipment to ProductionLine
+        if line_ind:
+            context.set_prop(equipment_ind, "isPartOfProductionLine", line_ind)
+        else:
+            pop_logger.warning(f"Equipment {equipment_ind.name} cannot be linked to line: ProductionLine individual missing.")
 
 
     # --- Process and Link EquipmentClass ---
@@ -928,8 +954,17 @@ def process_equipment(row: Dict[str, Any], context: PopulationContext, line_ind:
 
         if eq_class_ind:
             pop_logger.debug(f"Successfully got/created EquipmentClass individual: {eq_class_ind.name}")
-            # Assign equipmentClassId (Functional)
-            context.set_prop(eq_class_ind, "equipmentClassId", eq_class_name)
+            
+            # Check if we can use dynamic property mappings for EquipmentClass
+            if property_mappings and "EquipmentClass" in property_mappings:
+                eqclass_mappings = property_mappings["EquipmentClass"]
+                apply_property_mappings(eq_class_ind, eqclass_mappings, row, context, "EquipmentClass")
+                # Also set equipment class ID if not set by mappings
+                if not getattr(eq_class_ind, "equipmentClassId", None):
+                    context.set_prop(eq_class_ind, "equipmentClassId", eq_class_name)
+            else:
+                # Assign equipmentClassId (Functional)
+                context.set_prop(eq_class_ind, "equipmentClassId", eq_class_name)
 
             # Link Equipment to EquipmentClass (Functional)
             context.set_prop(equipment_ind, "memberOfClass", eq_class_ind)
@@ -957,7 +992,8 @@ def process_equipment(row: Dict[str, Any], context: PopulationContext, line_ind:
     return equipment_ind, eq_class_ind, eq_class_name
 
 
-def process_material(row: Dict[str, Any], context: PopulationContext) -> Optional[Thing]:
+def process_material(row: Dict[str, Any], context: PopulationContext, 
+                    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) -> Optional[Thing]:
     """Processes Material from a row."""
     cls_Material = context.get_class("Material")
     if not cls_Material: return None
@@ -974,21 +1010,52 @@ def process_material(row: Dict[str, Any], context: PopulationContext) -> Optiona
     mat_ind = get_or_create_individual(cls_Material, mat_id, context.onto, add_labels=mat_labels)
     if not mat_ind: return None
 
-    # Set Material properties
-    context.set_prop(mat_ind, "materialId", mat_id)
-    if mat_desc: context.set_prop(mat_ind, "materialDescription", mat_desc)
-    context.set_prop(mat_ind, "sizeType", safe_cast(row.get('SIZE_TYPE'), str))
-    context.set_prop(mat_ind, "materialUOM", safe_cast(row.get('MATERIAL_UOM'), str))
-    # Combine UOM_ST and UOM_ST_SAP safely
-    uom_st = safe_cast(row.get('UOM_ST'), str) or safe_cast(row.get('UOM_ST_SAP'), str)
-    context.set_prop(mat_ind, "standardUOM", uom_st)
-    context.set_prop(mat_ind, "targetProductUOM", safe_cast(row.get('TP_UOM'), str))
-    context.set_prop(mat_ind, "conversionFactor", safe_cast(row.get('PRIMARY_CONV_FACTOR'), float))
+    # Check if we can use dynamic property mappings
+    if property_mappings and "Material" in property_mappings:
+        material_mappings = property_mappings["Material"]
+        
+        # Process data properties from mappings
+        for prop_name, prop_info in material_mappings.get("data_properties", {}).items():
+            col_name = prop_info.get("column")
+            data_type = prop_info.get("data_type")
+            is_functional = prop_info.get("functional", False)
+            
+            if col_name and data_type:
+                # Convert XSD type to Python type
+                python_type = XSD_TYPE_MAP.get(data_type, str)
+                
+                # Get the value from the row data
+                value = safe_cast(row.get(col_name), python_type)
+                
+                # Set the property if we have a valid value
+                if value is not None:
+                    prop = context.get_prop(prop_name)
+                    if prop:
+                        context.set_prop(mat_ind, prop_name, value)
+                        pop_logger.debug(f"Dynamically set Material.{prop_name} from column '{col_name}' to {value}")
+                    else:
+                        pop_logger.warning(f"Property {prop_name} not found in defined_properties")
+        
+        pop_logger.debug(f"Populated {len(material_mappings.get('data_properties', {}))} properties for Material from dynamic mappings")
+    else:
+        # Fallback to hardcoded property assignments
+        pop_logger.debug("Using hardcoded property assignments for Material (no dynamic mappings available)")
+        # Set Material properties
+        context.set_prop(mat_ind, "materialId", mat_id)
+        if mat_desc: context.set_prop(mat_ind, "materialDescription", mat_desc)
+        context.set_prop(mat_ind, "sizeType", safe_cast(row.get('SIZE_TYPE'), str))
+        context.set_prop(mat_ind, "materialUOM", safe_cast(row.get('MATERIAL_UOM'), str))
+        # Combine UOM_ST and UOM_ST_SAP safely
+        uom_st = safe_cast(row.get('UOM_ST'), str) or safe_cast(row.get('UOM_ST_SAP'), str)
+        context.set_prop(mat_ind, "standardUOM", uom_st)
+        context.set_prop(mat_ind, "targetProductUOM", safe_cast(row.get('TP_UOM'), str))
+        context.set_prop(mat_ind, "conversionFactor", safe_cast(row.get('PRIMARY_CONV_FACTOR'), float))
 
     return mat_ind
 
 
-def process_production_request(row: Dict[str, Any], context: PopulationContext, material_ind: Optional[Thing]) -> Optional[Thing]:
+def process_production_request(row: Dict[str, Any], context: PopulationContext, material_ind: Optional[Thing], 
+                              property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) -> Optional[Thing]:
     """Processes ProductionRequest from a row."""
     cls_ProductionRequest = context.get_class("ProductionRequest")
     if not cls_ProductionRequest: return None
@@ -1005,11 +1072,41 @@ def process_production_request(row: Dict[str, Any], context: PopulationContext, 
     req_ind = get_or_create_individual(cls_ProductionRequest, req_id, context.onto, add_labels=req_labels)
     if not req_ind: return None
 
-    # Set ProductionRequest properties
-    context.set_prop(req_ind, "requestId", req_id)
-    if req_desc: context.set_prop(req_ind, "requestDescription", req_desc)
-    context.set_prop(req_ind, "requestRate", safe_cast(row.get('PRODUCTION_ORDER_RATE'), float))
-    context.set_prop(req_ind, "requestRateUOM", safe_cast(row.get('PRODUCTION_ORDER_UOM'), str))
+    # Check if we can use dynamic property mappings
+    if property_mappings and "ProductionRequest" in property_mappings:
+        request_mappings = property_mappings["ProductionRequest"]
+        
+        # Process data properties from mappings
+        for prop_name, prop_info in request_mappings.get("data_properties", {}).items():
+            col_name = prop_info.get("column")
+            data_type = prop_info.get("data_type")
+            is_functional = prop_info.get("functional", False)
+            
+            if col_name and data_type:
+                # Convert XSD type to Python type
+                python_type = XSD_TYPE_MAP.get(data_type, str)
+                
+                # Get the value from the row data
+                value = safe_cast(row.get(col_name), python_type)
+                
+                # Set the property if we have a valid value
+                if value is not None:
+                    prop = context.get_prop(prop_name)
+                    if prop:
+                        context.set_prop(req_ind, prop_name, value)
+                        pop_logger.debug(f"Dynamically set ProductionRequest.{prop_name} from column '{col_name}' to {value}")
+                    else:
+                        pop_logger.warning(f"Property {prop_name} not found in defined_properties")
+        
+        pop_logger.debug(f"Populated {len(request_mappings.get('data_properties', {}))} properties for ProductionRequest from dynamic mappings")
+    else:
+        # Fallback to hardcoded property assignments
+        pop_logger.debug("Using hardcoded property assignments for ProductionRequest (no dynamic mappings available)")
+        # Set ProductionRequest properties
+        context.set_prop(req_ind, "requestId", req_id)
+        if req_desc: context.set_prop(req_ind, "requestDescription", req_desc)
+        context.set_prop(req_ind, "requestRate", safe_cast(row.get('PRODUCTION_ORDER_RATE'), float))
+        context.set_prop(req_ind, "requestRateUOM", safe_cast(row.get('PRODUCTION_ORDER_UOM'), str))
 
     # Link ProductionRequest to Material (Non-functional) - Corrected property name as per spec 'usesMaterial' is on EventRecord
     # Based on spec, the link is EventRecord -> ProductionRequest (associatedWithProductionRequest)
@@ -1021,7 +1118,8 @@ def process_production_request(row: Dict[str, Any], context: PopulationContext, 
     return req_ind
 
 
-def process_shift(row: Dict[str, Any], context: PopulationContext) -> Optional[Thing]:
+def process_shift(row: Dict[str, Any], context: PopulationContext, 
+                     property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) -> Optional[Thing]:
     """Processes Shift from a row."""
     cls_Shift = context.get_class("Shift")
     if not cls_Shift: return None
@@ -1035,24 +1133,67 @@ def process_shift(row: Dict[str, Any], context: PopulationContext) -> Optional[T
     shift_ind = get_or_create_individual(cls_Shift, shift_name, context.onto, add_labels=shift_labels)
     if not shift_ind: return None
 
-    # Populate shift details (Functional properties, assign only if needed/missing)
-    # Check before setting to avoid redundant operations if individual already exists
-    if getattr(shift_ind, "shiftId", None) != shift_name:
-        context.set_prop(shift_ind, "shiftId", shift_name)
-    if getattr(shift_ind, "shiftStartTime", None) is None:
-       st = safe_cast(row.get('SHIFT_START_DATE_LOC'), datetime)
-       if st: context.set_prop(shift_ind, "shiftStartTime", st)
-    if getattr(shift_ind, "shiftEndTime", None) is None:
-       et = safe_cast(row.get('SHIFT_END_DATE_LOC'), datetime)
-       if et: context.set_prop(shift_ind, "shiftEndTime", et)
-    if getattr(shift_ind, "shiftDurationMinutes", None) is None:
-       dur = safe_cast(row.get('SHIFT_DURATION_MIN'), float)
-       if dur is not None: context.set_prop(shift_ind, "shiftDurationMinutes", dur)
+    # Check if we can use dynamic property mappings
+    if property_mappings and "Shift" in property_mappings:
+        shift_mappings = property_mappings["Shift"]
+        
+        # Process data properties from mappings
+        populated_props = 0
+        for prop_name, prop_info in shift_mappings.get("data_properties", {}).items():
+            col_name = prop_info.get("column")
+            data_type = prop_info.get("data_type")
+            is_functional = prop_info.get("functional", False)
+            
+            if col_name and data_type:
+                # Convert XSD type to Python type
+                python_type = XSD_TYPE_MAP.get(data_type, str)
+                
+                # Special check for shiftId to avoid overwriting
+                if prop_name == "shiftId" and getattr(shift_ind, "shiftId", None) == shift_name:
+                    pop_logger.debug(f"Shift.shiftId already set to {shift_name}, skipping")
+                    continue
+                    
+                # For other properties, check if they're already set
+                if prop_name != "shiftId" and getattr(shift_ind, prop_name, None) is not None:
+                    pop_logger.debug(f"Shift.{prop_name} already set, skipping")
+                    continue
+                    
+                # Get the value from the row data
+                value = safe_cast(row.get(col_name), python_type)
+                
+                # Set the property if we have a valid value
+                if value is not None:
+                    prop = context.get_prop(prop_name)
+                    if prop:
+                        context.set_prop(shift_ind, prop_name, value)
+                        pop_logger.debug(f"Dynamically set Shift.{prop_name} from column '{col_name}' to {value}")
+                        populated_props += 1
+                    else:
+                        pop_logger.warning(f"Property {prop_name} not found in defined_properties")
+        
+        pop_logger.debug(f"Populated {populated_props} properties for Shift from dynamic mappings")
+    else:
+        # Fallback to hardcoded property assignments
+        pop_logger.debug("Using hardcoded property assignments for Shift (no dynamic mappings available)")
+        # Populate shift details (Functional properties, assign only if needed/missing)
+        # Check before setting to avoid redundant operations if individual already exists
+        if getattr(shift_ind, "shiftId", None) != shift_name:
+            context.set_prop(shift_ind, "shiftId", shift_name)
+        if getattr(shift_ind, "shiftStartTime", None) is None:
+           st = safe_cast(row.get('SHIFT_START_DATE_LOC'), datetime)
+           if st: context.set_prop(shift_ind, "shiftStartTime", st)
+        if getattr(shift_ind, "shiftEndTime", None) is None:
+           et = safe_cast(row.get('SHIFT_END_DATE_LOC'), datetime)
+           if et: context.set_prop(shift_ind, "shiftEndTime", et)
+        if getattr(shift_ind, "shiftDurationMinutes", None) is None:
+           dur = safe_cast(row.get('SHIFT_DURATION_MIN'), float)
+           if dur is not None: context.set_prop(shift_ind, "shiftDurationMinutes", dur)
 
     return shift_ind
 
 
-def process_state_reason(row: Dict[str, Any], context: PopulationContext) -> Tuple[Optional[Thing], Optional[Thing]]:
+def process_state_reason(row: Dict[str, Any], context: PopulationContext, 
+                          property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) -> Tuple[Optional[Thing], Optional[Thing]]:
     """Processes OperationalState and OperationalReason from a row."""
     cls_OperationalState = context.get_class("OperationalState")
     cls_OperationalReason = context.get_class("OperationalReason")
@@ -1065,8 +1206,37 @@ def process_state_reason(row: Dict[str, Any], context: PopulationContext) -> Tup
         state_labels = [state_desc]
         state_ind = get_or_create_individual(cls_OperationalState, state_desc, context.onto, add_labels=state_labels)
         if state_ind:
-            # Set description (Non-functional)
-            context.set_prop(state_ind, "stateDescription", state_desc)
+            # Check if we can use dynamic property mappings for state
+            if property_mappings and "OperationalState" in property_mappings:
+                state_mappings = property_mappings["OperationalState"]
+                
+                # Process data properties from mappings
+                for prop_name, prop_info in state_mappings.get("data_properties", {}).items():
+                    col_name = prop_info.get("column")
+                    data_type = prop_info.get("data_type")
+                    is_functional = prop_info.get("functional", False)
+                    
+                    if col_name and data_type:
+                        # Convert XSD type to Python type
+                        python_type = XSD_TYPE_MAP.get(data_type, str)
+                        
+                        # Get the value from the row data
+                        value = safe_cast(row.get(col_name), python_type)
+                        
+                        # Set the property if we have a valid value
+                        if value is not None:
+                            prop = context.get_prop(prop_name)
+                            if prop:
+                                context.set_prop(state_ind, prop_name, value)
+                                pop_logger.debug(f"Dynamically set OperationalState.{prop_name} from column '{col_name}' to {value}")
+                            else:
+                                pop_logger.warning(f"Property {prop_name} not found in defined_properties")
+                
+                pop_logger.debug(f"Populated properties for OperationalState from dynamic mappings")
+            else:
+                # Fallback to hardcoded property assignments
+                # Set description (Non-functional)
+                context.set_prop(state_ind, "stateDescription", state_desc)
     else:
         pop_logger.debug("No UTIL_STATE_DESCRIPTION in row.")
 
@@ -1077,34 +1247,79 @@ def process_state_reason(row: Dict[str, Any], context: PopulationContext) -> Tup
         reason_labels = [reason_desc]
         reason_ind = get_or_create_individual(cls_OperationalReason, reason_desc, context.onto, add_labels=reason_labels)
         if reason_ind:
-            # Set description (Non-functional)
-            context.set_prop(reason_ind, "reasonDescription", reason_desc)
+            # Check if we can use dynamic property mappings for reason
+            if property_mappings and "OperationalReason" in property_mappings:
+                reason_mappings = property_mappings["OperationalReason"]
+                
+                # Process data properties from mappings
+                for prop_name, prop_info in reason_mappings.get("data_properties", {}).items():
+                    col_name = prop_info.get("column")
+                    data_type = prop_info.get("data_type")
+                    is_functional = prop_info.get("functional", False)
+                    
+                    if col_name and data_type:
+                        # Convert XSD type to Python type
+                        python_type = XSD_TYPE_MAP.get(data_type, str)
+                        
+                        # Special handling for alt reason description with language tag
+                        if prop_name == "altReasonDescription" and data_type == "xsd:string (with lang tag)":
+                            alt_reason = safe_cast(row.get(col_name), str)
+                            if alt_reason:
+                                plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
+                                lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE) if plant_country else DEFAULT_LANGUAGE
+                                try:
+                                    alt_reason_locstr = locstr(alt_reason, lang=lang_tag)
+                                    context.set_prop(reason_ind, prop_name, alt_reason_locstr)
+                                    pop_logger.debug(f"Dynamically set OperationalReason.{prop_name} with localized string '{alt_reason}'@{lang_tag}")
+                                    continue
+                                except Exception as e_loc:
+                                    pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e_loc}. Storing as plain string.")
+                                    # Continue to regular processing as fallback
+                        
+                        # Regular property processing
+                        value = safe_cast(row.get(col_name), python_type)
+                        
+                        # Set the property if we have a valid value
+                        if value is not None:
+                            prop = context.get_prop(prop_name)
+                            if prop:
+                                context.set_prop(reason_ind, prop_name, value)
+                                pop_logger.debug(f"Dynamically set OperationalReason.{prop_name} from column '{col_name}' to {value}")
+                            else:
+                                pop_logger.warning(f"Property {prop_name} not found in defined_properties")
+                
+                pop_logger.debug(f"Populated properties for OperationalReason from dynamic mappings")
+            else:
+                # Fallback to hardcoded property assignments
+                # Set description (Non-functional)
+                context.set_prop(reason_ind, "reasonDescription", reason_desc)
 
-            # Handle AltReasonDescription with language tag (Non-functional)
-            alt_reason = safe_cast(row.get('UTIL_ALT_LANGUAGE_REASON'), str)
-            if alt_reason:
-                plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
-                lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE) if plant_country else DEFAULT_LANGUAGE
-                try:
-                    alt_reason_locstr = locstr(alt_reason, lang=lang_tag)
-                    context.set_prop(reason_ind, "altReasonDescription", alt_reason_locstr)
-                    pop_logger.debug(f"Added localized reason '{alt_reason}'@{lang_tag} to {reason_ind.name}")
-                except Exception as e_loc:
-                    pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e_loc}. Storing as plain string.")
-                    # Fallback to plain string if locstr fails or lang_tag is missing
-                    context.set_prop(reason_ind, "altReasonDescription", alt_reason)
+                # Handle AltReasonDescription with language tag (Non-functional)
+                alt_reason = safe_cast(row.get('UTIL_ALT_LANGUAGE_REASON'), str)
+                if alt_reason:
+                    plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
+                    lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE) if plant_country else DEFAULT_LANGUAGE
+                    try:
+                        alt_reason_locstr = locstr(alt_reason, lang=lang_tag)
+                        context.set_prop(reason_ind, "altReasonDescription", alt_reason_locstr)
+                        pop_logger.debug(f"Added localized reason '{alt_reason}'@{lang_tag} to {reason_ind.name}")
+                    except Exception as e_loc:
+                        pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e_loc}. Storing as plain string.")
+                        # Fallback to plain string if locstr fails or lang_tag is missing
+                        context.set_prop(reason_ind, "altReasonDescription", alt_reason)
 
-            # Other reason properties (Non-functional)
-            context.set_prop(reason_ind, "downtimeDriver", safe_cast(row.get('DOWNTIME_DRIVER'), str))
-            co_type = safe_cast(row.get('CO_TYPE'), str) or safe_cast(row.get('CO_ORIGINAL_TYPE'), str)
-            context.set_prop(reason_ind, "changeoverType", co_type)
+                # Other reason properties (Non-functional)
+                context.set_prop(reason_ind, "downtimeDriver", safe_cast(row.get('DOWNTIME_DRIVER'), str))
+                co_type = safe_cast(row.get('CO_TYPE'), str) or safe_cast(row.get('CO_ORIGINAL_TYPE'), str)
+                context.set_prop(reason_ind, "changeoverType", co_type)
     else:
         pop_logger.debug("No UTIL_REASON_DESCRIPTION in row.")
 
     return state_ind, reason_ind
 
 
-def process_time_interval(row: Dict[str, Any], context: PopulationContext, resource_base_id: str, row_num: int) -> Optional[Thing]:
+def process_time_interval(row: Dict[str, Any], context: PopulationContext, resource_base_id: str, row_num: int,
+                           property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) -> Optional[Thing]:
     """Processes TimeInterval from a row."""
     cls_TimeInterval = context.get_class("TimeInterval")
     if not cls_TimeInterval: return None
@@ -1344,7 +1559,7 @@ def populate_ontology_from_data(onto: Ontology,
             pop_logger.debug(f"--- Processing Row {row_num} ---")
             try:
                 # 1. Process Asset Hierarchy -> plant, area, pcell, line individuals
-                plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(row, context)
+                plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(row, context, property_mappings)
                 if not plant_ind: # Plant is essential to continue processing this row meaningfully
                     raise ValueError("Failed to establish Plant individual, cannot proceed with row.")
 
@@ -1363,7 +1578,7 @@ def populate_ontology_from_data(onto: Ontology,
 
                 elif eq_type == 'Equipment':
                     # Process Equipment -> equipment, eq_class individuals
-                    equipment_ind, eq_class_ind, eq_class_name = process_equipment(row, context, line_ind)
+                    equipment_ind, eq_class_ind, eq_class_name = process_equipment(row, context, line_ind, property_mappings)
                     if equipment_ind:
                         resource_individual = equipment_ind
                         resource_base_id = f"Eq_{equipment_ind.name}" # Prefix for clarity
@@ -1399,20 +1614,20 @@ def populate_ontology_from_data(onto: Ontology,
 
 
                 # 3. Process Material -> material individual
-                material_ind = process_material(row, context)
+                material_ind = process_material(row, context, property_mappings)
 
                 # 4. Process Production Request -> request individual
-                request_ind = process_production_request(row, context, material_ind)
+                request_ind = process_production_request(row, context, material_ind, property_mappings)
 
                 # 5. Process Shift -> shift individual
-                shift_ind = process_shift(row, context)
+                shift_ind = process_shift(row, context, property_mappings)
 
                 # 6. Process State & Reason -> state, reason individuals
-                state_ind, reason_ind = process_state_reason(row, context)
+                state_ind, reason_ind = process_state_reason(row, context, property_mappings)
 
                 # 7. Process Time Interval -> interval individual
                 # Requires resource_base_id for unique naming
-                time_interval_ind = process_time_interval(row, context, resource_base_id, row_num)
+                time_interval_ind = process_time_interval(row, context, resource_base_id, row_num, property_mappings)
 
                 # 8. Process Event Record and Links -> event individual
                 event_ind: Optional[Thing] = None # Initialize event_ind
@@ -2907,7 +3122,7 @@ def test_property_mappings(spec_file_path: str):
     Test function to verify property mapping functionality.
     
     This can be called manually for testing and provides detailed debug output
-    about the parsed property mappings.
+    about the parsed property mappings for all entity types.
     
     Args:
         spec_file_path: Path to the specification CSV file
@@ -2928,35 +3143,85 @@ def test_property_mappings(spec_file_path: str):
         # Parse and validate property mappings
         test_logger.info("Generating property mappings from specification")
         mappings = parse_property_mappings(spec)
-        validate_property_mappings(mappings)
+        validation_passed = validate_property_mappings(mappings)
+        test_logger.info(f"Validation result: {'PASSED' if validation_passed else 'FAILED'}")
         
-        # Check EventRecord specifically
-        if 'EventRecord' in mappings:
-            test_logger.info("\n=== EventRecord Property Mappings ===")
-            event_data_props = mappings['EventRecord'].get('data_properties', {})
-            test_logger.info(f"Found {len(event_data_props)} data properties for EventRecord")
+        # Group entities by logical group for organization
+        entity_groups = defaultdict(list)
+        for row in spec:
+            entity = row.get('Proposed OWL Entity', '').strip()
+            group = row.get('Logical Group', '').strip()
+            if entity and group:
+                if entity not in entity_groups[group]:
+                    entity_groups[group].append(entity)
+                    
+        # Print summary by group
+        test_logger.info("\n=== Entity Coverage by Logical Group ===")
+        for group, entities in sorted(entity_groups.items()):
+            mapped_entities = [e for e in entities if e in mappings]
+            test_logger.info(f"{group}: {len(mapped_entities)}/{len(entities)} entities mapped")
             
-            # Check for our key properties of interest
-            key_properties = [
-                'downtimeMinutes', 
-                'runTimeMinutes', 
-                'notEnteredTimeMinutes',
-                'waitingTimeMinutes',
-                'plantExperimentationTimeMinutes', 
-                'allMaintenanceTimeMinutes',
-                'goodProductionQuantity',
-                'rejectProductionQuantity'
-            ]
+            if mapped_entities:
+                for entity in sorted(mapped_entities):
+                    data_props = len(mappings[entity].get('data_properties', {}))
+                    obj_props = len(mappings[entity].get('object_properties', {}))
+                    test_logger.info(f"  ✓ {entity}: {data_props} data properties, {obj_props} object properties")
             
-            test_logger.info("Checking key properties:")
-            for prop in key_properties:
-                if prop in event_data_props:
-                    details = event_data_props[prop]
-                    test_logger.info(f"  ✓ {prop}: column='{details.get('column')}', type='{details.get('data_type')}', functional={details.get('functional')}")
-                else:
-                    test_logger.warning(f"  ✗ Property '{prop}' not found in mappings")
-        else:
-            test_logger.error("EventRecord entity not found in mappings!")
+            missing = [e for e in entities if e not in mappings]
+            if missing:
+                for entity in sorted(missing):
+                    test_logger.warning(f"  ✗ {entity}: No property mappings found")
+        
+        # Detailed analysis of common entities
+        key_entities = [
+            'EventRecord', 
+            'Material', 
+            'OperationalReason', 
+            'OperationalState',
+            'ProductionLine',
+            'Equipment',
+            'EquipmentClass',
+            'Plant',
+            'Area',
+            'ProcessCell',
+            'Shift',
+            'TimeInterval',
+            'ProductionRequest'
+        ]
+        
+        for entity in key_entities:
+            if entity in mappings:
+                entity_map = mappings[entity]
+                
+                test_logger.info(f"\n=== {entity} Property Mappings ===")
+                
+                # Data properties
+                data_props = entity_map.get('data_properties', {})
+                test_logger.info(f"Found {len(data_props)} data properties for {entity}")
+                
+                if data_props:
+                    for prop_name, details in sorted(data_props.items()):
+                        test_logger.info(f"  ✓ {prop_name}: column='{details.get('column')}', type='{details.get('data_type')}', functional={details.get('functional')}")
+                
+                # Object properties
+                obj_props = entity_map.get('object_properties', {})
+                if obj_props:
+                    test_logger.info(f"Found {len(obj_props)} object properties for {entity}")
+                    for prop_name, details in sorted(obj_props.items()):
+                        test_logger.info(f"  ✓ {prop_name}: column='{details.get('column')}', target='{details.get('target_class')}', functional={details.get('functional')}")
+            else:
+                test_logger.warning(f"\n=== {entity} Property Mappings ===")
+                test_logger.warning(f"  ✗ {entity} entity not found in mappings!")
+        
+        # Summary stats        
+        total_data_props = sum(len(entity_map.get('data_properties', {})) for entity_map in mappings.values())
+        total_obj_props = sum(len(entity_map.get('object_properties', {})) for entity_map in mappings.values())
+        
+        test_logger.info("\n=== Property Mapping Summary ===")
+        test_logger.info(f"Total entities mapped: {len(mappings)}")
+        test_logger.info(f"Total data properties mapped: {total_data_props}")
+        test_logger.info(f"Total object properties mapped: {total_obj_props}")
+        test_logger.info(f"Total properties mapped: {total_data_props + total_obj_props}")
         
         test_logger.info("=== Property Mapping Test Complete ===")
         
