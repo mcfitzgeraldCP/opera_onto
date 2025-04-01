@@ -1725,10 +1725,27 @@ def generate_reasoning_report(onto: Ontology,
                               inferred_hierarchy: Dict[str, Dict[str, List[str]]],
                               inferred_properties: Dict[str, List[str]],
                               inferred_individuals: Dict[str, Dict[str, Any]],
-                              use_reasoner: bool
+                              use_reasoner: bool,
+                              max_entities_per_category: int = 10,  # New parameter to limit entities shown
+                              verbose: bool = False  # New parameter to control detail level
                              ) -> Tuple[str, bool]:
     """
     Generates a structured report from reasoning results. Returns report string and has_issues flag.
+    
+    Args:
+        onto: The ontology object
+        pre_stats: Dict with pre-reasoning statistics
+        post_stats: Dict with post-reasoning statistics
+        inconsistent_classes: List of inconsistent classes
+        inferred_hierarchy: Dict of inferred class relationships
+        inferred_properties: Dict of inferred property characteristics
+        inferred_individuals: Dict of inferred individual relationships
+        use_reasoner: Whether the reasoner was used
+        max_entities_per_category: Maximum number of entities to show per category (default: 10)
+        verbose: Whether to show all details (default: False)
+    
+    Returns:
+        tuple: (report_str, has_issues)
     """
     report_lines = []
     has_issues = False
@@ -1771,42 +1788,110 @@ def generate_reasoning_report(onto: Ontology,
     if inconsistent_classes:
         add_section("CONSISTENCY ISSUES")
         report_lines.append("\nInconsistent Classes:")
-        for cls in inconsistent_classes: report_lines.append(f"  • {cls.name} ({cls.iri})")
+        
+        # Show all inconsistent classes regardless of verbosity - these are critical
+        for cls in inconsistent_classes: 
+            report_lines.append(f"  • {cls.name} ({cls.iri})")
         has_issues = True
 
     # 4. Inferred Knowledge
     add_section("INFERRED KNOWLEDGE")
     if inferred_hierarchy:
         report_lines.append("\nClass Hierarchy Changes:")
-        for parent, data in inferred_hierarchy.items():
+        
+        # Apply entity limitation based on verbosity
+        hierarchy_items = list(inferred_hierarchy.items())
+        if not verbose and len(hierarchy_items) > max_entities_per_category:
+            report_lines.append(f"  Showing {max_entities_per_category} of {len(hierarchy_items)} classes with hierarchy changes")
+            hierarchy_items = hierarchy_items[:max_entities_per_category]
+            
+        for parent, data in hierarchy_items:
             if data.get('subclasses') or data.get('equivalent'):
                 report_lines.append(f"\n  Class: {parent}")
                 if data.get('subclasses'):
-                    report_lines.append("    ↳ Inferred Subclasses:")
-                    for sub in data['subclasses']: report_lines.append(f"        • {sub}")
+                    subclass_items = data['subclasses']
+                    if not verbose and len(subclass_items) > max_entities_per_category:
+                        report_lines.append(f"    ↳ Inferred Subclasses: ({len(subclass_items)} total, showing {max_entities_per_category})")
+                        for sub in subclass_items[:max_entities_per_category]:
+                            report_lines.append(f"        • {sub}")
+                        report_lines.append(f"        • ... and {len(subclass_items) - max_entities_per_category} more")
+                    else:
+                        report_lines.append("    ↳ Inferred Subclasses:")
+                        for sub in subclass_items:
+                            report_lines.append(f"        • {sub}")
+                
                 if data.get('equivalent'):
-                    report_lines.append(f"    ≡ Inferred Equivalent Classes: {', '.join(data['equivalent'])}")
-    else: report_lines.append("\nNo new class hierarchy relationships inferred.")
+                    equiv_items = data['equivalent']
+                    if not verbose and len(equiv_items) > max_entities_per_category:
+                        report_lines.append(f"    ≡ Inferred Equivalent Classes: {', '.join(equiv_items[:max_entities_per_category])} ... and {len(equiv_items) - max_entities_per_category} more")
+                    else:
+                        report_lines.append(f"    ≡ Inferred Equivalent Classes: {', '.join(equiv_items)}")
+    else: 
+        report_lines.append("\nNo new class hierarchy relationships inferred.")
 
     if inferred_properties:
         report_lines.append("\nInferred Property Characteristics:")
-        for prop, chars in inferred_properties.items():
+        
+        # Apply entity limitation based on verbosity
+        property_items = list(inferred_properties.items())
+        if not verbose and len(property_items) > max_entities_per_category:
+            report_lines.append(f"  Showing {max_entities_per_category} of {len(property_items)} properties with inferred characteristics")
+            property_items = property_items[:max_entities_per_category]
+            
+        for prop, chars in property_items:
             report_lines.append(f"\n  Property: {prop}")
-            for char in chars: report_lines.append(f"    • {char}")
-    else: report_lines.append("\nNo new property characteristics inferred.")
+            if not verbose and len(chars) > max_entities_per_category:
+                for char in chars[:max_entities_per_category]:
+                    report_lines.append(f"    • {char}")
+                report_lines.append(f"    • ... and {len(chars) - max_entities_per_category} more")
+            else:
+                for char in chars:
+                    report_lines.append(f"    • {char}")
+    else: 
+        report_lines.append("\nNo new property characteristics inferred.")
 
     if inferred_individuals:
         report_lines.append("\nIndividual Inferences:")
-        for ind_name, data in inferred_individuals.items():
+        
+        # Apply entity limitation based on verbosity
+        individual_items = list(inferred_individuals.items())
+        if not verbose and len(individual_items) > max_entities_per_category:
+            report_lines.append(f"  Showing {max_entities_per_category} of {len(individual_items)} individuals with inferences")
+            individual_items = individual_items[:max_entities_per_category]
+            
+        for ind_name, data in individual_items:
             report_lines.append(f"\n  Individual: {ind_name}")
             if data.get('types'):
-                report_lines.append("    Inferred Types:")
-                for t in data['types']: report_lines.append(f"      • {t}")
+                types_items = data['types']
+                if not verbose and len(types_items) > max_entities_per_category:
+                    report_lines.append(f"    Inferred Types: ({len(types_items)} total, showing {max_entities_per_category})")
+                    for t in types_items[:max_entities_per_category]:
+                        report_lines.append(f"      • {t}")
+                    report_lines.append(f"      • ... and {len(types_items) - max_entities_per_category} more")
+                else:
+                    report_lines.append("    Inferred Types:")
+                    for t in types_items:
+                        report_lines.append(f"      • {t}")
+                        
             if data.get('properties'):
-                report_lines.append("    Inferred Property Values:")
-                for p, vals in data['properties'].items():
-                    report_lines.append(f"      • {p}: {', '.join(vals)}") # vals are pre-formatted
-    else: report_lines.append("\nNo new individual types or property values inferred.")
+                props_items = list(data['properties'].items())
+                if not verbose and len(props_items) > max_entities_per_category:
+                    report_lines.append(f"    Inferred Property Values: ({len(props_items)} total, showing {max_entities_per_category})")
+                    for p, vals in props_items[:max_entities_per_category]:
+                        if not verbose and len(vals) > max_entities_per_category:
+                            report_lines.append(f"      • {p}: {', '.join(vals[:max_entities_per_category])} ... and {len(vals) - max_entities_per_category} more")
+                        else:
+                            report_lines.append(f"      • {p}: {', '.join(vals)}")
+                    report_lines.append(f"      • ... and {len(props_items) - max_entities_per_category} more properties")
+                else:
+                    report_lines.append("    Inferred Property Values:")
+                    for p, vals in props_items:
+                        if not verbose and len(vals) > max_entities_per_category:
+                            report_lines.append(f"      • {p}: {', '.join(vals[:max_entities_per_category])} ... and {len(vals) - max_entities_per_category} more")
+                        else:
+                            report_lines.append(f"      • {p}: {', '.join(vals)}")
+    else: 
+        report_lines.append("\nNo new individual types or property values inferred.")
 
     # 5. Recommendations
     add_section("RECOMMENDATIONS")
@@ -1821,7 +1906,8 @@ def generate_reasoning_report(onto: Ontology,
        recommendations.append("ℹ️ No structural changes after reasoning - verify if this is expected.")
     if recommendations:
         report_lines.extend(["\n" + rec for rec in recommendations])
-    else: report_lines.append("\nNo critical issues or major inference gaps found.")
+    else: 
+        report_lines.append("\nNo critical issues or major inference gaps found.")
 
     return "\n".join(report_lines), has_issues
 
@@ -1831,9 +1917,25 @@ def main_ontology_generation(spec_file_path: str,
                              ontology_iri: str = DEFAULT_ONTOLOGY_IRI,
                              save_format: str = "rdfxml",
                              use_reasoner: bool = False,
-                             world_db_path: Optional[str] = None) -> bool:
+                             world_db_path: Optional[str] = None,
+                             reasoner_report_max_entities: int = 10,  # New parameter
+                             reasoner_report_verbose: bool = False) -> bool:  # New parameter
     """
     Main function to generate the ontology. Returns True on success, False on failure.
+    
+    Args:
+        spec_file_path: Path to the specification CSV file
+        data_file_path: Path to the data CSV file
+        output_owl_path: Path to save the generated OWL ontology file
+        ontology_iri: Base IRI for the ontology
+        save_format: Format for saving the ontology
+        use_reasoner: Whether to run the reasoner after population
+        world_db_path: Path to use/create a persistent SQLite world database
+        reasoner_report_max_entities: Maximum number of entities to show per category in the reasoner report
+        reasoner_report_verbose: Whether to show all details in the reasoner report
+        
+    Returns:
+        bool: True on success, False on failure
     """
     start_time = timing.time()
     main_logger.info("--- Starting Ontology Generation ---")
@@ -1845,6 +1947,8 @@ def main_ontology_generation(spec_file_path: str,
     main_logger.info(f"Run reasoner: {use_reasoner}")
     if world_db_path:
         main_logger.info(f"Using persistent world DB: {world_db_path}")
+    main_logger.info(f"Reasoner report max entities: {reasoner_report_max_entities}")
+    main_logger.info(f"Reasoner report verbose: {reasoner_report_verbose}")
 
     world: Optional[World] = None # Define world variable outside try block
 
@@ -2016,7 +2120,12 @@ def main_ontology_generation(spec_file_path: str,
                         'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
                         'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
                     }
-                    report, has_issues = generate_reasoning_report(onto, pre_stats, post_stats, inconsistent, inferred_hierarchy, inferred_properties, inferred_individuals, use_reasoner)
+                    report, has_issues = generate_reasoning_report(
+                        onto, pre_stats, post_stats, inconsistent, inferred_hierarchy, 
+                        inferred_properties, inferred_individuals, use_reasoner,
+                        max_entities_per_category=reasoner_report_max_entities,
+                        verbose=reasoner_report_verbose
+                    )
                     main_logger.info("\nReasoning Report:\n" + report)
 
                     if has_issues or inconsistent:
@@ -2116,6 +2225,8 @@ if __name__ == "__main__":
     parser.add_argument("--format", default="rdfxml", choices=["rdfxml", "ntriples", "nquads", "owlxml"], help="Format for saving the ontology (default: rdfxml).")
     parser.add_argument("--reasoner", action="store_true", help="Run the reasoner after population.")
     parser.add_argument("--worlddb", default=None, help="Path to use/create a persistent SQLite world database (e.g., my_ontology.sqlite3).")
+    parser.add_argument("--max-report-entities", type=int, default=10, help="Maximum number of entities to show per category in the reasoner report (default: 10).")
+    parser.add_argument("--full-report", action="store_true", help="Show full details in the reasoner report (all entities).")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging.")
 
@@ -2141,7 +2252,9 @@ if __name__ == "__main__":
     # Execute main function
     success = main_ontology_generation(
         args.spec_file, args.data_file, args.output_file,
-        args.iri, args.format, args.reasoner, args.worlddb
+        args.iri, args.format, args.reasoner, args.worlddb,
+        reasoner_report_max_entities=args.max_report_entities,
+        reasoner_report_verbose=args.full_report
     )
 
     # Exit with appropriate code
