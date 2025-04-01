@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Combined and Updated Ontology Generation Code (v5 - Event Linking Added)
+# Combined and Updated Ontology Generation Code (V8 - Event Linking Added)
 
 import csv
 import logging
@@ -66,7 +66,20 @@ XSD_TYPE_MAP: Dict[str, type] = {
     "xsd:string": str,
     "xsd:decimal": float,  # Using float for compatibility with owlready2. High precision Decimal is possible but adds complexity.
     "xsd:double": float,   # Explicitly mapping xsd:double to float as well
+    "xsd:float": float,    # Explicitly mapping xsd:float
     "xsd:integer": int,
+    "xsd:int": int,        # Also handle xsd:int
+    "xsd:long": int,       # Also handle xsd:long
+    "xsd:short": int,      # Also handle xsd:short
+    "xsd:byte": int,       # Also handle xsd:byte
+    "xsd:nonNegativeInteger": int, # Non-negative integers
+    "xsd:positiveInteger": int,    # Positive integers
+    "xsd:negativeInteger": int,    # Negative integers
+    "xsd:nonPositiveInteger": int, # Non-positive integers
+    "xsd:unsignedLong": int,       # Unsigned long
+    "xsd:unsignedInt": int,        # Unsigned int
+    "xsd:unsignedShort": int,      # Unsigned short
+    "xsd:unsignedByte": int,       # Unsigned byte
     "xsd:dateTime": datetime,
     "xsd:date": date,
     "xsd:time": time,
@@ -96,6 +109,168 @@ def parse_specification(spec_file_path: str) -> List[Dict[str, str]]:
         logger.error(f"Error parsing specification file {spec_file_path}: {e}")
         raise
     return [] # Return empty list on error if not raising
+
+def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """
+    Parses the ontology specification to extract property-to-column mappings.
+    
+    Args:
+        specification: The parsed specification list of dictionaries
+        
+    Returns:
+        A nested dictionary with the structure:
+        {
+            'EntityName': {
+                'data_properties': {
+                    'propertyName': {
+                        'column': 'RAW_DATA_COLUMN',
+                        'data_type': 'xsd:type',
+                        'functional': True/False
+                    }
+                },
+                'object_properties': {
+                    'propertyName': {
+                        'column': 'RAW_DATA_COLUMN',
+                        'target_class': 'TargetClassName',
+                        'functional': True/False
+                    }
+                }
+            }
+        }
+    """
+    logger.info("Parsing property mappings from specification")
+    mappings = defaultdict(lambda: {'data_properties': {}, 'object_properties': {}})
+    
+    for row in specification:
+        entity = row.get('Proposed OWL Entity', '').strip()
+        property_name = row.get('Proposed OWL Property', '').strip()
+        property_type = row.get('OWL Property Type', '').strip()
+        raw_data_col = row.get('Raw Data Column Name', '').strip()
+        
+        # Skip if any essential fields are missing
+        if not entity or not property_name:
+            continue
+            
+        # Skip if no raw data column or explicitly N/A (defined in ontology but not mapped to data)
+        if not raw_data_col or raw_data_col.upper() == 'N/A':
+            continue
+            
+        # Determine if the property is functional
+        is_functional = 'Functional' in row.get('OWL Property Characteristics', '')
+        
+        # Process data properties
+        if property_type == 'DatatypeProperty':
+            data_type = row.get('Target/Range (xsd:) / Target Class', '').strip()
+            mappings[entity]['data_properties'][property_name] = {
+                'column': raw_data_col,
+                'data_type': data_type,
+                'functional': is_functional
+            }
+            logger.debug(f"Mapped {entity}.{property_name} (DatatypeProperty) to column '{raw_data_col}', type '{data_type}'")
+            
+        # Process object properties
+        elif property_type == 'ObjectProperty':
+            target_class = row.get('Target/Range (xsd:) / Target Class', '').strip()
+            # Only map if it's an object property with a raw data column (some might just be relationships)
+            if raw_data_col:
+                mappings[entity]['object_properties'][property_name] = {
+                    'column': raw_data_col,
+                    'target_class': target_class,
+                    'functional': is_functional
+                }
+                logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) to column '{raw_data_col}', target '{target_class}'")
+    
+    # Convert defaultdict to regular dict for return
+    return {k: {'data_properties': dict(v['data_properties']), 
+                'object_properties': dict(v['object_properties'])} 
+            for k, v in mappings.items()}
+
+def validate_property_mappings(property_mappings: Dict[str, Dict[str, Dict[str, Any]]]) -> bool:
+    """
+    Validates property mappings and logs information for debugging.
+    
+    Args:
+        property_mappings: Property mapping dictionary from parse_property_mappings
+        
+    Returns:
+        bool: True if validation passed, False otherwise
+    """
+    logger.info("Validating property mappings...")
+    
+    if not property_mappings:
+        logger.error("Property mappings dictionary is empty!")
+        return False
+    
+    validation_passed = True
+    entity_count = 0
+    data_prop_count = 0
+    object_prop_count = 0
+    
+    # Log summary
+    logger.info(f"Found mappings for {len(property_mappings)} entities")
+    
+    # Check each entity
+    for entity_name, entity_props in sorted(property_mappings.items()):
+        entity_count += 1
+        data_properties = entity_props.get('data_properties', {})
+        object_properties = entity_props.get('object_properties', {})
+        
+        # Count properties
+        data_prop_count += len(data_properties)
+        object_prop_count += len(object_properties)
+        
+        # Log entity details
+        logger.info(f"Entity: {entity_name} - {len(data_properties)} data properties, {len(object_properties)} object properties")
+        
+        # Log data properties
+        if data_properties:
+            logger.debug(f"  Data Properties for {entity_name}:")
+            for prop_name, details in sorted(data_properties.items()):
+                column = details.get('column', 'MISSING_COLUMN')
+                data_type = details.get('data_type', 'MISSING_TYPE')
+                functional = details.get('functional', False)
+                
+                logger.debug(f"    {prop_name}: column='{column}', type='{data_type}', functional={functional}")
+                
+                # Validate required fields
+                if not column or not data_type:
+                    logger.warning(f"Missing required field for {entity_name}.{prop_name}: column='{column}', type='{data_type}'")
+                    validation_passed = False
+        
+        # Log object properties
+        if object_properties:
+            logger.debug(f"  Object Properties for {entity_name}:")
+            for prop_name, details in sorted(object_properties.items()):
+                column = details.get('column', 'MISSING_COLUMN')
+                target = details.get('target_class', 'MISSING_TARGET')
+                functional = details.get('functional', False)
+                
+                logger.debug(f"    {prop_name}: column='{column}', target='{target}', functional={functional}")
+                
+                # Validate required fields
+                if not column or not target:
+                    logger.warning(f"Missing required field for {entity_name}.{prop_name}: column='{column}', target='{target}'")
+                    validation_passed = False
+    
+    # Check for EventRecord specifically
+    if 'EventRecord' not in property_mappings:
+        logger.warning("No mappings found for 'EventRecord' entity (the main focus of this change)")
+        validation_passed = False
+    else:
+        # Check for common EventRecord properties
+        event_props = property_mappings['EventRecord'].get('data_properties', {})
+        expected_props = ['downtimeMinutes', 'runTimeMinutes', 'reportedDurationMinutes']
+        missing_props = [p for p in expected_props if p not in event_props]
+        
+        if missing_props:
+            logger.warning(f"Some expected EventRecord properties are missing from mappings: {missing_props}")
+            # Don't fail validation for this, but log the warning
+    
+    # Log summary stats
+    logger.info(f"Property mapping validation complete. Found {entity_count} entities, {data_prop_count} data properties, {object_prop_count} object properties.")
+    logger.info(f"Validation {'PASSED' if validation_passed else 'FAILED'}")
+    
+    return validation_passed
 
 def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]]) -> Tuple[Dict[str, ThingClass], Dict[str, PropertyClass], Dict[str, bool]]:
     """
@@ -965,7 +1140,8 @@ def process_event_record(row: Dict[str, Any], context: PopulationContext,
                          resource_individual: Thing, resource_base_id: str, row_num: int,
                          request_ind: Optional[Thing], material_ind: Optional[Thing],
                          time_interval_ind: Optional[Thing], shift_ind: Optional[Thing],
-                         state_ind: Optional[Thing], reason_ind: Optional[Thing]
+                         state_ind: Optional[Thing], reason_ind: Optional[Thing],
+                         property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
                         ) -> Optional[Thing]:
     """Processes EventRecord and its links from a row."""
     cls_EventRecord = context.get_class("EventRecord")
@@ -983,52 +1159,82 @@ def process_event_record(row: Dict[str, Any], context: PopulationContext,
         return None
 
     # --- Populate EventRecord Data Properties ---
-    context.set_prop(event_ind, "operationType", safe_cast(row.get('OPERA_TYPE'), str))
-    context.set_prop(event_ind, "rampUpFlag", safe_cast(row.get('RAMPUP_FLAG'), bool, default=False))
-    context.set_prop(event_ind, "reportedDurationMinutes", safe_cast(row.get('TOTAL_TIME'), float))
-
-    # Time Metrics (Functional)
-    time_metric_cols = {
-        "businessExternalTimeMinutes": "BUSINESS_EXTERNAL_TIME",
-        "plantAvailableTimeMinutes": "PLANT_AVAILABLE_TIME",
-        "effectiveRuntimeMinutes": "EFFECTIVE_RUNTIME",
-        "plantDecisionTimeMinutes": "PLANT_DECISION_TIME",
-        "productionAvailableTimeMinutes": "PRODUCTION_AVAILABLE_TIME"
-    }
-    for prop_name, col_name in time_metric_cols.items():
-        val = safe_cast(row.get(col_name), float)
-        if val is not None: # Only set if value is valid
-            context.set_prop(event_ind, prop_name, val)
-
-    # --- Additional Performance Metrics from Spec ---
-    # Time Metrics (Functional)
-    additional_time_metrics = {
-        "downtimeMinutes": "DOWNTIME",
-        "runTimeMinutes": "RUN_TIME",
-        "notEnteredTimeMinutes": "NOT_ENTERED",
-        "waitingTimeMinutes": "WAITING_TIME",
-        "plantExperimentationTimeMinutes": "PLANT_EXPERIMENTATION",
-        "allMaintenanceTimeMinutes": "ALL_MAINTENANCE",
-        "autonomousMaintenanceTimeMinutes": "AUTONOMOUS_MAINTENANCE",
-        "plannedMaintenanceTimeMinutes": "PLANNED_MAINTENANCE"
-    }
-    for prop_name, col_name in additional_time_metrics.items():
-        val = safe_cast(row.get(col_name), float)
-        if val is not None: # Only set if value is valid
-            context.set_prop(event_ind, prop_name, val)
-    
-    # Production Quantity Metrics (Functional)
-    quantity_metrics = {
-        "goodProductionQuantity": "GOOD_PRODUCTION_QTY",
-        "rejectProductionQuantity": "REJECT_PRODUCTION_QTY"
-    }
-    for prop_name, col_name in quantity_metrics.items():
-        val = safe_cast(row.get(col_name), int)
-        if val is not None: # Only set if value is valid
-            context.set_prop(event_ind, prop_name, val)
+    # Check if we can use dynamic property mappings
+    if property_mappings and "EventRecord" in property_mappings:
+        event_mappings = property_mappings["EventRecord"]
+        
+        # Process data properties from mappings
+        for prop_name, prop_info in event_mappings.get("data_properties", {}).items():
+            col_name = prop_info.get("column")
+            data_type = prop_info.get("data_type")
+            is_functional = prop_info.get("functional", False)
             
-    # Additional Event Categorization Metrics
-    context.set_prop(event_ind, "aeModelCategory", safe_cast(row.get('AE_MODEL_CATEGORY'), str))
+            if col_name and data_type:
+                # Convert XSD type to Python type
+                python_type = XSD_TYPE_MAP.get(data_type, str)
+                
+                # Get the value from the row data
+                value = safe_cast(row.get(col_name), python_type)
+                
+                # Set the property if we have a valid value
+                if value is not None:
+                    prop = context.get_prop(prop_name)
+                    if prop:
+                        context.set_prop(event_ind, prop_name, value)
+                        pop_logger.debug(f"Dynamically set {prop_name} from column {col_name} to {value}")
+                    else:
+                        pop_logger.warning(f"Property {prop_name} not found in defined_properties")
+        
+        pop_logger.debug(f"Populated {len(event_mappings.get('data_properties', {}))} properties from dynamic mappings")
+    else:
+        # --- Fallback to hardcoded property assignments if no mappings available ---
+        pop_logger.debug("Using hardcoded property assignments (no dynamic mappings available)")
+        context.set_prop(event_ind, "operationType", safe_cast(row.get('OPERA_TYPE'), str))
+        context.set_prop(event_ind, "rampUpFlag", safe_cast(row.get('RAMPUP_FLAG'), bool, default=False))
+        context.set_prop(event_ind, "reportedDurationMinutes", safe_cast(row.get('TOTAL_TIME'), float))
+
+        # Time Metrics (Functional)
+        time_metric_cols = {
+            "businessExternalTimeMinutes": "BUSINESS_EXTERNAL_TIME",
+            "plantAvailableTimeMinutes": "PLANT_AVAILABLE_TIME",
+            "effectiveRuntimeMinutes": "EFFECTIVE_RUNTIME",
+            "plantDecisionTimeMinutes": "PLANT_DECISION_TIME",
+            "productionAvailableTimeMinutes": "PRODUCTION_AVAILABLE_TIME"
+        }
+        for prop_name, col_name in time_metric_cols.items():
+            val = safe_cast(row.get(col_name), float)
+            if val is not None: # Only set if value is valid
+                context.set_prop(event_ind, prop_name, val)
+
+        # --- Additional Performance Metrics from Spec ---
+        # Time Metrics (Functional)
+        additional_time_metrics = {
+            "downtimeMinutes": "DOWNTIME",
+            "runTimeMinutes": "RUN_TIME",
+            "notEnteredTimeMinutes": "NOT_ENTERED",
+            "waitingTimeMinutes": "WAITING_TIME",
+            "plantExperimentationTimeMinutes": "PLANT_EXPERIMENTATION",
+            "allMaintenanceTimeMinutes": "ALL_MAINTENANCE",
+            "autonomousMaintenanceTimeMinutes": "AUTONOMOUS_MAINTENANCE",
+            "plannedMaintenanceTimeMinutes": "PLANNED_MAINTENANCE"
+        }
+        for prop_name, col_name in additional_time_metrics.items():
+            val = safe_cast(row.get(col_name), float)
+            if val is not None: # Only set if value is valid
+                context.set_prop(event_ind, prop_name, val)
+        
+        # Production Quantity Metrics (Functional)
+        quantity_metrics = {
+            "goodProductionQuantity": "GOOD_PRODUCTION_QTY",
+            "rejectProductionQuantity": "REJECT_PRODUCTION_QTY"
+        }
+        for prop_name, col_name in quantity_metrics.items():
+            val = safe_cast(row.get(col_name), int)
+            if val is not None: # Only set if value is valid
+                context.set_prop(event_ind, prop_name, val)
+                
+        # Additional Event Categorization Metrics
+        context.set_prop(event_ind, "aeModelCategory", safe_cast(row.get('AE_MODEL_CATEGORY'), str))
 
     # --- Link EventRecord to other Individuals (Object Properties) ---
     # Link to resource (Line or Equipment) - involvesResource (Non-functional per spec, but logic likely implies 1:1)
@@ -1064,8 +1270,8 @@ def populate_ontology_from_data(onto: Ontology,
                                 defined_classes: Dict[str, ThingClass],
                                 defined_properties: Dict[str, PropertyClass],
                                 property_is_functional: Dict[str, bool],
-                                specification: List[Dict[str, str]] # Pass spec for checks if needed
-                               ) -> Tuple[int, Dict[str, Thing], Dict[str, int], List[Tuple[Thing, Thing, Thing, Thing]]]: # <-- Added context return
+                                specification: List[Dict[str, str]], # Pass spec for checks if needed
+                                property_mappings: Dict[str, Dict[str, Dict[str, Any]]] = None) -> Tuple[int, Dict[str, Thing], Dict[str, int], List[Tuple[Thing, Thing, Thing, Thing]]]: # <-- Added context return
     """
     Populates the ontology with individuals and relations from data rows using modular processing functions.
 
@@ -1213,7 +1419,7 @@ def populate_ontology_from_data(onto: Ontology,
                 if resource_individual: # Only process event if resource exists
                     event_ind = process_event_record(row, context, resource_individual, resource_base_id, row_num,
                                                      request_ind, material_ind, time_interval_ind,
-                                                     shift_ind, state_ind, reason_ind)
+                                                     shift_ind, state_ind, reason_ind, property_mappings)
                     if not event_ind:
                         # Error logged in process_event_record
                         raise ValueError("Failed to create EventRecord individual.")
@@ -2372,6 +2578,17 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.error("Specification parsing failed or resulted in empty spec. Aborting.")
             return False
 
+        # 1.2 Parse Property Mappings from Specification
+        property_mappings = parse_property_mappings(specification)
+        main_logger.info(f"Parsed property mappings for {len(property_mappings)} entities from specification")
+        
+        # 1.3 Validate the Property Mappings
+        validation_result = validate_property_mappings(property_mappings)
+        if not validation_result:
+            main_logger.warning("Property mapping validation had issues. Will continue but some properties may not be correctly populated.")
+        else:
+            main_logger.info("Property mapping validation passed successfully!")
+
         # 2. Create Ontology World and Ontology Object
         if world_db_path:
             main_logger.info(f"Initializing persistent World at: {world_db_path}")
@@ -2417,9 +2634,10 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.warning("No data rows read from data file. Ontology will be populated with structure only.")
         else:
             try:
-                # *** Modified call for Step 3.1: Capture Return Value ***
+                # *** Modified call with property_mappings parameter ***
                 failed_rows_count, created_eq_classes, eq_class_positions, created_events_context = populate_ontology_from_data(
-                    onto, data_rows, defined_classes, defined_properties, property_is_functional, specification
+                    onto, data_rows, defined_classes, defined_properties, property_is_functional, 
+                    specification, property_mappings
                 )
                 if failed_rows_count == len(data_rows) and len(data_rows) > 0:
                     main_logger.error(f"Population failed for all {len(data_rows)} data rows.")
@@ -2428,8 +2646,6 @@ def main_ontology_generation(spec_file_path: str,
                     main_logger.warning(f"Population completed with {failed_rows_count} out of {len(data_rows)} failed rows.")
                 else:
                     main_logger.info(f"Population completed successfully for all {len(data_rows)} rows.")
-
-                # Logs about created classes/positions are now inside populate_ontology_from_data
 
             except Exception as pop_exc:
                 main_logger.error(f"Critical error during population: {pop_exc}", exc_info=True)
@@ -2686,6 +2902,69 @@ def main_ontology_generation(spec_file_path: str,
         main_logger.info(f"Total time: {end_time - start_time:.2f} seconds")
 
 
+def test_property_mappings(spec_file_path: str):
+    """
+    Test function to verify property mapping functionality.
+    
+    This can be called manually for testing and provides detailed debug output
+    about the parsed property mappings.
+    
+    Args:
+        spec_file_path: Path to the specification CSV file
+    """
+    # Configure more verbose logging for testing
+    logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT, stream=sys.stdout)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
+    test_logger = logging.getLogger("property_mapping_test")
+    test_logger.info("=== Starting Property Mapping Test ===")
+    
+    try:
+        # Parse spec file
+        test_logger.info(f"Parsing specification file: {spec_file_path}")
+        spec = parse_specification(spec_file_path)
+        test_logger.info(f"Parsed {len(spec)} rows from specification file")
+        
+        # Parse and validate property mappings
+        test_logger.info("Generating property mappings from specification")
+        mappings = parse_property_mappings(spec)
+        validate_property_mappings(mappings)
+        
+        # Check EventRecord specifically
+        if 'EventRecord' in mappings:
+            test_logger.info("\n=== EventRecord Property Mappings ===")
+            event_data_props = mappings['EventRecord'].get('data_properties', {})
+            test_logger.info(f"Found {len(event_data_props)} data properties for EventRecord")
+            
+            # Check for our key properties of interest
+            key_properties = [
+                'downtimeMinutes', 
+                'runTimeMinutes', 
+                'notEnteredTimeMinutes',
+                'waitingTimeMinutes',
+                'plantExperimentationTimeMinutes', 
+                'allMaintenanceTimeMinutes',
+                'goodProductionQuantity',
+                'rejectProductionQuantity'
+            ]
+            
+            test_logger.info("Checking key properties:")
+            for prop in key_properties:
+                if prop in event_data_props:
+                    details = event_data_props[prop]
+                    test_logger.info(f"  ✓ {prop}: column='{details.get('column')}', type='{details.get('data_type')}', functional={details.get('functional')}")
+                else:
+                    test_logger.warning(f"  ✗ Property '{prop}' not found in mappings")
+        else:
+            test_logger.error("EventRecord entity not found in mappings!")
+        
+        test_logger.info("=== Property Mapping Test Complete ===")
+        
+    except Exception as e:
+        test_logger.error(f"Error during property mapping test: {e}", exc_info=True)
+        
+    return
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate an OWL ontology from specification and data CSV files.")
     parser.add_argument("spec_file", help="Path to the ontology specification CSV file (e.g., opera_spec.csv).")
@@ -2701,10 +2980,16 @@ if __name__ == "__main__":
     parser.add_argument("--strict-adherence", action="store_true", help="Only create classes explicitly defined in the specification.")
     parser.add_argument("--skip-classes", type=str, nargs='+', help="List of class names to skip during ontology creation.")
     parser.add_argument("--optimize", action="store_true", dest="optimize_ontology", help="Generate detailed optimization recommendations.")
+    parser.add_argument("--test-mappings", action="store_true", help="Test the property mapping functionality only, without generating the ontology.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging.")
 
     args = parser.parse_args()
+
+    # If test mode is requested, just run the test and exit
+    if hasattr(args, 'test_mappings') and args.test_mappings:
+        test_property_mappings(args.spec_file)
+        sys.exit(0)
 
     # Setup Logging Level
     log_level = logging.INFO
