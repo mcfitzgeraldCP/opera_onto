@@ -65,6 +65,7 @@ main_logger = logging.getLogger("create_ontology") # Logger for main script
 XSD_TYPE_MAP: Dict[str, type] = {
     "xsd:string": str,
     "xsd:decimal": float,  # Using float for compatibility with owlready2. High precision Decimal is possible but adds complexity.
+    "xsd:double": float,   # Explicitly mapping xsd:double to float as well
     "xsd:integer": int,
     "xsd:dateTime": datetime,
     "xsd:date": date,
@@ -998,6 +999,36 @@ def process_event_record(row: Dict[str, Any], context: PopulationContext,
         val = safe_cast(row.get(col_name), float)
         if val is not None: # Only set if value is valid
             context.set_prop(event_ind, prop_name, val)
+
+    # --- Additional Performance Metrics from Spec ---
+    # Time Metrics (Functional)
+    additional_time_metrics = {
+        "downtimeMinutes": "DOWNTIME",
+        "runTimeMinutes": "RUN_TIME",
+        "notEnteredTimeMinutes": "NOT_ENTERED",
+        "waitingTimeMinutes": "WAITING_TIME",
+        "plantExperimentationTimeMinutes": "PLANT_EXPERIMENTATION",
+        "allMaintenanceTimeMinutes": "ALL_MAINTENANCE",
+        "autonomousMaintenanceTimeMinutes": "AUTONOMOUS_MAINTENANCE",
+        "plannedMaintenanceTimeMinutes": "PLANNED_MAINTENANCE"
+    }
+    for prop_name, col_name in additional_time_metrics.items():
+        val = safe_cast(row.get(col_name), float)
+        if val is not None: # Only set if value is valid
+            context.set_prop(event_ind, prop_name, val)
+    
+    # Production Quantity Metrics (Functional)
+    quantity_metrics = {
+        "goodProductionQuantity": "GOOD_PRODUCTION_QTY",
+        "rejectProductionQuantity": "REJECT_PRODUCTION_QTY"
+    }
+    for prop_name, col_name in quantity_metrics.items():
+        val = safe_cast(row.get(col_name), int)
+        if val is not None: # Only set if value is valid
+            context.set_prop(event_ind, prop_name, val)
+            
+    # Additional Event Categorization Metrics
+    context.set_prop(event_ind, "aeModelCategory", safe_cast(row.get('AE_MODEL_CATEGORY'), str))
 
     # --- Link EventRecord to other Individuals (Object Properties) ---
     # Link to resource (Line or Equipment) - involvesResource (Non-functional per spec, but logic likely implies 1:1)

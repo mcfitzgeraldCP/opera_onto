@@ -1,0 +1,523 @@
+I've built an ontology and populated it with data, and now I need your helpto generate some interesting exploratory queries.
+
+Remember my goal is to mine insights about asset effectiveness (somtimes called operational equipment effectiveness).
+Refer to the asset effectiveness model below for more details.
+
+The ontology is populated with one month of data for toothpaste production at a single plant with multiple lines.
+This is just a proof of concept. We will expand later.
+
+Take a look at the ontology and come up with some interesting and insight-rich queries. 
+Make use of all the different raw data that you can to come up with unique perspectives.
+I will guide you.
+
+Your responses shoud be in the format:
+
+1) An interesting and insight-rich business question that links in some way (could be indirectly) to the asset effectiveness model
+2) An exposition on why this is a good question, what your hypothesis is, and what actions the answered quetsion can drive
+3) owlready2 pyhthon code that combines the sparql query with reporting formatting and plotting (if relevant)
+
+Let me know if you understand or have any questions.
+
+Below are the ontology specification and some notes on owlready2's querying capabilities
+
+==========================
+Ontology Specifiation (csv)
+==========================
+
+Logical Group,Raw Data Column Name,Proposed OWL Entity,Proposed OWL Property,OWL Property Type,Target/Range (xsd:) / Target Class,OWL Property Characteristics,Inverse Property,Domain,Property Restrictions,ISA-95 Concept,Parent Class,Notes/Considerations
+Asset Hierarchy,PLANT,Plant,plantId,DatatypeProperty,xsd:string,Functional,,Plant,,Enterprise/Site ID,owl:Thing,Used to create/identify Plant Individual - harmonized with B2MML terminology.
+Asset Hierarchy,GH_FOCUSFACTORY,Area,areaId,DatatypeProperty,xsd:string,Functional,,Area,,Area ID,Plant,Used to create/identify Area (Focus Factory) Individual. Links via locatedInPlant to Plant.
+Asset Hierarchy,GH_AREA,ProcessCell,processCellId,DatatypeProperty,xsd:string,Functional,,ProcessCell,,Area/ProcessCell ID,Area,Used to create/identify ProcessCell (GH_Area) Individual. Links via partOfArea to Area. Source corrected from PHYSICAL_AREA.
+Asset Hierarchy,LINE_NAME,ProductionLine,lineId,DatatypeProperty,xsd:string,Functional,,ProductionLine,,ProductionLine/ProcessCell ID,ProcessCell,Links via locatedInProcessCell to ProcessCell.
+Asset Hierarchy,EQUIPMENT_ID,Equipment,equipmentId,DatatypeProperty,xsd:string,Functional,,Equipment,,Equipment ID,ProductionLine,Preferred ID for Equipment Individual. Links via isPartOfProductionLine to ProductionLine. Requires check against EQUIPMENT_TYPE.
+Asset Hierarchy,EQUIPMENT_NAME,Equipment,equipmentName,DatatypeProperty,xsd:string,-,,Equipment,,Equipment Description,ProductionLine,Secondary ID. Used to determine EquipmentClass. Consider rdfs:label.
+Asset Hierarchy,N/A,ProductionLineOrEquipment,,,,,,,,Resource,owl:Thing,Represents a resource that can be either a ProductionLine or an Equipment. Intended as a superclass or union for the range of involvesResource.
+Asset Hierarchy,EQUIPMENT_TYPE,EventRecord,involvesResource,ObjectProperty,ProductionLineOrEquipment,,resourceInvolvedIn,EventRecord,min 1,SegmentResponse Resource,EventRecord,Links Event to the specific Resource (Line OR Equip) it pertains to. Range is the union class ProductionLineOrEquipment.
+Asset Hierarchy,N/A,Area,locatedInPlant,ObjectProperty,Plant,-,hasArea,Area,,Hierarchy Scope,owl:Thing,Links an Area to the Plant it resides in.
+Asset Hierarchy,N/A,ProcessCell,partOfArea,ObjectProperty,Area,-,hasProcessCell,ProcessCell,,Hierarchy Scope,owl:Thing,Links a ProcessCell (GH_Area) to the Area (Focus Factory) it is part of.
+Asset Hierarchy,N/A,ProductionLine,locatedInProcessCell,ObjectProperty,ProcessCell,-,containsProductionLine,ProductionLine,,Hierarchy Scope,owl:Thing,Links a ProductionLine to the ProcessCell it resides in.
+Asset Hierarchy,N/A,Equipment,isPartOfProductionLine,ObjectProperty,ProductionLine,-,hasEquipmentPart,Equipment,,Hierarchy Scope,owl:Thing,Links an Equipment instance to the ProductionLine it is part of.
+Asset Hierarchy,PHYSICAL_AREA,Area,areaPhysicalCategoryName,DatatypeProperty,xsd:string,-,,Area,,Product Category,Area,"Represents the descriptive product category name (e.g., ""OralCare"") directly associated with the Focus Factory (Area)."
+Asset Hierarchy,GH_CATEGORY,Area,areaCategoryCode,DatatypeProperty,xsd:string,Functional,,Area,,Product Category,Area,"Represents the product category code (e.g., ""OC"") directly associated with the Focus Factory (Area). Marked Functional."
+Asset Hierarchy,N/A,,resourceInvolvedIn,ObjectProperty,EventRecord,-,involvesResource,ProductionLineOrEquipment,,,Asset Hierarchy,Inverse of involvesResource. Links a line or equipment back to events it was involved in. Domain corrected.
+Asset Hierarchy,N/A,Plant,hasArea,ObjectProperty,Area,-,locatedInPlant,Plant,,Hierarchy Scope,owl:Thing,Inverse of locatedInPlant. Links Plant to its Areas.
+Asset Hierarchy,N/A,Area,hasProcessCell,ObjectProperty,ProcessCell,-,partOfArea,Area,,Hierarchy Scope,owl:Thing,Inverse of partOfArea. Links Area to its ProcessCells.
+Asset Hierarchy,N/A,ProcessCell,containsProductionLine,ObjectProperty,ProductionLine,-,locatedInProcessCell,ProcessCell,,Hierarchy Scope,owl:Thing,Inverse of locatedInProcessCell. Links ProcessCell to its ProductionLines.
+Asset Hierarchy,N/A,ProductionLine,hasEquipmentPart,ObjectProperty,Equipment,-,isPartOfProductionLine,ProductionLine,,Hierarchy Scope,owl:Thing,Inverse of isPartOfProductionLine. Links ProductionLine to its Equipment.
+Equipment Attributes,EQUIPMENT_MODEL,Equipment,equipmentModel,DatatypeProperty,xsd:string,Functional,,Equipment,,Equipment Property/Model,Equipment,Property of Equipment according to Section 5.5.
+Equipment Attributes,COMPLEXITY,Equipment,complexity,DatatypeProperty,xsd:string,-,,Equipment,,Equipment Property,Equipment,Property of Equipment according to Section 5.5.
+Equipment Attributes,MODEL,Equipment,alternativeModel,DatatypeProperty,xsd:string,-,,Equipment,,Equipment Property,Equipment,Property of Equipment according to Section 5.5.
+Equipment Capability,N/A,EquipmentCapability,capabilityType,DatatypeProperty,xsd:string,Functional,,EquipmentCapability,,Operations Capability,owl:Thing,Added for Section 6.4 Operations Capability. Identifier for the capability type.
+Equipment Capability,N/A,Equipment,hasCapability,ObjectProperty,EquipmentCapability,,isCapabilityOf,Equipment,,Operations Capability,Equipment,Links Equipment to capabilities per Section 6.4.
+Equipment Capability,N/A,EquipmentCapability,isCapabilityOf,ObjectProperty,Equipment,-,hasCapability,EquipmentCapability,,Operations Capability,owl:Thing,Inverse of hasCapability. Links EquipmentCapability to Equipment.
+Equipment Class,EQUIPMENT_NAME (parsed),EquipmentClass,equipmentClassId,DatatypeProperty,xsd:string,Functional,,EquipmentClass,,EquipmentClass ID,owl:Thing,Parse from EQUIPMENT_NAME to create appropriate EquipmentClass.
+Equipment Class,N/A,Equipment,memberOfClass,ObjectProperty,EquipmentClass,Functional,hasInstance,Equipment,,EquipmentClass Hierarchy,Equipment,Links Equipment instances to their EquipmentClass. Functional assumes equip belongs to one class.
+Equipment Class,N/A,EquipmentClass,hasInstance,ObjectProperty,Equipment,-,memberOfClass,EquipmentClass,,EquipmentClass Hierarchy,owl:Thing,Inverse of memberOfClass. Links EquipmentClass to Equipment instances.
+Equipment Sequence,N/A,EquipmentClass,classIsUpstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",classIsDownstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines upstream relationship between equipment classes. Use for default sequence relative order.
+Equipment Sequence,N/A,EquipmentClass,classIsDownstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",classIsUpstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines downstream relationship between equipment classes.
+Equipment Sequence,N/A,EquipmentClass,isParallelWith,ObjectProperty,EquipmentClass,"Symmetric, Irreflexive",,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Defines equipment classes that operate in parallel. Deferred/Future: Not required for V1 linear sequence focus.
+Equipment Sequence,N/A,EquipmentClass,defaultSequencePosition,DatatypeProperty,xsd:integer,Functional,,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,Required for V1: Numerical position in default sequence (1-based). Functional per class in sequence context.
+Equipment Sequence,N/A,Equipment,equipmentIsUpstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",equipmentIsDownstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Deferred/Future: Instance sequence data not available/required for V1.
+Equipment Sequence,N/A,Equipment,equipmentIsDownstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",equipmentIsUpstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Deferred/Future: Instance sequence data not available/required for V1.
+Equipment Sequence,N/A,Equipment,isParallelWith,ObjectProperty,Equipment,"Symmetric, Irreflexive",,Equipment,,Equipment Hierarchy Instance,Equipment,Deferred/Future: Not required for V1.
+Equipment Sequence,N/A,Equipment,actualSequencePosition,DatatypeProperty,xsd:integer,Functional,,Equipment,,Equipment Hierarchy Instance,Equipment,Deferred/Future: Instance sequence data not available/required for V1.
+Material & Prod Order,MATERIAL_ID,Material,materialId,DatatypeProperty,xsd:string,Functional,,Material,,MaterialDefinition ID,owl:Thing,Used to create/identify Material Individual per Section 5.7.
+Material & Prod Order,SHORT_MATERIAL_ID,Material,materialDescription,DatatypeProperty,xsd:string,-,,Material,,MaterialDefinition Description,Material,Property of Material per Section 5.7. Consider rdfs:comment.
+Material & Prod Order,SIZE_TYPE,Material,sizeType,DatatypeProperty,xsd:string,-,,Material,,Material Property,Material,Property of Material per Section 5.7.
+Material & Prod Order,MATERIAL_UOM,Material,materialUOM,DatatypeProperty,xsd:string,Functional,,Material,,MaterialDefinition BaseUnitOfMeasure,Material,Property of Material per Section 5.7. (Functional per Material instance)
+Material & Prod Order,"UOM_ST, UOM_ST_SAP",Material,standardUOM,DatatypeProperty,xsd:string,Functional,,Material,,Material Property (UoM),Material,Property of Material per Section 5.7. (Functional per Material instance)
+Material & Prod Order,TP_UOM,Material,targetProductUOM,DatatypeProperty,xsd:string,Functional,,Material,,Material Property (UoM),Material,Property of Material per Section 5.7. (Functional per Material instance)
+Material & Prod Order,PRIMARY_CONV_FACTOR,Material,conversionFactor,DatatypeProperty,xsd:double,Functional,,Material,,Material Property,Material,Property of Material per Section 5.7. (Functional per Material instance context)
+Material & Prod Order,PRODUCTION_ORDER_ID,ProductionRequest,requestId,DatatypeProperty,xsd:string,Functional,,ProductionRequest,,OperationsRequest ID,owl:Thing,Used to create/identify ProductionRequest per Section 6.1.
+Material & Prod Order,PRODUCTION_ORDER_DESC,ProductionRequest,requestDescription,DatatypeProperty,xsd:string,-,,ProductionRequest,,OperationsRequest Desc,ProductionRequest,Property of ProductionRequest per Section 6.1.
+Material & Prod Order,PRODUCTION_ORDER_RATE,ProductionRequest,requestRate,DatatypeProperty,xsd:double,Functional,,ProductionRequest,,OperationsRequest Prop,ProductionRequest,Property of ProductionRequest per Section 6.1. (Functional per Request instance)
+Material & Prod Order,PRODUCTION_ORDER_UOM,ProductionRequest,requestRateUOM,DatatypeProperty,xsd:string,Functional,,ProductionRequest,,OperationsRequest Prop,ProductionRequest,Property of ProductionRequest per Section 6.1. (Functional per Request instance)
+Operational Context,N/A,EventRecord,associatedWithProductionRequest,ObjectProperty,ProductionRequest,-,hasAssociatedEvent,EventRecord,,OperationsResponse Link,EventRecord,Links an EventRecord to the ProductionRequest it fulfills or relates to.
+Operational Context,N/A,EventRecord,usesMaterial,ObjectProperty,Material,-,materialUsedIn,EventRecord,,OperationsSegment MaterialActual,EventRecord,Links an EventRecord (representing actual work) to the Material consumed or produced.
+Operational Context,N/A,EventRecord,duringShift,ObjectProperty,Shift,Functional,includesEvent,EventRecord,,PersonnelSchedule Link,EventRecord,Links an EventRecord to the Shift during which it occurred. Functional implies event occurs in exactly one shift.
+Operational Context,N/A,EventRecord,eventHasState,ObjectProperty,OperationalState,Functional,stateOfEvent,EventRecord,,OperationsRecord State Link,EventRecord,Links an EventRecord to the OperationalState describing it. Functional implies event has one primary state.
+Operational Context,N/A,EventRecord,eventHasReason,ObjectProperty,OperationalReason,Functional,reasonForEvent,EventRecord,,OperationsEvent Reason Link,EventRecord,Links an EventRecord to the OperationalReason explaining its state. Functional implies event has one primary reason.
+Operational Context,N/A,EventRecord,isPartOfLineEvent,ObjectProperty,EventRecord,-,hasDetailedEquipmentEvent,EventRecord,,Event Hierarchy,EventRecord,Required V1: Links an equipment-specific event record to the broader line event record it occurred within or contributed to. Domain: EventRecord involving Equipment. Range: EventRecord involving ProductionLine.
+Operational Context,N/A,ProductionRequest,hasAssociatedEvent,ObjectProperty,EventRecord,-,associatedWithProductionRequest,ProductionRequest,,OperationsResponse Link,owl:Thing,Inverse of associatedWithProductionRequest. Links ProductionRequest to EventRecords.
+Operational Context,N/A,Material,materialUsedIn,ObjectProperty,EventRecord,-,usesMaterial,Material,,OperationsSegment MaterialActual,owl:Thing,Inverse of usesMaterial. Links Material to EventRecords.
+Operational Context,N/A,Shift,includesEvent,ObjectProperty,EventRecord,-,duringShift,Shift,,PersonnelSchedule Link,owl:Thing,Inverse of duringShift. Links Shift to EventRecords.
+Operational Context,N/A,OperationalState,stateOfEvent,ObjectProperty,EventRecord,-,eventHasState,OperationalState,,OperationsRecord State Link,owl:Thing,Inverse of eventHasState. Links OperationalState to EventRecords.
+Operational Context,N/A,OperationalReason,reasonForEvent,ObjectProperty,EventRecord,-,eventHasReason,OperationalReason,,OperationsEvent Reason Link,owl:Thing,Inverse of eventHasReason. Links OperationalReason to EventRecords.
+Operational Context,N/A,EventRecord,hasDetailedEquipmentEvent,ObjectProperty,EventRecord,-,isPartOfLineEvent,EventRecord,,Event Hierarchy,EventRecord,Required V1: Inverse of isPartOfLineEvent. Links a line-level event to the specific equipment events that comprise or explain it. Domain: EventRecord involving ProductionLine. Range: EventRecord involving Equipment.
+Performance Metrics,TOTAL_TIME,EventRecord,reportedDurationMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Duration,EventRecord,Property of EventRecord per Section 6.3. Represents total event time in minutes. (Functional per EventRecord instance)
+Performance Metrics,BUSINESS_EXTERNAL_TIME,EventRecord,businessExternalTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Business External time in minutes. (Functional per EventRecord instance)
+Performance Metrics,PLANT_AVAILABLE_TIME,EventRecord,plantAvailableTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Plant Available time in minutes. (Functional per EventRecord instance)
+Performance Metrics,EFFECTIVE_RUNTIME,EventRecord,effectiveRuntimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Effective Runtime in minutes. (Functional per EventRecord instance)
+Performance Metrics,PLANT_DECISION_TIME,EventRecord,plantDecisionTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Plant Decision time in minutes. (Functional per EventRecord instance)
+Performance Metrics,PRODUCTION_AVAILABLE_TIME,EventRecord,productionAvailableTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Production Available time in minutes. (Functional per EventRecord instance)
+Performance Metrics,AE_MODEL_CATEGORY,EventRecord,aeModelCategory,DatatypeProperty,xsd:string,-,,EventRecord,,OperationsPerformance Category,EventRecord,"Captures the specific AE/OEE time category assignment for the event (e.g., Runtime, Unplanned, Plant Decision)."
+Performance Metrics,GOOD_PRODUCTION_QTY,EventRecord,goodProductionQuantity,DatatypeProperty,xsd:integer,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Quantity of good units produced during the event. (Assumed Functional per event).
+Performance Metrics,REJECT_PRODUCTION_QTY,EventRecord,rejectProductionQuantity,DatatypeProperty,xsd:integer,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Quantity of reject units produced during the event. (Assumed Functional per event).
+Performance Metrics,DOWNTIME,EventRecord,downtimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Downtime (in minutes). (Assumed Functional per event).
+Performance Metrics,RUN_TIME,EventRecord,runTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Runtime (in minutes). (Assumed Functional per event).
+Performance Metrics,NOT_ENTERED,EventRecord,notEnteredTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration where state was not entered/unknown (in minutes). (Assumed Functional per event).
+Performance Metrics,WAITING_TIME,EventRecord,waitingTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Waiting (in minutes). (Assumed Functional per event).
+Performance Metrics,PLANT_EXPERIMENTATION,EventRecord,plantExperimentationTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Plant Experimentation (in minutes). (Assumed Functional per event).
+Performance Metrics,ALL_MAINTENANCE,EventRecord,allMaintenanceTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Total duration classified as Maintenance (in minutes). (Assumed Functional per event).
+Performance Metrics,AUTONOMOUS_MAINTENANCE,EventRecord,autonomousMaintenanceTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Autonomous Maintenance (in minutes). Sub-category of All Maintenance. (Assumed Functional).
+Performance Metrics,PLANNED_MAINTENANCE,EventRecord,plannedMaintenanceTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Planned Maintenance (in minutes). Sub-category of All Maintenance. (Assumed Functional).
+Time & Schedule,JOB_START_TIME_LOC,TimeInterval,startTime,DatatypeProperty,xsd:dateTime,Functional,,TimeInterval,,SegmentResponse StartTime,owl:Thing,EventRecord links via occursDuring to TimeInterval. (Functional per TimeInterval instance)
+Time & Schedule,JOB_END_TIME_LOC,TimeInterval,endTime,DatatypeProperty,xsd:dateTime,Functional,,TimeInterval,,SegmentResponse EndTime,TimeInterval,Part of the TimeInterval linked by EventRecord. (Functional per TimeInterval instance)
+Time & Schedule,SHIFT_NAME,Shift,shiftId,DatatypeProperty,xsd:string,Functional,,Shift,,PersonnelSchedule ID,owl:Thing,EventRecord links via duringShift to Shift.
+Time & Schedule,SHIFT_START_DATE_LOC,Shift,shiftStartTime,DatatypeProperty,xsd:dateTime,Functional,,Shift,,PersonnelSchedule StartTime,Shift,Property of Shift per Personnel model. (Functional per Shift instance)
+Time & Schedule,SHIFT_END_DATE_LOC,Shift,shiftEndTime,DatatypeProperty,xsd:dateTime,Functional,,Shift,,PersonnelSchedule EndTime,Shift,Property of Shift per Personnel model. (Functional per Shift instance)
+Time & Schedule,SHIFT_DURATION_MIN,Shift,shiftDurationMinutes,DatatypeProperty,xsd:double,Functional,,Shift,,PersonnelSchedule Duration,Shift,Property of Shift per Personnel model. (Functional per Shift instance)
+Time & Schedule,CREW_ID,PersonnelClass,personnelClassId,DatatypeProperty,xsd:string,Functional,,PersonnelClass,,PersonnelClass ID,owl:Thing,Added to align with Section 5.4 Personnel model.
+Time & Schedule,N/A,Person,personId,DatatypeProperty,xsd:string,Functional,,Person,,Person ID,owl:Thing,Added for Section 5.4 Personnel model.
+Time & Schedule,N/A,Person,memberOfPersonnelClass,ObjectProperty,PersonnelClass,-,hasPersonMember,Person,,PersonnelClass Link,Person,Links Person to PersonnelClass per Section 5.4.
+Time & Schedule,N/A,EventRecord,performedBy,ObjectProperty,Person,-,performsEvent,EventRecord,,Personnel Link,EventRecord,Links EventRecord to Person per Section 5.4.
+Time & Schedule,RAMPUP_FLAG,EventRecord,rampUpFlag,DatatypeProperty,xsd:boolean,Functional,,EventRecord,,OperationsResponse Property,EventRecord,Property of EventRecord per Section 6.3. (Functional per EventRecord instance)
+Time & Schedule,N/A,EventRecord,occursDuring,ObjectProperty,TimeInterval,Functional,,EventRecord,,SegmentResponse TimeInterval,EventRecord,Links EventRecord to TimeInterval. This property is essential for data population. Functional assumes event fully within one interval.
+Time & Schedule,N/A,PersonnelClass,hasPersonMember,ObjectProperty,Person,-,memberOfPersonnelClass,PersonnelClass,,PersonnelClass Link,owl:Thing,Inverse of memberOfPersonnelClass. Links PersonnelClass to Person members.
+Time & Schedule,N/A,Person,performsEvent,ObjectProperty,EventRecord,-,performedBy,Person,,Personnel Link,owl:Thing,Inverse of performedBy. Links Person to EventRecords they perform.
+Utilization State/Reason,UTIL_STATE_DESCRIPTION,OperationalState,stateDescription,DatatypeProperty,xsd:string,-,,OperationalState,,OperationsRecord State,owl:Thing,Maps to Ops Record Information (Section 5.10). EventRecord links via eventHasState.
+Utilization State/Reason,UTIL_REASON_DESCRIPTION,OperationalReason,reasonDescription,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Reason,owl:Thing,Maps to Ops Event Information (Section 5.11). EventRecord links via eventHasReason.
+Utilization State/Reason,UTIL_ALT_LANGUAGE_REASON,OperationalReason,altReasonDescription,DatatypeProperty,xsd:string (with lang tag),-,,OperationalReason,,OperationsEvent Description,OperationalReason,Property of OperationalReason per Section 5.11.
+Utilization State/Reason,DOWNTIME_DRIVER,OperationalReason,downtimeDriver,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Category,OperationalReason,Property of OperationalReason per Section 5.11.
+Utilization State/Reason,OPERA_TYPE,EventRecord,operationType,DatatypeProperty,xsd:string,-,,EventRecord,,OperationsRecord Type,EventRecord,Property of EventRecord per Section 5.10. Categorical.
+Utilization State/Reason,"CO_TYPE, CO_ORIGINAL_TYPE",OperationalReason,changeoverType,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Detail,OperationalReason,Property of OperationalReason for changeover events. Categorical.
+
+================================================
+File: doc/sparql.rst
+================================================
+SPARQL queries
+==============
+
+Since version 0.30, Owlready proposes 2 methods for performing SPARQL queries: the native SPARQL engine and RDFlib.
+
+
+Native SPARQL engine
+********************
+
+The native SPARQL engine automatically translates SPARQL queries into SQL queries, and then run the SQL queries with SQLite3.
+
+The native SPARQL engine has better performances than RDFlib (about 60 times faster when tested on Gene Ontology,
+but it highly depends on queries and data). It also has no dependencies and it has a much shorter start-up time.
+
+However, it currently supports only a subset of SPARQL.
+
+
+SPARQL elements supported
+-------------------------
+
+* SELECT, INSERT and DELETE queries
+* UNION
+* OPTIONAL
+* FILTER, BIND, FILTER EXISTS, FILTER NOT EXISTS
+* GRAPH clauses
+* SELECT sub queries
+* VALUES in SELECT queries
+* All SPARQL functions and aggregation functions
+* Blank nodes notations with square bracket, e.g. '[ a XXX]'
+* Parameters in queries (i.e. '??' or '??1')
+* Property path expressions, e.g. 'a/rdfs:subClassOf*',  excepted those listed below
+
+SPARQL elements not supported
+-----------------------------
+
+* ASK, DESCRIBE, LOAD, ADD, MOVE, COPY, CLEAR, DROP, CONSTRUCT queries
+* INSERT DATA, DELETE DATA, DELETE WHERE queries (you may use INSERT or DELETE instead)
+* SERVICE (Federated queries)
+* FROM, FROM NAMED keywords
+* MINUS
+* Property path expressions with parentheses of the following forms:
+
+  - nested repeats, e.g. (a/p*)*
+  - sequence nested inside a repeat, e.g. (p1/p2)*
+  - negative property set nested inside a repeat, e.g. (!(p1 | p2))*
+
+  i.e. repeats cannot contain other repeats, sequences and negative property sets.
+
+
+Performing SPARQL queries
+-------------------------
+
+The .sparql() methods of the World object can be used to perform a SPARQL query and obtain the results.
+Notice that .sparql() returns a generator, so we used here the list() function to show the results.
+The list contains one row for each result found, with one or more columns (depending on the query).
+
+::
+   
+   >>> # Loads Gene Ontology (~ 170 Mb), can take a moment!
+   >>> go = get_ontology("http://purl.obolibrary.org/obo/go.owl").load()
+   
+   >>> # Get the number of OWL Class in GO
+   >>> list(default_world.sparql("""
+              SELECT (COUNT(?x) AS ?nb)
+              { ?x a owl:Class . }
+       """))
+   [[60448]]
+
+
+Notice that the following prefixes are automatically pre-defined:
+
+*  rdf: -> http://www.w3.org/1999/02/22-rdf-syntax-ns#
+*  rdfs: -> http://www.w3.org/2000/01/rdf-schema#
+*  owl: -> http://www.w3.org/2002/07/owl#
+*  xsd: -> http://www.w3.org/2001/XMLSchema#
+*  obo: -> http://purl.obolibrary.org/obo/
+*  owlready: -> http://www.lesfleursdunormal.fr/static/_downloads/owlready_ontology.owl#
+
+In addition, Owlready automatically create prefixes from the last part of ontology IRI (without .owl extension),
+e.g. the ontology "http://test.org/onto.owl" with be automatically associated with the "onto:" prefix.
+Consequently, in most case you don't need to define prefixes (but you can still define them if you want).
+
+The classes counted above include OWL named classes, but also some OWL constructs. One may count only named classes
+using a FILTER condition and the ISIRI function, as follows:
+
+::
+   
+   >>> # Get the number of OWL Class in GO
+   >>> list(default_world.sparql("""
+              SELECT (COUNT(?x) AS ?nb)
+              { ?x a owl:Class . FILTER(ISIRI(?x)) }
+       """))
+   [[48535]]
+
+
+We may also search for a given concept. When a query returns an entity, it returns it as an Owlready object.
+
+::
+   
+   >>> # Get the "mitochondrion inheritance" concept from GO
+   >>> r = list(default_world.sparql("""
+              SELECT ?x
+              { ?x rdfs:label "mitochondrion inheritance" . }
+       """))
+   >>> r
+   [[obo.GO_0000001]]
+   >>> mito_inher = r[0][0]
+
+Here, the resulting object 'mito_inher' is an Owlready object (here, a Class) that can be used as any other classes in Owlready.
+
+Owlready support simple property path expressions, such as 'rdfs:subClassOf*' or 'a/rdfs:subClassOf*'.
+For example, we can get the superclasses of "mitochondrion inheritance" as follows:
+
+::
+   
+   >>> list(default_world.sparql("""
+              SELECT ?y
+              { ?x rdfs:label "mitochondrion inheritance" .
+                ?x rdfs:subClassOf* ?y }
+       """))
+   [[obo.GO_0000001], [obo.GO_0048308], [obo.GO_0048311], [obo.GO_0006996], [obo.GO_0007005], [obo.GO_0051646], [obo.GO_0016043], [obo.GO_0051640], [obo.GO_0009987], [obo.GO_0071840], [obo.GO_0051641], [obo.GO_0008150], [obo.GO_0051179]]
+
+ 
+Or we can search for individuals belonging to the class "mitochondrion inheritance" or one of its descendants, as follows:
+
+::
+   
+   >>> list(default_world.sparql("""
+              SELECT ?y
+              { ?x rdfs:label "mitochondrion inheritance" .
+                ?y a/rdfs:subClassOf* ?x }
+       """))
+   []
+   
+(Here, we have no results because Gene Ontology does not include individuals).
+
+
+
+INSERT queries
+--------------
+
+The ontology in which the new RDF triples are inserted can be given using a "with ontology:" block or
+using the "WITH <ontology IRI> INSERT ..." syntax in SPARQL. If both are present, the "with ontology:" block takes priority.
+
+::
+   
+   >>> insertion = get_ontology("http://test.org/insertion.owl")
+   >>> with insertion:
+   ...     default_world.sparql("""
+              INSERT { ?x rdfs:label "héritage mitochondrial"@fr }
+              WHERE  { ?x rdfs:label "mitochondrion inheritance" . }
+              """)
+   1
+
+INSERT / DELETE queries returns the number of matches found by the WHERE part.
+
+When running INSERT / DELETE queries, Owlready tries to update the Python objects corresponding to the modified entities,
+if they were loaded from the quadstore.
+
+The following example shows how to create new individuals with an INSERT query. It creates an individual for each subclass
+of "membrane".
+
+::
+   
+   >>> insertion = get_ontology("http://test.org/insertion.owl")
+   >>> with insertion:
+   ...     default_world.sparql("""
+              INSERT { ?n rdfs:label "New individual!" . }
+              WHERE  { ?x rdfs:label "membrane" .
+                       ?y rdfs:subClassOf ?x .
+                       BIND(NEWINSTANCEIRI(?y) AS ?n) }
+              """)
+   
+
+We use here a BIND statement in order to create a new IRI, using the NEWINSTANCEIRI() function that create a new IRI for
+an individual, similar to those created automatically by Owlready. You may also use the more standard UUID() SPARQL function,
+which create a random arbitrary IRI.
+
+The following example shows how to create OWL construct like restrictions with an INSERT query.
+
+::
+   
+   >>> insertion = get_ontology("http://test.org/insertion.owl")
+   >>> with insertion:
+   ...     default_world.sparql("""
+              INSERT { ?x rdfs:subClassOf [ a owl:Restriction ;
+                                            owl:onProperty obo:BFO_0000050 ;
+                                            owl:someValuesFrom obo:GO_0005623 ] . }
+              WHERE  { ?x rdfs:label "membrane" . }
+              """)
+   1
+   
+   >>> obo.GO_0016020.label
+   ['membrane']
+   >>> obo.GO_0016020.is_a
+   [obo.GO_0044464, obo.BFO_0000050.some(obo.GO_0005623)]
+
+   
+
+DELETE queries
+--------------
+
+DELETE queries are supported; they do not need to specify the ontology from which RDF triples are deleted.
+
+::
+   
+   >>> default_world.sparql("""
+           DELETE { ?r ?p ?o . }
+           WHERE  {
+               ?x rdfs:label "membrane" .
+               ?x rdfs:subClassOf ?r .
+               ?r a owl:Restriction .
+               ?r ?p ?o .
+           }
+           """)
+
+The native SPARQL engine supports queries with both a DELETE and an INSERT statement.
+
+
+Parameters in SPARQL queries
+----------------------------
+
+Parameters allow to run the same query multiple times, with different parameter values.
+They have two interests. First, they increase performances since the same query can be reused, thus avoiding to
+parse new queries. Second, they prevent security problems by avoiding SPARQL code injection, e.g. if a string value includes
+quotation marks.
+
+Parameters can be included in the query by using double question marks, e.g. "??". Parameter values can be Owlready entities
+or datatype values (int, float, string, etc.). Parameter values are passed in a list after the query:
+
+::
+   
+   >>> list(default_world.sparql("""
+              SELECT ?y
+              { ?? rdfs:subClassOf* ?y }
+       """, [mito_inher]))
+   [[obo.GO_0000001], [obo.GO_0048308], [obo.GO_0048311],
+    [obo.GO_0006996], [obo.GO_0007005], [obo.GO_0051646],
+    [obo.GO_0016043], [obo.GO_0051640], [obo.GO_0009987],
+    [obo.GO_0071840], [obo.GO_0051641], [obo.GO_0008150],
+    [obo.GO_0051179]]
+
+
+Parameters can also be numbered, e.g. "??1", "??2", etc. This is particularly usefull if the same parameter is used
+multiple times in the query.
+
+::
+   
+   >>> list(default_world.sparql("""
+              SELECT ?y
+              { ??1 rdfs:subClassOf* ?y }
+       """, [mito_inher]))
+   [[obo.GO_0000001], [obo.GO_0048308], [obo.GO_0048311],
+    [obo.GO_0006996], [obo.GO_0007005], [obo.GO_0051646],
+    [obo.GO_0016043], [obo.GO_0051640], [obo.GO_0009987],
+    [obo.GO_0071840], [obo.GO_0051641], [obo.GO_0008150],
+    [obo.GO_0051179]]
+
+
+Non-standard additions to SPARQL
+--------------------------------
+
+The following functions are supported by Owlready, but not standard:
+
+ * The SIMPLEREPLACE(a, b) function is a version of REPLACE() that does not support Regex. It works like Python or SQLite3 replace,
+   and has better performances.
+   
+ * THE LIKE(a, b) function performs similarly to the SQL Like operator. It is more limited, but faster than the Regex SPARQL functions.
+   
+ * The NEWINSTANCEIRI() function create a new IRI for an instance of the class given as argument. This IRI is similar to those
+   created by default by Owlready. Note that the function creates 2 RDF triples, asserting that the new individual is an
+   OWL NamedIndividual and an instance of the desired class passed as argument.
+
+ * The LOADED(iri) function returns True if the entity with the given IRI is currently loaded in Python, and False otherwise.
+
+ * The STORID(iri) function returns the integer Store-ID used by Owlready in the quadstore for representing the entity.
+
+ * The DATE(), TIME() and DATETIME() functions can be used to handle date and time. They behave as in SQLite3 (see https://www.sqlite.org/lang_datefunc.html).
+
+ * The DATE_SUB(), DATE_ADD(), DATETIME_SUB and DATETIME_ADD() functions can be used to substract or add a time duration to a date or a datetime, for example : DATETIME_ADD(NOW(), "P1Y"^^xsd:duration)
+
+In Owlready, INSERT and DELETE queries can have a GROUP BY, HAVING and/or ORDER BY clauses.
+This is normally not allowed by the SPARQL specification.
+
+
+Prepare SPARQL queries
+----------------------
+
+The .prepare_sparql() method of the World object can be used to prepare a SPARQL query. It returns a PreparedQuery object.
+
+The .execute() method of the PreparedQuery can be used to execute the query. It takes as argument the list of parameters,
+if any.
+
+.. note::
+   
+   The .sparql() method calls .prepare_sparql(). Thus, there is no interest, in terms of performances, to use
+   .prepare_sparql() instead of .sparql().
+
+The PreparedQuery can be used to determine the type of query:
+
+::
+
+   >>> query = default_world.prepare_sparql("""SELECT (COUNT(?x) AS ?nb) { ?x a owl:Class . }""")
+   >>> isinstance(query, owlready2.sparql.main.PreparedSelectQuery)
+   True
+   >>> isinstance(query, owlready2.sparql.main.PreparedModifyQuery) # INSERT and/or DELETE
+   False
+
+The following attributes are availble on the PreparedQuery object:
+
+ * .nb_parameter: the number of parameters
+ * .column_names: a list with the names of the columns in the query results, e.g. ["?nb"] in the example above.
+ * .world: the world object for which the query has been prepared
+ * .sql: the SQL translation of the SPARQL query
+
+::
+
+   >>> query.sql
+   'SELECT  COUNT(q1.s), 43 FROM objs q1 WHERE q1.p=6 AND q1.o=11'
+   
+.. note::
+   
+   For INSERT and DELETE query, the .sql translation only involves the WHERE part. Insertions and deletions are
+   performed in Python, not in SQL, in order to update the modified Owlready Python objects, if needed.
+
+
+Open a SPARQL endpoint
+----------------------
+
+The owlready2.sparql.endpoint module can be used to open a SPARQL endpoint. It requires Flask or WSGI. It contains the EndPoint
+class, that takes a World and can be used as a Flask page function.
+
+The following script creates a SPARQL endpoint with Flask:
+
+::
+   
+   import flask
+   
+   from owlready2 import *
+   from owlready2.sparql.endpoint import *
+
+   # Load one or more ontologies
+   go = get_ontology("http://purl.obolibrary.org/obo/go.owl").load() # (~ 170 Mb), can take a moment!
+   
+   app = flask.Flask("Owlready_sparql_endpoint")
+   endpoint = EndPoint(default_world)
+   app.route("/sparql", methods = ["GET"])(endpoint)
+   
+   # Run the server with Werkzeug; you may use any other WSGI-compatible server
+   import werkzeug.serving
+   werkzeug.serving.run_simple("localhost", 5000, app)
+
+
+And the following script does the same, but with WSGI:
+
+::
+   
+   from owlready2 import *
+   from owlready2.sparql.endpoint import *
+
+   # Load one or more ontologies
+   go = get_ontology("http://purl.obolibrary.org/obo/go.owl").load() # (~ 170 Mb), can take a moment!
+   
+   endpoint = EndPoint(default_world)
+   app = endpoint.wsgi_app
+   
+   # Run the server with Werkzeug; you may use any other WSGI-compatible server
+   import werkzeug.serving
+   werkzeug.serving.run_simple("localhost", 5000, app)
+
+   
+You can then query the endpoint, e.g. by opening the following URL in your browser:
+
+   `<http://localhost:5000/sparql?query=SELECT(COUNT(?x)AS%20?nb){?x%20a%20owl:Class.}>`_
+
+
+Using RDFlib for executing SPARQL queries
+*****************************************
+
+The Owlready quadstore can be accessed as an RDFlib graph, which can be used to perform SPARQL queries:
+
+::
+
+   >>> graph = default_world.as_rdflib_graph()
+   >>> r = list(graph.query("""SELECT ?p WHERE {
+     <http://www.semanticweb.org/jiba/ontologies/2017/0/test#ma_pizza> <http://www.semanticweb.org/jiba/ontologies/2017/0/test#price> ?p .
+   }"""))
+
+
+The results can be automatically converted to Python and Owlready using the .query_owlready() method instead of .query():
+
+::
+
+   >>> r = list(graph.query_owlready("""SELECT ?p WHERE {
+     <http://www.semanticweb.org/jiba/ontologies/2017/0/test#ma_pizza> <http://www.semanticweb.org/jiba/ontologies/2017/0/test#price> ?p .
+   }"""))
