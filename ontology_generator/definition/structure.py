@@ -1,0 +1,374 @@
+"""
+Ontology structure definition module for the ontology generator.
+
+This module provides functions for defining the ontology structure.
+"""
+import re
+import types
+from typing import Dict, List, Tuple, Set, Optional, Any
+
+from owlready2 import (
+    Ontology, Thing, Nothing, ThingClass, PropertyClass,
+    FunctionalProperty, InverseFunctionalProperty, TransitiveProperty,
+    SymmetricProperty, AsymmetricProperty, ReflexiveProperty, IrreflexiveProperty,
+    ObjectProperty, DataProperty
+)
+
+from ontology_generator.utils.logging import logger
+from ontology_generator.config import SPEC_PARENT_CLASS_COLUMN, XSD_TYPE_MAP
+
+def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]]) -> Tuple[Dict[str, ThingClass], Dict[str, PropertyClass], Dict[str, bool]]:
+    """
+    Defines OWL classes and properties based on the parsed specification.
+
+    Args:
+        onto: The ontology to define the structure in
+        specification: The parsed specification
+        
+    Returns:
+        tuple: (defined_classes, defined_properties, property_is_functional)
+            - defined_classes: Dict mapping class name to owlready2 class object.
+            - defined_properties: Dict mapping property name to owlready2 property object.
+            - property_is_functional: Dict mapping property name to boolean indicating functionality.
+    """
+    logger.info(f"Defining ontology structure in: {onto.base_iri}")
+    defined_classes: Dict[str, ThingClass] = {}
+    defined_properties: Dict[str, PropertyClass] = {}
+    property_is_functional: Dict[str, bool] = {}  # Track which properties are functional based on spec
+    class_metadata: Dict[str, Dict[str, Any]] = {} # Store metadata like notes per class
+
+    # --- Pre-process Spec for Class Metadata and Hierarchy ---
+    logger.debug("--- Pre-processing specification for class details ---")
+    all_class_names: Set[str] = set()
+    class_parents: Dict[str, str] = {} # {child_name: parent_name}
+    for i, row in enumerate(specification):
+        class_name = row.get('Proposed OWL Entity', '').strip()
+        if class_name:
+            all_class_names.add(class_name)
+            # Store metadata (using first encountered row for simplicity, could collect all)
+            if class_name not in class_metadata:
+                    class_metadata[class_name] = {
+                        'notes': row.get('Notes/Considerations', ''),
+                        'isa95': row.get('ISA-95 Concept', ''),
+                        'row_index': i # For reference if needed
+                    }
+            # Store parent class info if column exists
+            parent_name = row.get(SPEC_PARENT_CLASS_COLUMN, '').strip()
+            if parent_name and parent_name != class_name: # Avoid self-parenting
+                class_parents[class_name] = parent_name
+                all_class_names.add(parent_name) # Ensure parent is also considered a class
+
+
+    # --- Pass 1: Define Classes with Hierarchy ---
+    logger.debug("--- Defining Classes ---")
+    with onto:
+        # Ensure Thing is available if not explicitly listed
+        if "Thing" not in all_class_names and "owl:Thing" not in all_class_names:
+            pass # Thing is implicitly available via owlready2
+
+        defined_order: List[str] = [] # Track definition order for hierarchy
+        definition_attempts = 0
+        max_attempts = len(all_class_names) + 5 # Allow some leeway for complex hierarchies
+
+        classes_to_define: Set[str] = set(cn for cn in all_class_names if cn.lower() != "owl:thing") # Exclude Thing variants
+
+        while classes_to_define and definition_attempts < max_attempts:
+            defined_in_pass: Set[str] = set()
+            for class_name in sorted(list(classes_to_define)): # Sort for somewhat deterministic order
+                parent_name = class_parents.get(class_name)
+                parent_class_obj: ThingClass = Thing # Default parent is Thing
+
+                if parent_name:
+                    if parent_name == "Thing" or parent_name.lower() == "owl:thing": # Handle case variation
+                        parent_class_obj = Thing
+                    elif parent_name in defined_classes:
+                        parent_class_obj = defined_classes[parent_name]
+                    else:
+                        # Parent not defined yet, skip this class for now
+                        logger.debug(f"Deferring class '{class_name}', parent '{parent_name}' not defined yet.")
+                        continue
+
+                # Define the class
+                try:
+                    if class_name not in defined_classes:
+                        logger.debug(f"Attempting to define Class: {class_name} with Parent: {parent_class_obj.name}")
+                        # Ensure class name is valid Python identifier if needed by backend
+                        safe_class_name = re.sub(r'\W|^(?=\d)', '_', class_name)
+                        if safe_class_name != class_name:
+                            logger.warning(f"Class name '{class_name}' sanitized to '{safe_class_name}' for internal use. Using original name for IRI.")
+                            # Sticking with original name as owlready2 often handles non-standard chars in IRIs
+                        new_class: ThingClass = types.new_class(class_name, (parent_class_obj,))
+                        defined_classes[class_name] = new_class
+                        defined_order.append(class_name)
+                        defined_in_pass.add(class_name)
+                        logger.debug(f"Defined Class: {new_class.iri} (Parent: {parent_class_obj.iri})")
+
+                        # Add annotations like comments/labels from pre-processed metadata
+                        meta = class_metadata.get(class_name)
+                        if meta:
+                            comments = []
+                            if meta['notes']: comments.append(f"Notes: {meta['notes']}")
+                            if meta['isa95']: comments.append(f"ISA-95 Concept: {meta['isa95']}")
+                            if comments:
+                                new_class.comment = comments
+                                logger.debug(f"Added comments to class {class_name}")
+
+                except Exception as e:
+                    logger.error(f"Error defining class '{class_name}' with parent '{getattr(parent_class_obj,'name','N/A')}': {e}")
+                    # Let it retry, might be a transient issue or solvable in later pass
+
+            classes_to_define -= defined_in_pass
+            definition_attempts += 1
+            if not defined_in_pass and classes_to_define:
+                logger.error(f"Could not define remaining classes (possible circular dependency or missing parents): {classes_to_define}")
+                break # Avoid infinite loop
+
+        if classes_to_define:
+            logger.warning(f"Failed to define the following classes: {classes_to_define}")
+
+    # --- Pass 2: Define Properties ---
+    logger.debug("--- Defining Properties ---")
+    properties_to_process = [row for row in specification if row.get('Proposed OWL Property')]
+    temp_inverse_map: Dict[str, str] = {} # Stores {prop_name: inverse_name}
+
+    with onto:
+        # Define properties first without inverse, handle inverse in a second pass
+        for row in properties_to_process:
+            prop_name = row.get('Proposed OWL Property','').strip()
+            if not prop_name or prop_name in defined_properties:
+                continue # Skip empty or already defined properties
+
+            prop_type_str = row.get('OWL Property Type', '').strip()
+            domain_str = row.get('Domain', '').strip()
+            range_str = row.get('Target/Range (xsd:) / Target Class', '').strip()
+            characteristics_str = row.get('OWL Property Characteristics', '').strip().lower() # Normalize
+            inverse_prop_name = row.get('Inverse Property', '').strip()
+
+            if not prop_type_str or not domain_str or not range_str:
+                logger.warning(f"Skipping property '{prop_name}' due to missing type, domain, or range in spec.")
+                continue
+
+            # Determine parent classes for the property
+            parent_classes: List[type] = []
+            base_prop_type: Optional[type] = None
+            if prop_type_str == 'ObjectProperty':
+                base_prop_type = ObjectProperty
+            elif prop_type_str == 'DatatypeProperty':
+                base_prop_type = DataProperty
+            else:
+                logger.warning(f"Unknown property type '{prop_type_str}' for property '{prop_name}'. Skipping.")
+                continue
+
+            parent_classes.append(base_prop_type)
+
+            # Add characteristics
+            is_functional = 'functional' in characteristics_str
+            property_is_functional[prop_name] = is_functional # Track functionality status
+            if is_functional: parent_classes.append(FunctionalProperty)
+            if 'inversefunctional' in characteristics_str: parent_classes.append(InverseFunctionalProperty)
+            if 'transitive' in characteristics_str: parent_classes.append(TransitiveProperty)
+            if 'symmetric' in characteristics_str: parent_classes.append(SymmetricProperty)
+            if 'asymmetric' in characteristics_str: parent_classes.append(AsymmetricProperty)
+            if 'reflexive' in characteristics_str: parent_classes.append(ReflexiveProperty)
+            if 'irreflexive' in characteristics_str: parent_classes.append(IrreflexiveProperty)
+
+            try:
+                # Define the property
+                new_prop: PropertyClass = types.new_class(prop_name, tuple(parent_classes))
+
+                # Set Domain
+                domain_class_names = [dc.strip() for dc in domain_str.split('|')]
+                prop_domain: List[ThingClass] = []
+                valid_domain_found = False
+                for dc_name in domain_class_names:
+                    domain_class = defined_classes.get(dc_name)
+                    if domain_class:
+                        prop_domain.append(domain_class)
+                        valid_domain_found = True
+                    elif dc_name == "Thing" or dc_name.lower() == "owl:thing": # Allow Thing as domain
+                        prop_domain.append(Thing)
+                        valid_domain_found = True
+                    else:
+                        logger.warning(f"Domain class '{dc_name}' not found for property '{prop_name}'.")
+
+                if prop_domain:
+                    new_prop.domain = prop_domain # Assign list directly for union domain
+                    logger.debug(f"Set domain for {prop_name} to {[dc.name for dc in prop_domain]}")
+                elif not valid_domain_found:
+                    logger.warning(f"No valid domain classes found for property '{prop_name}'. Skipping domain assignment.")
+
+                # Set Range
+                if base_prop_type is ObjectProperty:
+                    range_class_names = [rc.strip() for rc in range_str.split('|')]
+                    prop_range: List[ThingClass] = []
+                    valid_range_found = False
+                    for rc_name in range_class_names:
+                        range_class = defined_classes.get(rc_name)
+                        if range_class:
+                            prop_range.append(range_class)
+                            valid_range_found = True
+                        elif rc_name == "Thing" or rc_name.lower() == "owl:thing": # Allow Thing as range
+                            prop_range.append(Thing)
+                            valid_range_found = True
+                        else:
+                            logger.warning(f"Range class '{rc_name}' not found for object property '{prop_name}'.")
+                    if prop_range:
+                        new_prop.range = prop_range # Assign list directly for union range
+                        logger.debug(f"Set range for {prop_name} to {[rc.name for rc in prop_range]}")
+                    elif not valid_range_found:
+                        logger.warning(f"Could not set any valid range for object property '{prop_name}'.")
+
+                elif base_prop_type is DataProperty:
+                    target_type = XSD_TYPE_MAP.get(range_str)
+                    if target_type:
+                        new_prop.range = [target_type]
+                        logger.debug(f"Set range for {prop_name} to {target_type.__name__ if hasattr(target_type, '__name__') else target_type}")
+                    else:
+                        logger.warning(f"Unknown XSD type '{range_str}' for property '{prop_name}'. Skipping range assignment.")
+
+                # Add annotations
+                notes = row.get('Notes/Considerations', '')
+                isa95 = row.get('ISA-95 Concept', '')
+                comments = []
+                if notes: comments.append(f"Notes: {notes}")
+                if isa95: comments.append(f"ISA-95 Concept: {isa95}")
+                if comments:
+                    new_prop.comment = comments
+
+                defined_properties[prop_name] = new_prop
+                logger.debug(f"Defined Property: {new_prop.iri} of type {prop_type_str} with characteristics {' '.join([p.__name__ for p in parent_classes[1:]]) if len(parent_classes) > 1 else 'None'}")
+
+                # Store inverse relationship for later processing
+                if inverse_prop_name and base_prop_type is ObjectProperty:
+                    temp_inverse_map[prop_name] = inverse_prop_name
+
+            except Exception as e:
+                logger.error(f"Error defining property '{prop_name}': {e}")
+
+    # --- Pass 3: Set Inverse Properties ---
+    logger.debug("--- Setting Inverse Properties ---")
+    with onto: # Ensure changes are applied within the ontology context
+        for prop_name, inverse_name in temp_inverse_map.items():
+            prop = defined_properties.get(prop_name)
+            inverse_prop = defined_properties.get(inverse_name)
+
+            if prop and inverse_prop:
+                try:
+                    # Check if already set to the desired value to avoid unnecessary writes/warnings if possible
+                    current_inverse = getattr(prop, "inverse_property", None)
+                    if current_inverse != inverse_prop:
+                        prop.inverse_property = inverse_prop
+                        logger.debug(f"Set inverse_property for {prop.name} to {inverse_prop.name}")
+                    # Also explicitly set the inverse's inverse property back
+                    current_inverse_of_inverse = getattr(inverse_prop, "inverse_property", None)
+                    if current_inverse_of_inverse != prop:
+                        inverse_prop.inverse_property = prop
+                        logger.debug(f"Set inverse_property for {inverse_prop.name} back to {prop.name}")
+                except Exception as e:
+                    logger.error(f"Error setting inverse property between '{prop_name}' and '{inverse_name}': {e}")
+            elif not prop:
+                logger.warning(f"Property '{prop_name}' not found while trying to set inverse '{inverse_name}'.")
+            elif not inverse_prop:
+                logger.warning(f"Inverse property '{inverse_name}' not found for property '{prop_name}'.")
+
+    logger.info("Ontology structure definition complete.")
+    return defined_classes, defined_properties, property_is_functional
+
+def create_selective_classes(onto: Ontology, 
+                          specification: List[Dict[str, str]], 
+                          skip_classes: List[str] = None,
+                          strict_adherence: bool = False) -> Dict[str, ThingClass]:
+    """
+    Creates only the necessary classes from the specification, 
+    optionally skipping specified classes or enforcing strict spec adherence.
+    
+    Args:
+        onto: The ontology object
+        specification: Parsed specification
+        skip_classes: List of class names to skip (won't be created)
+        strict_adherence: If True, only create classes explicitly defined in spec
+        
+    Returns:
+        Dict mapping class name to class object
+    """
+    logger.info(f"Creating classes selectively from specification")
+    
+    skip_classes = set(skip_classes or [])
+    defined_classes = {}
+    
+    # Pre-process spec to find essential classes
+    spec_classes = set()
+    spec_parents = {}
+    property_domains = set()
+    property_ranges = set()
+    
+    for row in specification:
+        # Get class names
+        class_name = row.get('Proposed OWL Entity', '').strip()
+        if class_name:
+            spec_classes.add(class_name)
+            parent_name = row.get(SPEC_PARENT_CLASS_COLUMN, '').strip()
+            if parent_name and parent_name != class_name:
+                spec_parents[class_name] = parent_name
+                spec_classes.add(parent_name)  # Ensure parent is in spec classes
+        
+        # Get property domains and ranges
+        prop_name = row.get('Proposed OWL Property', '').strip()
+        if prop_name:
+            # Get domains
+            domain_str = row.get('Domain', '').strip()
+            if domain_str:
+                domains = [d.strip() for d in domain_str.split('|')]
+                property_domains.update(domains)
+            
+            # Get ranges for object properties
+            prop_type = row.get('OWL Property Type', '').strip()
+            if prop_type == 'ObjectProperty':
+                range_str = row.get('Target/Range (xsd:) / Target Class', '').strip()
+                if range_str:
+                    ranges = [r.strip() for r in range_str.split('|')]
+                    property_ranges.update(ranges)
+    
+    # Determine which classes to create
+    classes_to_create = set()
+    
+    if strict_adherence:
+        # Only create classes explicitly defined in spec
+        classes_to_create = spec_classes
+    else:
+        # Create spec classes plus any referenced in properties
+        classes_to_create = spec_classes | property_domains | property_ranges
+    
+    # Remove classes to skip
+    classes_to_create -= skip_classes
+    
+    # Create classes with proper hierarchy
+    with onto:
+        # First pass: create all classes as direct subclasses of Thing
+        for class_name in classes_to_create:
+            if class_name == "Thing" or class_name.lower() == "owl:thing":
+                continue  # Skip Thing
+            
+            try:
+                # Create as subclass of Thing initially
+                new_class = types.new_class(class_name, (Thing,))
+                defined_classes[class_name] = new_class
+                logger.debug(f"Created class {class_name} (temp parent: Thing)")
+            except Exception as e:
+                logger.error(f"Error creating class {class_name}: {e}")
+        
+        # Second pass: set proper parent classes
+        for class_name, class_obj in defined_classes.items():
+            parent_name = spec_parents.get(class_name)
+            if parent_name and parent_name in defined_classes:
+                parent_class = defined_classes[parent_name]
+                # Reset parent
+                class_obj.is_a = [parent_class]
+                logger.debug(f"Set parent of {class_name} to {parent_name}")
+    
+    classes_skipped = spec_classes - set(defined_classes.keys())
+    if classes_skipped:
+        logger.info(f"Skipped {len(classes_skipped)} classes: {', '.join(sorted(classes_skipped))}")
+    
+    logger.info(f"Selectively created {len(defined_classes)} classes from specification")
+    return defined_classes
