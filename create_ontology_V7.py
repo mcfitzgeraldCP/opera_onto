@@ -1695,6 +1695,383 @@ def link_equipment_events_to_line_events(onto: Ontology,
     link_logger.info(f"Finished linking pass. Created {links_created} 'isPartOfLineEvent' relationships.")
     return links_created
 
+# --- Ontology Analysis Functions ---
+def analyze_ontology_population(onto: Ontology, defined_classes: Dict[str, ThingClass], specification: List[Dict[str, str]]) -> Tuple[Dict[str, int], List[str], Dict[str, List[str]], Dict[str, List[str]]]:
+    """
+    Analyzes the population status of each class in the ontology.
+    
+    Args:
+        onto: The ontology object
+        defined_classes: Dictionary mapping class names to class objects
+        specification: The original ontology specification
+        
+    Returns:
+        tuple: (population_counts, empty_classes, class_instances, class_usage_info)
+            - population_counts: Dict mapping class name to count of individuals
+            - empty_classes: List of class names with no individuals
+            - class_instances: Dict mapping class name to list of individual names
+            - class_usage_info: Dict with additional usage analysis
+    """
+    analysis_logger = logging.getLogger("ontology_analysis")
+    analysis_logger.info("Starting analysis of ontology population")
+    
+    population_counts = {}
+    empty_classes = []
+    class_instances = {}
+    
+    # Extract the spec-defined classes
+    spec_defined_classes = set()
+    for row in specification:
+        class_name = row.get('Proposed OWL Entity', '').strip()
+        if class_name:
+            spec_defined_classes.add(class_name)
+    
+    # Classes used in domain/range of properties
+    property_domain_classes = set()
+    property_range_classes = set()
+    
+    # Analyze property domains and ranges
+    for prop in list(onto.object_properties()) + list(onto.data_properties()):
+        if hasattr(prop, 'domain') and prop.domain:
+            domains = prop.domain if isinstance(prop.domain, list) else [prop.domain]
+            for domain in domains:
+                if isinstance(domain, ThingClass):
+                    property_domain_classes.add(domain.name)
+        
+        if hasattr(prop, 'range') and prop.range:
+            ranges = prop.range if isinstance(prop.range, list) else [prop.range]
+            for range_item in ranges:
+                if isinstance(range_item, ThingClass):
+                    property_range_classes.add(range_item.name)
+    
+    # Analyze instances
+    for class_name, class_obj in defined_classes.items():
+        # Skip owl:Thing which will have everything
+        if class_obj is Thing:
+            continue
+            
+        # Get all individuals of this class
+        instances = list(onto.search(is_a=class_obj))
+        count = len(instances)
+        population_counts[class_name] = count
+        
+        if count == 0:
+            empty_classes.append(class_name)
+        else:
+            # Store up to 10 instance names as examples
+            sample_instances = [ind.name for ind in instances[:10]]
+            class_instances[class_name] = sample_instances
+    
+    # Create class usage analysis
+    class_usage_info = {
+        'spec_defined': list(spec_defined_classes),
+        'implemented_in_ontology': list(defined_classes.keys()),
+        'in_property_domains': list(property_domain_classes),
+        'in_property_ranges': list(property_range_classes),
+        'populated_classes': list(set(defined_classes.keys()) - set(empty_classes)),
+        'empty_classes': empty_classes,
+        'extraneous_classes': list(set(defined_classes.keys()) - spec_defined_classes)
+    }
+    
+    analysis_logger.info(f"Analysis complete. Found {len(population_counts)} classes, {len(empty_classes)} empty classes")
+    return population_counts, empty_classes, class_instances, class_usage_info
+
+def generate_population_report(population_counts: Dict[str, int], 
+                               empty_classes: List[str], 
+                               class_instances: Dict[str, List[str]],
+                               defined_classes: Dict[str, ThingClass],
+                               class_usage_info: Dict[str, List[str]] = None) -> str:
+    """
+    Generates a formatted report of the ontology population status.
+    
+    Args:
+        population_counts: Dict mapping class name to count of individuals
+        empty_classes: List of class names with no individuals
+        class_instances: Dict mapping class name to list of individual names
+        defined_classes: Dict mapping class names to class objects
+        class_usage_info: Dict with additional usage analysis
+        
+    Returns:
+        str: Formatted report text
+    """
+    report_lines = []
+    
+    # Add header
+    report_lines.append("\n" + "="*80)
+    report_lines.append(f"ONTOLOGY POPULATION REPORT")
+    report_lines.append("="*80)
+    
+    # Summary statistics
+    total_classes = len(defined_classes)
+    populated_classes = total_classes - len(empty_classes)
+    total_individuals = sum(population_counts.values())
+    
+    report_lines.append(f"\nSUMMARY:")
+    report_lines.append(f"  • Total Classes: {total_classes}")
+    report_lines.append(f"  • Populated Classes: {populated_classes} ({populated_classes/total_classes*100:.1f}%)")
+    report_lines.append(f"  • Empty Classes: {len(empty_classes)} ({len(empty_classes)/total_classes*100:.1f}%)")
+    report_lines.append(f"  • Total Individuals: {total_individuals}")
+    
+    # Spec vs. Implementation Analysis
+    if class_usage_info:
+        spec_defined = set(class_usage_info.get('spec_defined', []))
+        implemented = set(class_usage_info.get('implemented_in_ontology', []))
+        extraneous = set(class_usage_info.get('extraneous_classes', []))
+        not_implemented = spec_defined - implemented
+        
+        report_lines.append("\nSPECIFICATION ANALYSIS:")
+        report_lines.append(f"  • Classes in Specification: {len(spec_defined)}")
+        report_lines.append(f"  • Classes Implemented in Ontology: {len(implemented)}")
+        if extraneous:
+            report_lines.append(f"  • Extraneous Classes (implemented but not in spec): {len(extraneous)}")
+            report_lines.append(f"      {', '.join(sorted(list(extraneous)))}")
+        if not_implemented:
+            report_lines.append(f"  • Classes in Spec but Not Implemented: {len(not_implemented)}")
+            report_lines.append(f"      {', '.join(sorted(list(not_implemented)))}")
+        
+        # Identify unused but defined classes
+        used_in_properties = set(class_usage_info.get('in_property_domains', [])) | set(class_usage_info.get('in_property_ranges', []))
+        populated = set(class_usage_info.get('populated_classes', []))
+        unused_classes = implemented - used_in_properties - populated
+        if unused_classes:
+            report_lines.append(f"  • Completely Unused Classes (empty and not used in properties): {len(unused_classes)}")
+            report_lines.append(f"      {', '.join(sorted(list(unused_classes)))}")
+    
+    # Populated classes
+    report_lines.append("\nPOPULATED CLASSES (Class: Count)")
+    populated_items = sorted([(k, v) for k, v in population_counts.items() if v > 0], 
+                            key=lambda x: x[1], reverse=True)
+    for class_name, count in populated_items:
+        report_lines.append(f"  • {class_name}: {count}")
+        # Add sample instances for classes with reasonable counts
+        if count <= 20:  # Only show examples for classes with fewer instances
+            examples = class_instances.get(class_name, [])
+            if examples:
+                report_lines.append(f"      Examples: {', '.join(examples[:5])}")
+                if len(examples) > 5:
+                    report_lines.append(f"      ... and {min(count, len(examples) - 5)} more")
+    
+    # Empty classes 
+    if empty_classes:
+        report_lines.append("\nEMPTY CLASSES:")
+        for class_name in sorted(empty_classes):
+            # Get parent class info for context
+            class_obj = defined_classes.get(class_name)
+            if class_obj and hasattr(class_obj, 'is_a') and class_obj.is_a:
+                parent_names = [p.name for p in class_obj.is_a if p is not Thing]
+                if parent_names:
+                    # Check if used in property domain/range
+                    usage = []
+                    if class_usage_info and class_name in class_usage_info.get('in_property_domains', []):
+                        usage.append("used in property domains")
+                    if class_usage_info and class_name in class_usage_info.get('in_property_ranges', []):
+                        usage.append("used in property ranges")
+                    
+                    if usage:
+                        report_lines.append(f"  • {class_name} (subclass of: {', '.join(parent_names)}) - {', '.join(usage)}")
+                    else:
+                        report_lines.append(f"  • {class_name} (subclass of: {', '.join(parent_names)}) - COMPLETELY UNUSED")
+                else:
+                    report_lines.append(f"  • {class_name} (direct subclass of owl:Thing)")
+            else:
+                report_lines.append(f"  • {class_name}")
+    
+    # Add optimization recommendations
+    report_lines.append("\nOPTIMIZATION RECOMMENDATIONS:")
+    
+    if class_usage_info and 'extraneous_classes' in class_usage_info and class_usage_info['extraneous_classes']:
+        report_lines.append("  • Consider adding the extraneous classes to your specification for completeness")
+    
+    if class_usage_info and 'spec_defined' in class_usage_info and implemented - spec_defined:
+        report_lines.append("  • Review and consider removing classes that are implemented but not in your spec")
+    
+    if unused_classes:
+        report_lines.append("  • Consider removing completely unused classes that are neither populated nor referenced in properties")
+    
+    return "\n".join(report_lines)
+
+def generate_optimization_recommendations(class_usage_info: Dict[str, List[str]],
+                                      defined_classes: Dict[str, ThingClass]) -> Dict[str, List[str]]:
+    """
+    Generates specific recommendations for optimizing the ontology structure.
+    
+    Args:
+        class_usage_info: Dict with usage analysis data
+        defined_classes: Dictionary mapping class names to class objects
+        
+    Returns:
+        Dict with categorized recommendations
+    """
+    recommendations = {
+        'classes_to_remove': [],
+        'extraneous_classes': [],
+        'unused_properties': [],
+        'configuration_options': []
+    }
+    
+    # Extract necessary data from usage info
+    implemented = set(class_usage_info.get('implemented_in_ontology', []))
+    spec_defined = set(class_usage_info.get('spec_defined', []))
+    extraneous = set(class_usage_info.get('extraneous_classes', []))
+    empty_classes = set(class_usage_info.get('empty_classes', []))
+    in_domains = set(class_usage_info.get('in_property_domains', []))
+    in_ranges = set(class_usage_info.get('in_property_ranges', []))
+    
+    # Find used defined classes
+    populated_classes = implemented - empty_classes
+    used_in_properties = in_domains | in_ranges
+    
+    # Find completely unused classes (not populated and not in domains/ranges)
+    completely_unused = implemented - populated_classes - used_in_properties
+    
+    # Classes that are extraneous AND empty
+    unused_extraneous = extraneous & empty_classes & completely_unused
+    
+    # Generate recommendations
+    if unused_extraneous:
+        recommendations['classes_to_remove'].extend(list(unused_extraneous))
+        recommendations['configuration_options'].append(
+            "Add a 'CLASSES_TO_SKIP' list in your configuration to avoid creating these classes"
+        )
+    
+    if extraneous:
+        recommendations['extraneous_classes'].extend(list(extraneous))
+        if len(extraneous) > 5:
+            recommendations['configuration_options'].append(
+                "Consider using a 'STRICT_SPEC_ADHERENCE' option to only create classes defined in the spec"
+            )
+    
+    # Check parent-child relationships for optimization
+    class_hierarchies = {}
+    for class_name, class_obj in defined_classes.items():
+        if hasattr(class_obj, 'is_a'):
+            parents = [p.name for p in class_obj.is_a if p is not Thing]
+            if parents:
+                class_hierarchies[class_name] = parents
+    
+    # Find unused leaf classes (classes that are completely unused and have no children)
+    leaf_classes = set()
+    for class_name in completely_unused:
+        has_children = False
+        for _, parents in class_hierarchies.items():
+            if class_name in parents:
+                has_children = True
+                break
+        if not has_children:
+            leaf_classes.add(class_name)
+    
+    if leaf_classes:
+        recommendations['classes_to_remove'].extend(list(leaf_classes))
+        recommendations['configuration_options'].append(
+            "Consider adding a 'PRUNE_LEAF_CLASSES' option to automatically remove unused leaf classes"
+        )
+    
+    # Remove duplicates and sort for consistency
+    for key in recommendations:
+        recommendations[key] = sorted(list(set(recommendations[key])))
+    
+    return recommendations
+
+# Function for selective class creation
+def create_selective_classes(onto: Ontology, specification: List[Dict[str, str]], 
+                           skip_classes: List[str] = None,
+                           strict_adherence: bool = False) -> Dict[str, ThingClass]:
+    """
+    Creates only the necessary classes from the specification, 
+    optionally skipping specified classes or enforcing strict spec adherence.
+    
+    Args:
+        onto: The ontology object
+        specification: Parsed specification
+        skip_classes: List of class names to skip (won't be created)
+        strict_adherence: If True, only create classes explicitly defined in spec
+        
+    Returns:
+        Dict mapping class name to class object
+    """
+    logger = logging.getLogger("selective_ontology")
+    logger.info(f"Creating classes selectively from specification")
+    
+    skip_classes = set(skip_classes or [])
+    defined_classes = {}
+    
+    # Pre-process spec to find essential classes
+    spec_classes = set()
+    spec_parents = {}
+    property_domains = set()
+    property_ranges = set()
+    
+    for row in specification:
+        # Get class names
+        class_name = row.get('Proposed OWL Entity', '').strip()
+        if class_name:
+            spec_classes.add(class_name)
+            parent_name = row.get(SPEC_PARENT_CLASS_COLUMN, '').strip()
+            if parent_name and parent_name != class_name:
+                spec_parents[class_name] = parent_name
+                spec_classes.add(parent_name)  # Ensure parent is in spec classes
+        
+        # Get property domains and ranges
+        prop_name = row.get('Proposed OWL Property', '').strip()
+        if prop_name:
+            # Get domains
+            domain_str = row.get('Domain', '').strip()
+            if domain_str:
+                domains = [d.strip() for d in domain_str.split('|')]
+                property_domains.update(domains)
+            
+            # Get ranges for object properties
+            prop_type = row.get('OWL Property Type', '').strip()
+            if prop_type == 'ObjectProperty':
+                range_str = row.get('Target/Range (xsd:) / Target Class', '').strip()
+                if range_str:
+                    ranges = [r.strip() for r in range_str.split('|')]
+                    property_ranges.update(ranges)
+    
+    # Determine which classes to create
+    classes_to_create = set()
+    
+    if strict_adherence:
+        # Only create classes explicitly defined in spec
+        classes_to_create = spec_classes
+    else:
+        # Create spec classes plus any referenced in properties
+        classes_to_create = spec_classes | property_domains | property_ranges
+    
+    # Remove classes to skip
+    classes_to_create -= skip_classes
+    
+    # Create classes with proper hierarchy
+    with onto:
+        # First pass: create all classes as direct subclasses of Thing
+        for class_name in classes_to_create:
+            if class_name == "Thing" or class_name.lower() == "owl:thing":
+                continue  # Skip Thing
+            
+            try:
+                # Create as subclass of Thing initially
+                new_class = types.new_class(class_name, (Thing,))
+                defined_classes[class_name] = new_class
+                logger.debug(f"Created class {class_name} (temp parent: Thing)")
+            except Exception as e:
+                logger.error(f"Error creating class {class_name}: {e}")
+        
+        # Second pass: set proper parent classes
+        for class_name, class_obj in defined_classes.items():
+            parent_name = spec_parents.get(class_name)
+            if parent_name and parent_name in defined_classes:
+                parent_class = defined_classes[parent_name]
+                # Reset parent
+                class_obj.is_a = [parent_class]
+                logger.debug(f"Set parent of {class_name} to {parent_name}")
+    
+    classes_skipped = spec_classes - set(defined_classes.keys())
+    if classes_skipped:
+        logger.info(f"Skipped {len(classes_skipped)} classes: {', '.join(sorted(classes_skipped))}")
+    
+    logger.info(f"Selectively created {len(defined_classes)} classes from specification")
+    return defined_classes
+
 #======================================================================#
 #             create_ontology.py Module Code (Main)                    #
 #======================================================================#
@@ -1919,7 +2296,12 @@ def main_ontology_generation(spec_file_path: str,
                              use_reasoner: bool = False,
                              world_db_path: Optional[str] = None,
                              reasoner_report_max_entities: int = 10,  # New parameter
-                             reasoner_report_verbose: bool = False) -> bool:  # New parameter
+                             reasoner_report_verbose: bool = False,  # New parameter
+                             analyze_population: bool = True,  # New parameter
+                             strict_adherence: bool = False,   # New parameter
+                             skip_classes: List[str] = None,   # New parameter
+                             optimize_ontology: bool = False   # New parameter
+                            ) -> bool:  # New parameter
     """
     Main function to generate the ontology. Returns True on success, False on failure.
     
@@ -1976,7 +2358,16 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.info(f"Ontology object created in memory: {onto}")
 
         # 3. Define Ontology Structure (TBox)
-        defined_classes, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
+        if strict_adherence or skip_classes:
+            main_logger.info("Using selective class creation with custom constraints")
+            defined_classes = create_selective_classes(onto, specification, 
+                                                      skip_classes=skip_classes, 
+                                                      strict_adherence=strict_adherence)
+            # Still need to define properties
+            _, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
+        else:
+            defined_classes, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
+            
         if not defined_classes:
             main_logger.warning("Ontology structure definition resulted in no classes. Population might be empty.")
         # Add check for essential properties here too? Already done in populate_ontology_from_data
@@ -2012,6 +2403,54 @@ def main_ontology_generation(spec_file_path: str,
             except Exception as pop_exc:
                 main_logger.error(f"Critical error during population: {pop_exc}", exc_info=True)
                 population_successful = False
+
+        # --- Analyze Ontology Population ---
+        if population_successful and analyze_population:
+            main_logger.info("Analyzing ontology population status...")
+            try:
+                population_counts, empty_classes, class_instances, class_usage_info = analyze_ontology_population(onto, defined_classes, specification)
+                population_report = generate_population_report(population_counts, empty_classes, class_instances, defined_classes, class_usage_info)
+                main_logger.info("Ontology Population Analysis Complete")
+                print(population_report)  # Print to console for immediate visibility
+                
+                # Generate optimization recommendations if requested
+                if optimize_ontology:
+                    main_logger.info("Generating detailed optimization recommendations...")
+                    optimization_recs = generate_optimization_recommendations(class_usage_info, defined_classes)
+                    
+                    # Print the recommendations
+                    print("\n=== DETAILED OPTIMIZATION RECOMMENDATIONS ===")
+                    if optimization_recs.get('classes_to_remove'):
+                        print(f"\nClasses that could be safely removed ({len(optimization_recs['classes_to_remove'])}):")
+                        for class_name in optimization_recs['classes_to_remove']:
+                            print(f"  • {class_name}")
+                    
+                    if optimization_recs.get('configuration_options'):
+                        print("\nSuggested configuration for future runs:")
+                        for option in optimization_recs['configuration_options']:
+                            print(f"  • {option}")
+                    
+                    # Write recommendations to a file for later use
+                    try:
+                        base_dir = os.path.dirname(output_owl_path)
+                        recs_file = os.path.join(base_dir, "ontology_optimization.txt")
+                        with open(recs_file, 'w') as f:
+                            f.write("# Ontology Optimization Recommendations\n\n")
+                            f.write("## Classes to Remove\n")
+                            for cls in optimization_recs.get('classes_to_remove', []):
+                                f.write(f"- {cls}\n")
+                            f.write("\n## Configuration Options\n")
+                            for opt in optimization_recs.get('configuration_options', []):
+                                f.write(f"- {opt}\n")
+                        main_logger.info(f"Saved optimization recommendations to {recs_file}")
+                    except Exception as e:
+                        main_logger.error(f"Failed to save optimization recommendations: {e}")
+                        
+            except Exception as analysis_exc:
+                main_logger.error(f"Error analyzing ontology population: {analysis_exc}", exc_info=False)
+                # Continue with other processing despite analysis failure
+        elif not analyze_population:
+            main_logger.warning("Skipping ontology population analysis due to analyze_population flag.")
 
         # --- Setup Sequence Relationships AFTER population ---
         if population_successful and created_eq_classes and eq_class_positions:
@@ -2227,6 +2666,10 @@ if __name__ == "__main__":
     parser.add_argument("--worlddb", default=None, help="Path to use/create a persistent SQLite world database (e.g., my_ontology.sqlite3).")
     parser.add_argument("--max-report-entities", type=int, default=10, help="Maximum number of entities to show per category in the reasoner report (default: 10).")
     parser.add_argument("--full-report", action="store_true", help="Show full details in the reasoner report (all entities).")
+    parser.add_argument("--no-analyze-population", action="store_false", dest="analyze_population", help="Skip analysis and reporting of ontology population (analysis is on by default).")
+    parser.add_argument("--strict-adherence", action="store_true", help="Only create classes explicitly defined in the specification.")
+    parser.add_argument("--skip-classes", type=str, nargs='+', help="List of class names to skip during ontology creation.")
+    parser.add_argument("--optimize", action="store_true", dest="optimize_ontology", help="Generate detailed optimization recommendations.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging.")
 
@@ -2254,7 +2697,11 @@ if __name__ == "__main__":
         args.spec_file, args.data_file, args.output_file,
         args.iri, args.format, args.reasoner, args.worlddb,
         reasoner_report_max_entities=args.max_report_entities,
-        reasoner_report_verbose=args.full_report
+        reasoner_report_verbose=args.full_report,
+        analyze_population=args.analyze_population,
+        strict_adherence=args.strict_adherence,
+        skip_classes=args.skip_classes,
+        optimize_ontology=args.optimize_ontology
     )
 
     # Exit with appropriate code
