@@ -137,32 +137,56 @@ def process_equipment_and_class(
     eq_class_id_map = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('equipmentClassId')
     eq_class_name_map = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('equipmentClassName') # Optional name
     eq_class_col = None
-    eq_class_id_from_map = None
+    eq_class_id_value = None # Raw value from the determined column
+    eq_class_base_name = None # The final name/ID to use for the class individual
+    is_parsed_from_name = False # Flag to track if we used parsing
 
     if eq_class_id_map and eq_class_id_map.get('column'):
         eq_class_col = eq_class_id_map['column']
-        eq_class_id_from_map = safe_cast(row.get(eq_class_col), str)
-        pop_logger.debug(f"Using EquipmentClass.equipmentClassId mapping (column '{eq_class_col}') for class ID.")
+        eq_class_id_value = safe_cast(row.get(eq_class_col), str) # Get raw value
+        pop_logger.debug(f"Found EquipmentClass.equipmentClassId mapping to column '{eq_class_col}'")
+        # *** MODIFIED LOGIC: Check if we need to parse from EQUIPMENT_NAME ***
+        if eq_class_col == 'EQUIPMENT_NAME':
+            pop_logger.debug(f"Parsing EquipmentClass from EQUIPMENT_NAME column value: '{eq_class_id_value}'")
+            eq_class_base_name = parse_equipment_class(eq_class_id_value)
+            is_parsed_from_name = True
+            if not eq_class_base_name:
+                 pop_logger.warning(f"Parsing EQUIPMENT_NAME '{eq_class_id_value}' failed to yield a class name.")
+                 # Skip further class processing if parsing fails
+                 return None, None, None
+            else:
+                 pop_logger.debug(f"Parsed equipment class name: '{eq_class_base_name}'")
+        else:
+            # Use the value directly if column is not EQUIPMENT_NAME
+            eq_class_base_name = eq_class_id_value
+            pop_logger.debug(f"Using direct value '{eq_class_base_name}' from column '{eq_class_col}' as class ID.")
+
     else:
         # Attempt 2: Fallback to using equipmentClassName property mapping as the ID source
+        pop_logger.debug("No mapping found for equipmentClassId, trying equipmentClassName as fallback ID source.")
         if eq_class_name_map and eq_class_name_map.get('column'):
             eq_class_col = eq_class_name_map['column']
-            eq_class_id_from_map = safe_cast(row.get(eq_class_col), str)
-            pop_logger.debug(f"Falling back to EquipmentClass.equipmentClassName mapping (column '{eq_class_col}') for class ID.")
+            eq_class_id_value = safe_cast(row.get(eq_class_col), str)
+            eq_class_base_name = eq_class_id_value # Use directly when falling back to name column
+            pop_logger.debug(f"Falling back to EquipmentClass.equipmentClassName mapping (column '{eq_class_col}') for class ID: '{eq_class_base_name}'.")
         else:
             pop_logger.warning("Cannot determine column for EquipmentClass ID (tried equipmentClassId, equipmentClassName). Skipping EquipmentClass processing.")
             # Cannot proceed without class ID
             return None, None, None
 
-    if not eq_class_id_from_map:
-        pop_logger.warning(f"Missing or invalid EquipmentClass ID/Name in column '{eq_class_col}'. Skipping EquipmentClass processing.")
+    # Check if we obtained a base name
+    if not eq_class_base_name:
+        pop_logger.warning(f"Missing or invalid EquipmentClass ID/Name from column '{eq_class_col}' (value: '{eq_class_id_value}'). Skipping EquipmentClass processing.")
         return None, None, None
 
-    # Use the found ID/Name as the base for the individual name and registry key
-    eq_class_base_name = eq_class_id_from_map
+    # Now use eq_class_base_name for creating the individual
     eq_class_labels = [eq_class_base_name]
-    # Optionally add name from name column if different from ID column
-    if eq_class_name_map and eq_class_name_map.get('column') != eq_class_col:
+    # Optionally add the original EQUIPMENT_NAME as a label if we parsed
+    if is_parsed_from_name and eq_class_id_value and eq_class_id_value != eq_class_base_name:
+        if eq_class_id_value not in eq_class_labels:
+            eq_class_labels.append(f"Source Name: {eq_class_id_value}")
+    # Optionally add name from dedicated name column if different from ID source and base name
+    elif eq_class_name_map and eq_class_name_map.get('column') != eq_class_col:
         class_name_val = safe_cast(row.get(eq_class_name_map['column']), str)
         if class_name_val and class_name_val not in eq_class_labels:
              eq_class_labels.append(class_name_val)
