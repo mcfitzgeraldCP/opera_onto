@@ -203,6 +203,11 @@ def setup_equipment_instance_relationships(onto: Ontology,
     # Sort class names by position (safely handling None values)
     sorted_classes = _safe_sort_by_position(equipment_class_positions.items())
     sorted_class_names_by_pos = [item[0] for item in sorted_classes]
+    
+    # Log the sorted classes with their positions for better diagnostics
+    pop_logger.info("Sorted equipment classes by sequence position:")
+    for class_name, pos in sorted_classes:
+        pop_logger.info(f"  • {class_name}: Position {pos}")
 
     if len(sorted_class_names_by_pos) < 1:  # Changed from 2 to 1 since we now chain within classes too
         pop_logger.warning("No equipment classes with sequence positions found. Cannot establish instance relationships.")
@@ -254,7 +259,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
                     unsequenced_classes[line_id_str] = []
                 if class_name_str not in unsequenced_classes[line_id_str]:
                     unsequenced_classes[line_id_str].append(class_name_str)
-                    pop_logger.warning(f"Equipment class '{class_name_str}' on line {line_id_str} has no sequence position.")
+                    pop_logger.warning(f"Equipment class '{class_name_str}' on line {line_id_str} has no sequence position. " +
+                                      f"Add this class to DEFAULT_EQUIPMENT_SEQUENCE or LINE_SPECIFIC_EQUIPMENT_SEQUENCE['{line_id_str}']")
 
             # Add equipment to the map structure
             if equipment_line not in line_equipment_map:

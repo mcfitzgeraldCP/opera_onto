@@ -24,7 +24,10 @@ SUPPRESSED_WARNINGS = [
     "Context entity 'EventRecord' required for ProductionRequest.hasAssociatedEvent",
     "Context entity 'EventRecord' required for Shift.includesEvent",
     "Context entity 'Person' required for EventRecord.performedBy",
-    "Created new individual"
+    "Created new individual",
+    "Context entity 'Material' required for EventRecord.consumedMaterial not found",
+    "Context entity 'Material' required for EventRecord.producedMaterial not found",
+    "Context entity 'ProductionRequest' required for EventRecord.associatedRequest not found"
 ]
 
 # --- Language Mapping for Alternative Reason Descriptions ---
@@ -46,6 +49,7 @@ DEFAULT_LANGUAGE = "en"  # Default language if country not found in mapping
 # --- Default Equipment Class Sequencing ---
 # Defines a default linear sequence for common equipment types
 DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
+    # Standard equipment classes with their sequence positions
     "Filler": 1,
     "Cartoner": 2,
     "Bundler": 3,
@@ -53,7 +57,9 @@ DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
     "CasePacker": 5,
     "CaseSealer": 6,
     "Palletizer": 7,
-    # Add any other classes with default positions if needed
+    "Packer": 5,      # Alternative to CasePacker
+    "Labeler": 2      # Alternative position near Cartoner
+    # Add any other standard equipment classes with default positions as needed
 }
 
 # --- Line-Specific Equipment Class Sequencing ---
@@ -70,6 +76,16 @@ LINE_SPECIFIC_EQUIPMENT_SEQUENCE: Dict[str, Dict[str, int]] = {
         "CaseSealer": 6,
         "Palletizer": 7
     },
+    
+    # FIPCO006 line has a custom sequence
+    "FIPCO006": {
+        "Filler": 1,
+        "Labeler": 2,
+        "Cartoner": 3,
+        "Bundler": 4,
+        "CasePacker": 5,
+        "CaseSealer": 6
+    }
     # Add more line-specific sequences as needed
 }
 

@@ -51,6 +51,9 @@ def process_single_data_row_pass1(
     success = True # Assume success unless critical failure
 
     try:
+        # Add row_num to the row dictionary for use by downstream processors
+        row['row_num'] = row_num
+        
         # --- 1. Process Asset Hierarchy (Plant, Area, ProcessCell, ProductionLine) ---
         plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(
             row, context, property_mappings, all_created_individuals_by_uid, pass_num=1
@@ -86,7 +89,8 @@ def process_single_data_row_pass1(
             line_ind=line_ind,
             material_ind=material_ind, # Pass context
             request_ind=request_ind, # Pass context
-            pass_num=1
+            pass_num=1,
+            row_num=row_num  # Pass the actual row number explicitly
         )
         created_inds_this_row.update(event_related_inds)
         if event_context_out: event_context = event_context_out
@@ -101,6 +105,10 @@ def process_single_data_row_pass1(
         row_proc_logger.error(f"Row {row_num} - Pass 1: Critical error processing row: {e}", exc_info=True)
         success = False
         created_inds_this_row = {} # Clear partial results on error
+    finally:
+        # Clean up row dictionary by removing temporary row_num 
+        if 'row_num' in row:
+            del row['row_num']
 
     return success, created_inds_this_row, event_context, eq_class_info
 

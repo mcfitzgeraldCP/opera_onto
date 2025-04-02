@@ -19,6 +19,9 @@ def link_equipment_events_to_line_events(onto: Ontology,
     Second pass function to link equipment EventRecords to their containing line EventRecords,
     using relaxed temporal containment logic.
     
+    Handles cases where TimeInterval.startTime may be missing or invalid by skipping those events
+    for linking rather than failing the entire process.
+    
     Args:
         onto: The ontology
         created_events_context: List of tuples (event_ind, resource_ind, time_interval_ind, line_ind_associated)
@@ -50,20 +53,34 @@ def link_equipment_events_to_line_events(onto: Ontology,
 
     link_logger.debug("Indexing created events...")
     processed_intervals = 0
+    skipped_intervals = 0
     for event_ind, resource_ind, time_interval_ind, associated_line_ind in created_events_context:
         start_time = None
         end_time = None
-        if time_interval_ind:
+        
+        # Skip if no interval exists
+        if not time_interval_ind:
+            link_logger.warning(f"Event {event_ind.name} has no associated TimeInterval. Cannot use for linking.")
+            skipped_intervals += 1
+            continue
+        
+        # Try to get start and end times safely
+        try:
             start_time = getattr(time_interval_ind, prop_startTime.python_name, None)
             end_time = getattr(time_interval_ind, prop_endTime.python_name, None)
             processed_intervals += 1
-            # Basic validation: Need at least a start time for meaningful comparison
-            if not isinstance(start_time, datetime):
-                link_logger.warning(f"Event {event_ind.name} has invalid or missing start time in interval {getattr(time_interval_ind, 'name', 'UnnamedInterval')}. Cannot use for linking.")
-                continue  # Skip this event for linking if start time is bad
-        else:
-            link_logger.warning(f"Event {event_ind.name} has no associated TimeInterval. Cannot use for linking.")
-            continue  # Skip this event if no interval
+        except Exception as e:
+            link_logger.warning(f"Error retrieving time properties from interval {time_interval_ind.name}: {e}")
+            skipped_intervals += 1
+            continue
+        
+        # Basic validation: Need at least a start time for meaningful comparison
+        # Explicitly check if it's a datetime to avoid type errors later
+        if not isinstance(start_time, datetime):
+            interval_name = getattr(time_interval_ind, 'name', 'UnnamedInterval')
+            link_logger.warning(f"Event {event_ind.name} has invalid or missing start time in interval {interval_name}. Cannot use for linking.")
+            skipped_intervals += 1
+            continue  # Skip this event for linking if start time is bad
 
         # Check if it's a line event or equipment event
         if isinstance(resource_ind, cls_ProductionLine):
@@ -78,6 +95,8 @@ def link_equipment_events_to_line_events(onto: Ontology,
 
     link_logger.info(f"Indexed {len(line_events_by_line)} lines with line events.")
     link_logger.info(f"Found {len(equipment_events_to_link)} equipment events with context to potentially link.")
+    link_logger.info(f"Processed {processed_intervals} valid intervals, skipped {skipped_intervals} invalid/incomplete intervals.")
+    
     if processed_intervals == 0 and (len(line_events_by_line) > 0 or len(equipment_events_to_link) > 0):
         link_logger.warning("Processed events but found 0 valid time intervals. Linking will likely fail.")
 
@@ -95,8 +114,9 @@ def link_equipment_events_to_line_events(onto: Ontology,
                 continue
 
             for line_event_ind, line_start, line_end in potential_parents:
-                # Line event start time must be valid
+                # Line event start time must be valid (defensive check)
                 if not isinstance(line_start, datetime):
+                    link_logger.debug(f"Skipping line event {line_event_ind.name} - invalid start time")
                     continue
 
                 # --- Temporal Containment Logic (Modified for Relaxation) ---
@@ -106,6 +126,8 @@ def link_equipment_events_to_line_events(onto: Ontology,
                 # 1. Check for Strict Containment (requires valid start/end for both)
                 strict_cond1 = (line_start <= eq_start)
                 strict_cond2 = False
+                
+                # Safely check end time containment only if both end times are valid datetimes
                 if isinstance(eq_end, datetime) and isinstance(line_end, datetime):
                     strict_cond2 = (eq_end <= line_end)
 

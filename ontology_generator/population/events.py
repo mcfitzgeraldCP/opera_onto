@@ -179,6 +179,8 @@ def process_time_interval(
     Processes TimeInterval from a row (Pass 1: Create/Data Props).
     Requires startTime mapping. endTime mapping is needed for the property but not strictly for creation.
     Uses resource_base_id and row_num for unique naming.
+    
+    If startTime is missing, creates a robust fallback name using resource ID and row number.
     """
     if not property_mappings or "TimeInterval" not in property_mappings:
         pop_logger.debug("Property mappings for 'TimeInterval' not provided. Skipping interval processing.")
@@ -192,41 +194,57 @@ def process_time_interval(
     end_map = property_mappings['TimeInterval'].get('data_properties', {}).get('endTime')
 
     if not start_map or not start_map.get('column'):
-        pop_logger.warning("Mapping for TimeInterval.startTime column not found. Cannot create unique TimeInterval. Skipping interval.")
-        return None
-    # Relaxed: End time mapping presence check removed for interval creation itself
-    # if not end_map or not end_map.get('column'):
-    #     pop_logger.warning("Mapping for TimeInterval.endTime column not found. Skipping interval property setting but attempting creation.")
-        # Allow creation but property won't be set
-
-    start_col = start_map['column']
-    end_col = end_map.get('column') if end_map else None # Safely get end column if mapping exists
-
-    start_time_str = safe_cast(row.get(start_col), str)
-    end_time_str = safe_cast(row.get(end_col), str) if end_col else None
-
-    interval_unique_base: str
-    interval_labels: List[str]
-
-    if not start_time_str:
-        pop_logger.warning(f"Row {row_num}: Missing startTime value from column '{start_col}'. Using fallback naming for TimeInterval based on resource and row number.")
-        # Fallback naming strategy
-        interval_unique_base = f"Interval_{resource_base_id}_Row{row_num}"
-        interval_labels = [f"Interval for {resource_base_id} (Row {row_num}, StartTime Missing)"]
-        # Do not return None here, allow creation with missing start time if resource/row are available
+        pop_logger.warning("Mapping for TimeInterval.startTime column not found. Using fallback naming scheme.")
+        has_start_mapping = False
     else:
-        # Create unique base name using resource, start time, and row number (like reference)
-        # Sanitize start_time_str for IRI compatibility if needed (though get_or_create handles basic cases)
-        safe_start_time_str = start_time_str.replace(":", "").replace("+", "plus").replace(" ", "T") # Basic sanitization example
-        interval_unique_base = f"Interval_{resource_base_id}_{safe_start_time_str}_{row_num}"
+        has_start_mapping = True
+
+    # Extract available time data with validation
+    start_col = start_map.get('column') if start_map else None
+    end_col = end_map.get('column') if end_map else None
+    
+    start_time_str = None
+    end_time_str = None
+    valid_start_time = False
+    
+    # Try to extract startTime value (even if we'll use a fallback name, we want the data property)
+    if has_start_mapping and start_col:
+        start_time_str = safe_cast(row.get(start_col), str)
+        if start_time_str:
+            valid_start_time = True
+        else:
+            pop_logger.warning(f"Row {row_num}: Missing startTime value from column '{start_col}'.")
+    
+    # Try to extract endTime if available
+    if end_col:
+        end_time_str = safe_cast(row.get(end_col), str)
+        if not end_time_str:
+            pop_logger.debug(f"Row {row_num}: No endTime value in column '{end_col}'.")
+
+    # Create a robust unique base name
+    if valid_start_time:
+        # Create a safe start time string for naming
+        safe_start_time_str = start_time_str.replace(":", "").replace("+", "plus").replace(" ", "T")
+        interval_unique_base = f"Interval_{resource_base_id}_{safe_start_time_str}_Row{row_num}"
         end_label_part = f"to {end_time_str}" if end_time_str else "(No End Time)"
         interval_labels = [f"Interval for {resource_base_id} starting {start_time_str} {end_label_part}"]
+    else:
+        # Robust fallback naming when no valid start time exists
+        interval_unique_base = f"Interval_{resource_base_id}_Row{row_num}"
+        interval_labels = [f"Interval for {resource_base_id} (Row {row_num}, StartTime Missing)"]
+        pop_logger.warning(f"Row {row_num}: Using fallback naming scheme for TimeInterval: '{interval_unique_base}' due to missing startTime")
 
+    # Create the TimeInterval individual with the determined name
     interval_ind = get_or_create_individual(cls_Interval, interval_unique_base, context.onto, all_created_individuals_by_uid, add_labels=interval_labels)
 
     if interval_ind and pass_num == 1:
-        # Apply properties using mappings (will skip endTime if mapping/value missing)
+        # Apply all data properties from mappings (will include startTime/endTime if they exist)
         apply_data_property_mappings(interval_ind, property_mappings["TimeInterval"], row, context, "TimeInterval", pop_logger)
+        
+        # Verify the startTime property was actually set
+        has_start_prop = hasattr(interval_ind, 'startTime') and interval_ind.startTime
+        if not has_start_prop:
+            pop_logger.warning(f"Row {row_num}: TimeInterval {interval_ind.name} created but startTime property not set. This may cause linking issues.")
 
     return interval_ind
 
@@ -373,7 +391,8 @@ def process_event_related(
     line_ind: Optional[Thing] = None,
     material_ind: Optional[Thing] = None,
     request_ind: Optional[Thing] = None,
-    pass_num: int = 1
+    pass_num: int = 1,
+    row_num: int = -1  # Add row_num parameter with default value
 ) -> Tuple[RowIndividuals, Optional[Tuple]]:
     """
     Orchestrates the processing of all event-related individuals for a row in a given pass.
@@ -392,6 +411,7 @@ def process_event_related(
         material_ind: Optional material individual for context.
         request_ind: Optional production request for context.
         pass_num: Current population pass.
+        row_num: Original row number from the source data for robust naming.
 
     Returns:
         Tuple: (created_individuals_dict, event_context_tuple)
@@ -404,6 +424,11 @@ def process_event_related(
     if all_created_individuals_by_uid is None:
         pop_logger.error("Individual registry not provided to process_event_related. Skipping.")
         return {}, None
+
+    # Get the actual row number from the row dict if available
+    actual_row_num = row.get('row_num', row_num)
+    if actual_row_num == -1:
+        pop_logger.warning(f"No valid row_num provided or found in row. Using fallback value. This may cause naming issues.")
 
     # Determine resource_base_id needed for interval processing
     # This duplicates some logic from process_event_record but is needed early for interval naming
@@ -418,15 +443,15 @@ def process_event_related(
             resource_base_id = equipment_ind.equipmentId[0] if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId else equipment_ind.name
 
     if not resource_base_id:
-         pop_logger.warning(f"Row: Could not determine resource_base_id early for interval naming (TypeHint: {resource_type_hint}, Line: {line_ind}, Eq: {equipment_ind}). Using fallback.")
+         pop_logger.warning(f"Row {actual_row_num}: Could not determine resource_base_id early for interval naming (TypeHint: {resource_type_hint}, Line: {line_ind}, Eq: {equipment_ind}). Using fallback.")
          resource_base_id = f"UnknownResource_{hash(str(row))}" # Example: Use row hash for fallback uniqueness
 
     # Process in dependency order (roughly)
     shift_ind = process_shift(row, context, property_mappings, all_created_individuals_by_uid, pass_num)
     if shift_ind: created_inds["Shift"] = shift_ind
 
-    # Call process_time_interval, explicitly passing -1 for row_num
-    time_interval_ind = process_time_interval(row, context, resource_base_id, -1, property_mappings, all_created_individuals_by_uid, pass_num)
+    # Pass the actual row number to process_time_interval
+    time_interval_ind = process_time_interval(row, context, resource_base_id, actual_row_num, property_mappings, all_created_individuals_by_uid, pass_num)
     if time_interval_ind: created_inds["TimeInterval"] = time_interval_ind
 
     state_ind = process_state(row, context, property_mappings, all_created_individuals_by_uid, pass_num)
@@ -436,7 +461,7 @@ def process_event_related(
     if reason_ind: created_inds["OperationalReason"] = reason_ind
 
     # --- Process the main EventRecord --- 
-    # Call process_event_record, explicitly passing -1 for row_num
+    # Pass the actual row number to process_event_record
     event_ind, event_context_tuple = process_event_record(
         row, context, property_mappings, all_created_individuals_by_uid,
         time_interval_ind=time_interval_ind,
@@ -448,7 +473,7 @@ def process_event_related(
         material_ind=material_ind,
         request_ind=request_ind,
         pass_num=pass_num,
-        row_num=-1 # Explicitly pass -1
+        row_num=actual_row_num  # Pass the actual row number
     )
     if event_ind:
         created_inds["EventRecord"] = event_ind

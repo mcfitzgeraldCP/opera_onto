@@ -16,18 +16,24 @@ from ontology_generator.population.core import (
 )
 from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
 
-def parse_equipment_class(equipment_name: Optional[str]) -> Optional[str]:
+def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optional[str] = None, 
+                      equipment_model: Optional[str] = None, model: Optional[str] = None,
+                      complexity: Optional[str] = None) -> Optional[str]:
     """
-    Parses the EquipmentClass from the EQUIPMENT_NAME.
+    Parses the EquipmentClass from equipment data using multiple potential sources.
     
-    Rules:
-    1. Extracts the part after the last underscore
-    2. Removes trailing digits from class name to handle instance identifiers
-    3. Validates the resulting class name has letters
-    4. Falls back to appropriate alternatives if validation fails
+    Priority order for determining equipment class:
+    1. Parse from EQUIPMENT_NAME (if contains underscore or matches known pattern)
+    2. Use EQUIPMENT_MODEL if available and valid
+    3. Use MODEL if available and valid
+    4. Consider COMPLEXITY as additional context if available
     
     Args:
         equipment_name: The equipment name to parse
+        equipment_type: Optional equipment type to influence parsing (e.g. 'Line')
+        equipment_model: Optional equipment model information
+        model: Optional alternative model information
+        complexity: Optional complexity level information
         
     Returns:
         The parsed equipment class name or None
@@ -36,50 +42,91 @@ def parse_equipment_class(equipment_name: Optional[str]) -> Optional[str]:
     - FIPCO009_Filler -> Filler
     - FIPCO009_Filler2 -> Filler
     - FIPCO009_CaseFormer3 -> CaseFormer
-    - FIPCO009_123 -> FIPCO009 (fallback to part before underscore if after is all digits)
+    - If EQUIPMENT_NAME parsing fails but EQUIPMENT_MODEL="Filler 3000" -> Filler
     """
-    if not equipment_name or not isinstance(equipment_name, str):
-        return None
+    # Known equipment class patterns (standard equipment types)
+    known_equipment_classes = [
+        "Filler", "Cartoner", "Bundler", "CaseFormer", "CasePacker", 
+        "CaseSealer", "Palletizer", "Packer", "Labeler"
+    ]
+    
+    # --- Priority 1: Parse from EQUIPMENT_NAME ---
+    if equipment_name and isinstance(equipment_name, str):
+        # Case 1: Names with underscores (FIPCO009_Filler)
+        if '_' in equipment_name:
+            parts = equipment_name.split('_')
+            class_part = parts[-1]
 
-    if '_' in equipment_name:
-        parts = equipment_name.split('_')
-        class_part = parts[-1]
+            # Try to extract base class name by removing trailing digits
+            base_class = re.sub(r'\d+$', '', class_part)
 
-        # Try to extract base class name by removing trailing digits
-        base_class = re.sub(r'\d+$', '', class_part)
-
-        # Validate the base class name
-        if base_class and re.search(r'[a-zA-Z]', base_class):
-            pop_logger.debug(f"Parsed equipment class '{base_class}' from '{equipment_name}' (original part: '{class_part}')")
-            return base_class
-        else:
-            # If stripping digits results in empty/invalid class, try the part before underscore
-            if len(parts) > 1 and re.search(r'[a-zA-Z]', parts[-2]):
-                fallback_class = parts[-2]
-                pop_logger.warning(f"Class part '{class_part}' became invalid after stripping digits. Using fallback from previous part: '{fallback_class}'")
-                return fallback_class
-            else:
-                # Last resort: use original class_part if it has letters, otherwise whole name
-                if re.search(r'[a-zA-Z]', class_part):
-                    pop_logger.warning(f"Using original class part '{class_part}' as class name (could not extract better alternative)")
-                    return class_part
+            # Validate the base class name
+            if base_class and re.search(r'[a-zA-Z]', base_class):
+                # Further validate that this looks like an equipment class and not a line ID
+                if not base_class.startswith("FIPCO"):
+                    pop_logger.debug(f"Parsed equipment class '{base_class}' from '{equipment_name}'")
+                    return base_class
                 else:
-                    pop_logger.warning(f"No valid class name found in parts of '{equipment_name}'. Using full name as class.")
-                    return equipment_name
-
-    # No underscore case
-    if re.search(r'[a-zA-Z]', equipment_name):
-        # If the full name has letters, try to extract base class by removing trailing digits
-        base_class = re.sub(r'\d+$', '', equipment_name)
-        if base_class and re.search(r'[a-zA-Z]', base_class):
-            pop_logger.debug(f"Extracted base class '{base_class}' from non-underscore name '{equipment_name}'")
-            return base_class
+                    pop_logger.warning(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
+        
+        # Case 2: Check if the name itself is a known equipment class
+        for known_class in known_equipment_classes:
+            if equipment_name.startswith(known_class):
+                # Return just the class name without any trailing numbers
+                base_class = re.sub(r'\d+$', '', known_class)
+                pop_logger.debug(f"Matched known equipment class '{base_class}' in '{equipment_name}'")
+                return base_class
+        
+        # Case 3: If EQUIPMENT_TYPE is Line, we should NOT use the line ID as the class
+        if equipment_type and equipment_type.lower() == 'line':
+            pop_logger.warning(f"'{equipment_name}' is a Line type - not a valid equipment class")
         else:
-            pop_logger.debug(f"Using full name '{equipment_name}' as class (no underscore, has letters)")
-            return equipment_name
-    else:
-        pop_logger.warning(f"Equipment name '{equipment_name}' contains no letters. Using as is.")
-        return equipment_name
+            pop_logger.debug(f"Could not extract valid equipment class from EQUIPMENT_NAME '{equipment_name}', trying other sources")
+    
+    # --- Priority 2: Try EQUIPMENT_MODEL ---
+    if equipment_model and isinstance(equipment_model, str):
+        # First check if any known class is contained in the equipment model
+        for known_class in known_equipment_classes:
+            if known_class in equipment_model:
+                # Extract the class name and remove any trailing digits
+                base_class = re.sub(r'\d+$', '', known_class)
+                pop_logger.debug(f"Extracted equipment class '{base_class}' from EQUIPMENT_MODEL '{equipment_model}'")
+                return base_class
+        
+        # Try to extract a potential class by splitting on spaces and taking the first part
+        # (common pattern in models like "Filler 3000" or "CasePacker X1")
+        model_parts = equipment_model.split()
+        if model_parts:
+            potential_class = re.sub(r'\d+$', '', model_parts[0])
+            # Validate that it looks like a class name (not just numbers or codes)
+            if re.match(r'^[A-Za-z]+$', potential_class) and len(potential_class) > 2:
+                pop_logger.debug(f"Extracted potential equipment class '{potential_class}' from EQUIPMENT_MODEL '{equipment_model}'")
+                return potential_class
+            
+    # --- Priority 3: Try MODEL column ---
+    if model and isinstance(model, str):
+        # Same logic as for EQUIPMENT_MODEL
+        for known_class in known_equipment_classes:
+            if known_class in model:
+                base_class = re.sub(r'\d+$', '', known_class)
+                pop_logger.debug(f"Extracted equipment class '{base_class}' from MODEL '{model}'")
+                return base_class
+        
+        model_parts = model.split()
+        if model_parts:
+            potential_class = re.sub(r'\d+$', '', model_parts[0])
+            if re.match(r'^[A-Za-z]+$', potential_class) and len(potential_class) > 2:
+                pop_logger.debug(f"Extracted potential equipment class '{potential_class}' from MODEL '{model}'")
+                return potential_class
+    
+    # --- Consider COMPLEXITY as additional context ---
+    # This is more for logging/debugging than actual class determination
+    if complexity and isinstance(complexity, str):
+        pop_logger.debug(f"COMPLEXITY '{complexity}' available but not used for class determination")
+    
+    # If we reach here, no valid equipment class could be extracted from any source
+    pop_logger.warning(f"Could not extract valid equipment class from any available source (name='{equipment_name}', model='{equipment_model}', alt_model='{model}')")
+    return None
 
 def process_equipment_and_class(
     row: Dict[str, Any],
@@ -146,22 +193,37 @@ def process_equipment_and_class(
         eq_class_col = eq_class_id_map['column']
         eq_class_id_value = safe_cast(row.get(eq_class_col), str) # Get raw value
         pop_logger.debug(f"Found EquipmentClass.equipmentClassId mapping to column '{eq_class_col}'")
-        # *** MODIFIED LOGIC: Check if we need to parse from EQUIPMENT_NAME ***
-        if eq_class_col == 'EQUIPMENT_NAME':
-            pop_logger.debug(f"Parsing EquipmentClass from EQUIPMENT_NAME column value: '{eq_class_id_value}'")
-            eq_class_base_name = parse_equipment_class(eq_class_id_value)
-            is_parsed_from_name = True
-            if not eq_class_base_name:
-                 pop_logger.warning(f"Parsing EQUIPMENT_NAME '{eq_class_id_value}' failed to yield a class name.")
-                 # Skip further class processing if parsing fails
-                 return None, None, None
-            else:
-                 pop_logger.debug(f"Parsed equipment class name: '{eq_class_base_name}'")
+        
+        # *** ENHANCED LOGIC: Check multiple sources for class determination ***
+        # Prepare additional sources for class determination
+        equipment_type = safe_cast(row.get('EQUIPMENT_TYPE'), str) if 'EQUIPMENT_TYPE' in row else None
+        equipment_model = safe_cast(row.get('EQUIPMENT_MODEL'), str) if 'EQUIPMENT_MODEL' in row else None
+        model = safe_cast(row.get('MODEL'), str) if 'MODEL' in row else None
+        complexity = safe_cast(row.get('COMPLEXITY'), str) if 'COMPLEXITY' in row else None
+        
+        # Log available columns for class determination
+        pop_logger.debug(f"Available columns for class determination: " + 
+                         f"EQUIPMENT_NAME='{eq_class_id_value if eq_class_col == 'EQUIPMENT_NAME' else None}', " +
+                         f"EQUIPMENT_MODEL='{equipment_model}', " + 
+                         f"MODEL='{model}', " +
+                         f"COMPLEXITY='{complexity}'")
+        
+        # Try to determine class using enhanced parse_equipment_class 
+        eq_class_base_name = parse_equipment_class(
+            equipment_name=eq_class_id_value if eq_class_col == 'EQUIPMENT_NAME' else None,
+            equipment_type=equipment_type,
+            equipment_model=equipment_model,
+            model=model,
+            complexity=complexity
+        )
+        is_parsed_from_name = True
+        
+        if not eq_class_base_name:
+            pop_logger.warning(f"Failed to determine equipment class from any available source. Skipping equipment class processing.")
+            # Skip further class processing if parsing fails from all sources
+            return None, None, None
         else:
-            # Use the value directly if column is not EQUIPMENT_NAME
-            eq_class_base_name = eq_class_id_value
-            pop_logger.debug(f"Using direct value '{eq_class_base_name}' from column '{eq_class_col}' as class ID.")
-
+            pop_logger.debug(f"Determined equipment class name: '{eq_class_base_name}' from available sources")
     else:
         # Attempt 2: Fallback to using equipmentClassName property mapping as the ID source
         pop_logger.debug("No mapping found for equipmentClassId, trying equipmentClassName as fallback ID source.")
@@ -193,6 +255,12 @@ def process_equipment_and_class(
              eq_class_labels.append(class_name_val)
 
     eq_class_ind = get_or_create_individual(cls_EquipmentClass, eq_class_base_name, context.onto, all_created_individuals_by_uid, add_labels=eq_class_labels)
+
+    # Ensure the equipmentClassId data property is set with the correct base name
+    prop_equipmentClassId = context.get_prop("equipmentClassId")
+    if eq_class_ind and prop_equipmentClassId:
+        context.set_prop(eq_class_ind, "equipmentClassId", eq_class_base_name)
+        pop_logger.debug(f"Explicitly set equipmentClassId='{eq_class_base_name}' on individual {eq_class_ind.name}")
 
     # Initialize sequence position to None
     eq_class_pos = None

@@ -1,223 +1,3 @@
-Please review this ontology specification and the generating code and provide recommended fixes as tickets
-that ensure events are linked to equipment and equipment to lines and sequences properly and that events are linkedt
-to other data like shift, material, reasons, etc.
-
-The primary metrics we will use for analysis are the minutes recorded for the different times in the asset effectiveness model:
-
-raw data columns:
-
-AE_MODEL_CATEGORY
-ALL_MAINTENANCE
-AUTONOMOUS_MAINTENANCE
-BUSINESS_EXTERNAL_TIME
-DOWNTIME
-EFFECTIVE_RUNTIME
-GOOD_PRODUCTION_QTY
-NOT_ENTERED
-PLANNED_MAINTENANCE
-PLANT_AVAILABLE_TIME
-PLANT_DECISION_TIME
-PLANT_EXPERIMENTATION
-PRODUCTION_AVAILABLE_TIME
-REJECT_PRODUCTION_QTY
-TOTAL_TIME
-RUN_TIME
-WAITING_TIME
-
-===========================================
-Ontology Spec (csv)
-===========================================
-
-Logical Group,Raw Data Column Name,Proposed OWL Entity,Proposed OWL Property,OWL Property Type,Target/Range (xsd:) / Target Class,OWL Property Characteristics,Inverse Property,Domain,Property Restrictions,ISA-95 Concept,Parent Class,Target Link Context,Notes/Considerations
-Performance Metrics,AE_MODEL_CATEGORY,EventRecord,aeModelCategory,DatatypeProperty,xsd:string,-,,EventRecord,,OperationsPerformance Category,EventRecord,"Captures the specific AE/OEE time category assignment for the event (e.g., Runtime, Unplanned, Plant Decision).",
-Performance Metrics,ALL_MAINTENANCE,EventRecord,allMaintenanceTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Total duration classified as Maintenance (in minutes). (Assumed Functional per event).,
-Performance Metrics,AUTONOMOUS_MAINTENANCE,EventRecord,autonomousMaintenanceTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Autonomous Maintenance (in minutes). Sub-category of All Maintenance. (Assumed Functional).,
-Performance Metrics,BUSINESS_EXTERNAL_TIME,EventRecord,businessExternalTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Business External time in minutes. (Functional per EventRecord instance),
-Utilization State/Reason,CO_ORIGINAL_TYPE,OperationalReason,originalChangeoverType,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Detail (Original),OperationalReason,Represents the original changeover type code. Allows comparison with changeoverType if needed.,
-Utilization State/Reason,CO_TYPE,OperationalReason,changeoverType,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Detail,OperationalReason,Property of OperationalReason for changeover events. Categorical.,
-Equipment Attributes,COMPLEXITY,Equipment,complexity,DatatypeProperty,xsd:string,-,,Equipment,,Equipment Property,Equipment,Property of Equipment according to Section 5.5.,
-Time & Schedule,CREW_ID,PersonnelClass,personnelClassId,DatatypeProperty,xsd:string,Functional,,PersonnelClass,,PersonnelClass ID,owl:Thing,Added to align with Section 5.4 Personnel model.,
-Performance Metrics,DOWNTIME,EventRecord,downtimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Downtime (in minutes). (Assumed Functional per event).,
-Utilization State/Reason,DOWNTIME_DRIVER,OperationalReason,downtimeDriver,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Category,OperationalReason,Property of OperationalReason per Section 5.11.,
-Performance Metrics,EFFECTIVE_RUNTIME,EventRecord,effectiveRuntimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Effective Runtime in minutes. (Functional per EventRecord instance),
-Asset Hierarchy,EQUIPMENT_ID,Equipment,equipmentId,DatatypeProperty,xsd:string,Functional,,Equipment,,Equipment ID,ProductionLine,Preferred ID for Equipment Individual. Links via isPartOfProductionLine to ProductionLine. Requires check against EQUIPMENT_TYPE.,
-Equipment Attributes,EQUIPMENT_MODEL,Equipment,equipmentModel,DatatypeProperty,xsd:string,Functional,,Equipment,,Equipment Property/Model,Equipment,,Property of Equipment according to Section 5.5.
-Asset Hierarchy,EQUIPMENT_NAME,Equipment,equipmentName,DatatypeProperty,xsd:string,-,,Equipment,,Equipment Description,ProductionLine,Secondary ID. Used to determine EquipmentClass. Consider rdfs:label.,
-Equipment Class,EQUIPMENT_NAME,EquipmentClass,equipmentClassId,DatatypeProperty,xsd:string,Functional,,EquipmentClass,,EquipmentClass ID,owl:Thing,,"Requires parsing from EQUIPMENT_NAME to extract the class name (e.g., using logic similar to parse_equipment_class)."
-Asset Hierarchy,EQUIPMENT_TYPE,EventRecord,involvesResource,ObjectProperty,ProductionLineOrEquipment,,resourceInvolvedIn,EventRecord,min 1,SegmentResponse Resource,EventRecord,,Links Event to the specific Resource (Line OR Equip) it pertains to. Range is the union class ProductionLineOrEquipment.
-Asset Hierarchy,GH_AREA,ProcessCell,processCellId,DatatypeProperty,xsd:string,Functional,,ProcessCell,,Area/ProcessCell ID,Area,Used to create/identify ProcessCell (GH_Area) Individual. Links via partOfArea to Area. Source corrected from PHYSICAL_AREA.,
-Asset Hierarchy,GH_CATEGORY,Area,areaCategoryCode,DatatypeProperty,xsd:string,Functional,,Area,,Product Category,Area,"Represents the product category code (e.g., ""OC"") directly associated with the Focus Factory (Area). Marked Functional.",
-Asset Hierarchy,GH_FOCUSFACTORY,Area,areaId,DatatypeProperty,xsd:string,Functional,,Area,,Area ID,Plant,Used to create/identify Area (Focus Factory) Individual. Links via locatedInPlant to Plant.,
-Performance Metrics,GOOD_PRODUCTION_QTY,EventRecord,goodProductionQuantity,DatatypeProperty,xsd:integer,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Quantity of good units produced during the event. (Assumed Functional per event).,
-Time & Schedule,JOB_END_TIME_LOC,TimeInterval,endTime,DatatypeProperty,xsd:dateTime,Functional,,TimeInterval,,SegmentResponse EndTime,TimeInterval,Part of the TimeInterval linked by EventRecord. (Functional per TimeInterval instance),
-Time & Schedule,JOB_START_TIME_LOC,TimeInterval,startTime,DatatypeProperty,xsd:dateTime,Functional,,TimeInterval,,SegmentResponse StartTime,owl:Thing,EventRecord links via occursDuring to TimeInterval. (Functional per TimeInterval instance),
-Asset Hierarchy,LINE_NAME,ProductionLine,lineId,DatatypeProperty,xsd:string,Functional,,ProductionLine,,ProductionLine/ProcessCell ID,ProcessCell,Links via locatedInProcessCell to ProcessCell.,
-Material & Prod Order,MATERIAL_ID,Material,materialId,DatatypeProperty,xsd:string,Functional,,Material,,MaterialDefinition ID,owl:Thing,,Used to create/identify Material Individual per Section 5.7.
-Material & Prod Order,MATERIAL_UOM,Material,materialUOM,DatatypeProperty,xsd:string,Functional,,Material,,MaterialDefinition BaseUnitOfMeasure,Material,Property of Material per Section 5.7. (Functional per Material instance),
-Equipment Attributes,MODEL,Equipment,alternativeModel,DatatypeProperty,xsd:string,-,,Equipment,,Equipment Property,Equipment,Property of Equipment according to Section 5.5.,
-Asset Hierarchy,N/A,Area,locatedInPlant,ObjectProperty,Plant,-,hasArea,Area,,Hierarchy Scope,owl:Thing,Plant,Links an Area to the Plant it resides in.
-Asset Hierarchy,N/A,Area,hasProcessCell,ObjectProperty,ProcessCell,-,partOfArea,Area,,Hierarchy Scope,owl:Thing,ProcessCell,Inverse of partOfArea. Links Area to its ProcessCells.
-Asset Hierarchy,N/A,Equipment,isPartOfProductionLine,ObjectProperty,ProductionLine,-,hasEquipmentPart,Equipment,,Hierarchy Scope,owl:Thing,ProductionLine,Links an Equipment instance to the ProductionLine it is part of.
-Equipment Class,N/A,Equipment,memberOfClass,ObjectProperty,EquipmentClass,Functional,hasInstance,Equipment,,EquipmentClass Hierarchy,Equipment,EquipmentClass,Links Equipment instances to their EquipmentClass. Functional assumes equip belongs to one class.
-Equipment Sequence,N/A,Equipment,equipmentIsUpstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",equipmentIsDownstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Equipment,Deferred/Future: Instance sequence data not available/required for V1.
-Equipment Sequence,N/A,Equipment,equipmentIsDownstreamOf,ObjectProperty,Equipment,"Transitive, Asymmetric",equipmentIsUpstreamOf,Equipment,,Equipment Hierarchy Instance,Equipment,Equipment,Deferred/Future: Instance sequence data not available/required for V1.
-Equipment Sequence,N/A,Equipment,isParallelWith,ObjectProperty,Equipment,"Symmetric, Irreflexive",,Equipment,,Equipment Hierarchy Instance,Equipment,Equipment,Deferred/Future: Not required for V1.
-Equipment Sequence,N/A,Equipment,actualSequencePosition,DatatypeProperty,xsd:integer,Functional,,Equipment,,Equipment Hierarchy Instance,Equipment,,Deferred/Future: Instance sequence data not available/required for V1.
-Equipment Class,N/A,EquipmentClass,hasInstance,ObjectProperty,Equipment,-,memberOfClass,EquipmentClass,,EquipmentClass Hierarchy,owl:Thing,Equipment,Inverse of memberOfClass. Links EquipmentClass to Equipment instances.
-Equipment Sequence,N/A,EquipmentClass,classIsUpstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",classIsDownstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,EquipmentClass,Defines upstream relationship between equipment classes. Use for default sequence relative order.
-Equipment Sequence,N/A,EquipmentClass,classIsDownstreamOf,ObjectProperty,EquipmentClass,"Transitive, Asymmetric",classIsUpstreamOf,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,EquipmentClass,Defines downstream relationship between equipment classes.
-Equipment Sequence,N/A,EquipmentClass,isParallelWith,ObjectProperty,EquipmentClass,"Symmetric, Irreflexive",,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,EquipmentClass,Defines equipment classes that operate in parallel. Deferred/Future: Not required for V1 linear sequence focus.
-Equipment Sequence,N/A,EquipmentClass,defaultSequencePosition,DatatypeProperty,xsd:integer,Functional,,EquipmentClass,,Equipment Hierarchy/Topology,EquipmentClass,,Required for V1: Numerical position in default sequence (1-based). Functional per class in sequence context.
-Operational Context,N/A,EventRecord,isPartOfLineEvent,ObjectProperty,EventRecord,-,hasDetailedEquipmentEvent,EventRecord,,Event Hierarchy,EventRecord,EventRecord,Required V1: Links an equipment-specific event record to the broader line event record it occurred within or contributed to. Domain: EventRecord involving Equipment. Range: EventRecord involving ProductionLine.
-Operational Context,N/A,EventRecord,hasDetailedEquipmentEvent,ObjectProperty,EventRecord,-,isPartOfLineEvent,EventRecord,,Event Hierarchy,EventRecord,EventRecord,Required V1: Inverse of isPartOfLineEvent. Links a line-level event to the specific equipment events that comprise or explain it. Domain: EventRecord involving ProductionLine. Range: EventRecord involving Equipment.
-Time & Schedule,N/A,EventRecord,occursDuring,ObjectProperty,TimeInterval,Functional,,EventRecord,,SegmentResponse TimeInterval,EventRecord,TimeInterval,Links EventRecord to TimeInterval. This property is essential for data population. Functional assumes event fully within one interval.
-Time & Schedule,N/A,PersonnelClass,hasPersonMember,ObjectProperty,Person,-,memberOfPersonnelClass,PersonnelClass,,PersonnelClass Link,owl:Thing,Person,Inverse of memberOfPersonnelClass. Links PersonnelClass to Person members.
-Asset Hierarchy,N/A,Plant,hasArea,ObjectProperty,Area,-,locatedInPlant,Plant,,Hierarchy Scope,owl:Thing,Area,Inverse of locatedInPlant. Links Plant to its Areas.
-Asset Hierarchy,N/A,ProcessCell,partOfArea,ObjectProperty,Area,-,hasProcessCell,ProcessCell,,Hierarchy Scope,owl:Thing,Area,Links a ProcessCell (GH_Area) to the Area (Focus Factory) it is part of.
-Asset Hierarchy,N/A,ProcessCell,containsProductionLine,ObjectProperty,ProductionLine,-,locatedInProcessCell,ProcessCell,,Hierarchy Scope,owl:Thing,ProductionLine,Inverse of locatedInProcessCell. Links ProcessCell to its ProductionLines.
-Asset Hierarchy,N/A,ProductionLine,locatedInProcessCell,ObjectProperty,ProcessCell,-,containsProductionLine,ProductionLine,,Hierarchy Scope,owl:Thing,ProcessCell,Links a ProductionLine to the ProcessCell it resides in.
-Asset Hierarchy,N/A,ProductionLine,hasEquipmentPart,ObjectProperty,Equipment,-,isPartOfProductionLine,ProductionLine,,Hierarchy Scope,owl:Thing,Equipment,Inverse of isPartOfProductionLine. Links ProductionLine to its Equipment.
-Asset Hierarchy,N/A,ProductionLineOrEquipment,,,,,,,,Resource,owl:Thing,Represents a resource that can be either a ProductionLine or an Equipment. Intended as a superclass or union for the range of involvesResource.,
-Asset Hierarchy,N/A,,resourceInvolvedIn,ObjectProperty,EventRecord,-,involvesResource,ProductionLineOrEquipment,,,Asset Hierarchy,EventRecord,Inverse of involvesResource. Links a line or equipment back to events it was involved in. Domain corrected.
-Performance Metrics,NOT_ENTERED,EventRecord,notEnteredTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration where state was not entered/unknown (in minutes). (Assumed Functional per event).,
-Utilization State/Reason,OPERA_TYPE,EventRecord,operationType,DatatypeProperty,xsd:string,-,,EventRecord,,OperationsRecord Type,EventRecord,Property of EventRecord per Section 5.10. Categorical.,
-Asset Hierarchy,PHYSICAL_AREA,Area,areaPhysicalCategoryName,DatatypeProperty,xsd:string,-,,Area,,Product Category,Area,,"Represents the descriptive product category name (e.g., ""OralCare"") directly associated with the Focus Factory (Area)."
-Performance Metrics,PLANNED_MAINTENANCE,EventRecord,plannedMaintenanceTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Planned Maintenance (in minutes). Sub-category of All Maintenance. (Assumed Functional).,
-Asset Hierarchy,PLANT,Plant,plantId,DatatypeProperty,xsd:string,Functional,,Plant,,Enterprise/Site ID,owl:Thing,Used to create/identify Plant Individual - harmonized with B2MML terminology.,
-Performance Metrics,PLANT_AVAILABLE_TIME,EventRecord,plantAvailableTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Plant Available time in minutes. (Functional per EventRecord instance),
-Performance Metrics,PLANT_DECISION_TIME,EventRecord,plantDecisionTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Plant Decision time in minutes. (Functional per EventRecord instance),
-Performance Metrics,PLANT_EXPERIMENTATION,EventRecord,plantExperimentationTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Plant Experimentation (in minutes). (Assumed Functional per event).,
-Material & Prod Order,PRIMARY_CONV_FACTOR,Material,conversionFactor,DatatypeProperty,xsd:double,Functional,,Material,,Material Property,Material,Property of Material per Section 5.7. (Functional per Material instance context),
-Performance Metrics,PRODUCTION_AVAILABLE_TIME,EventRecord,productionAvailableTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Property of EventRecord per Section 6.3. Represents Production Available time in minutes. (Functional per EventRecord instance),
-Material & Prod Order,PRODUCTION_ORDER_DESC,ProductionRequest,requestDescription,DatatypeProperty,xsd:string,-,,ProductionRequest,,OperationsRequest Desc,ProductionRequest,Property of ProductionRequest per Section 6.1.,
-Material & Prod Order,PRODUCTION_ORDER_ID,ProductionRequest,requestId,DatatypeProperty,xsd:string,Functional,,ProductionRequest,,OperationsRequest ID,owl:Thing,Used to create/identify ProductionRequest per Section 6.1.,
-Material & Prod Order,PRODUCTION_ORDER_RATE,ProductionRequest,requestRate,DatatypeProperty,xsd:double,Functional,,ProductionRequest,,OperationsRequest Prop,ProductionRequest,Property of ProductionRequest per Section 6.1. (Functional per Request instance),
-Material & Prod Order,PRODUCTION_ORDER_UOM,ProductionRequest,requestRateUOM,DatatypeProperty,xsd:string,Functional,,ProductionRequest,,OperationsRequest Prop,ProductionRequest,,Property of ProductionRequest per Section 6.1. (Functional per Request instance)
-Time & Schedule,RAMPUP_FLAG,EventRecord,rampUpFlag,DatatypeProperty,xsd:boolean,Functional,,EventRecord,,OperationsResponse Property,EventRecord,,Property of EventRecord per Section 6.3. (Functional per EventRecord instance)
-Performance Metrics,REJECT_PRODUCTION_QTY,EventRecord,rejectProductionQuantity,DatatypeProperty,xsd:integer,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Quantity of reject units produced during the event. (Assumed Functional per event).,
-Performance Metrics,RUN_TIME,EventRecord,runTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Runtime (in minutes). (Assumed Functional per event).,
-Time & Schedule,SHIFT_DURATION_MIN,Shift,shiftDurationMinutes,DatatypeProperty,xsd:double,Functional,,Shift,,PersonnelSchedule Duration,Shift,Property of Shift per Personnel model. (Functional per Shift instance),
-Time & Schedule,SHIFT_END_DATE_LOC,Shift,shiftEndTime,DatatypeProperty,xsd:dateTime,Functional,,Shift,,PersonnelSchedule EndTime,Shift,Property of Shift per Personnel model. (Functional per Shift instance),
-Time & Schedule,SHIFT_NAME,Shift,shiftId,DatatypeProperty,xsd:string,Functional,,Shift,,PersonnelSchedule ID,owl:Thing,EventRecord links via duringShift to Shift.,
-Time & Schedule,SHIFT_START_DATE_LOC,Shift,shiftStartTime,DatatypeProperty,xsd:dateTime,Functional,,Shift,,PersonnelSchedule StartTime,Shift,Property of Shift per Personnel model. (Functional per Shift instance),
-Material & Prod Order,SHORT_MATERIAL_ID,Material,materialDescription,DatatypeProperty,xsd:string,-,,Material,,MaterialDefinition Description,Material,Property of Material per Section 5.7. Consider rdfs:comment.,
-Material & Prod Order,SIZE_TYPE,Material,sizeType,DatatypeProperty,xsd:string,-,,Material,,Material Property,Material,Property of Material per Section 5.7.,
-Performance Metrics,TOTAL_TIME,EventRecord,reportedDurationMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Duration,EventRecord,,Property of EventRecord per Section 6.3. Represents total event time in minutes. (Functional per EventRecord instance)
-Material & Prod Order,TP_UOM,Material,targetProductUOM,DatatypeProperty,xsd:string,Functional,,Material,,Material Property (UoM),Material,Property of Material per Section 5.7. (Functional per Material instance),
-Material & Prod Order,UOM_ST,Material,standardUOM,DatatypeProperty,xsd:string,Functional,,Material,,Material Property (UoM),Material,Property of Material per Section 5.7. Maps from UOM_ST. (Functional per Material instance),
-Material & Prod Order,UOM_ST_SAP,Material,standardUOM,DatatypeProperty,xsd:string,Functional,,Material,,Material Property (UoM),Material,Property of Material per Section 5.7. Maps from UOM_ST_SAP. (Functional per Material instance),
-Utilization State/Reason,UTIL_ALT_LANGUAGE_REASON,OperationalReason,altReasonDescription,DatatypeProperty,xsd:string (with lang tag),-,,OperationalReason,,OperationsEvent Description,OperationalReason,Property of OperationalReason per Section 5.11.,
-Utilization State/Reason,UTIL_REASON_DESCRIPTION,OperationalReason,reasonDescription,DatatypeProperty,xsd:string,-,,OperationalReason,,OperationsEvent Reason,owl:Thing,Maps to Ops Event Information (Section 5.11). EventRecord links via eventHasReason.,
-Utilization State/Reason,UTIL_STATE_DESCRIPTION,OperationalState,stateDescription,DatatypeProperty,xsd:string,-,,OperationalState,,OperationsRecord State,owl:Thing,,Maps to Ops Record Information (Section 5.10). EventRecord links via eventHasState.
-Performance Metrics,WAITING_TIME,EventRecord,waitingTimeMinutes,DatatypeProperty,xsd:double,Functional,,EventRecord,,OperationsPerformance Parameter,EventRecord,Duration classified as Waiting (in minutes). (Assumed Functional per event).,
-
-===========================================
-Raw data sample (csv)
-===========================================
-
-LINE_NAME,EQUIPMENT_NAME,EQUIPMENT_ID,PLANT,DOWNTIME_DRIVER,OPERA_TYPE,GH_AREA,GH_CATEGORY,GH_FOCUSFACTORY,PHYSICAL_AREA,EQUIPMENT_TYPE,EQUIPMENT_MODEL,COMPLEXITY,MODEL,MATERIAL_ID,SHORT_MATERIAL_ID,SIZE_TYPE,MATERIAL_UOM,UOM_ST,UOM_ST_SAP,TP_UOM,PRODUCTION_ORDER_ID,PRODUCTION_ORDER_DESC,PRODUCTION_ORDER_RATE,PRODUCTION_ORDER_UOM,JOB_START_TIME_LOC,JOB_END_TIME_LOC,UTIL_STATE_DESCRIPTION,UTIL_REASON_DESCRIPTION,UTIL_ALT_LANGUAGE_REASON,CO_TYPE,CO_ORIGINAL_TYPE,SHIFT_NAME,SHIFT_START_DATE_LOC,SHIFT_END_DATE_LOC,SHIFT_DURATION_MIN,CREW_ID,RAMPUP_FLAG,PRODUCTIONDATE_DAY_LOC,PRODUCTIONDATE_MONTH_LOC,PRODUCTIONDATE_QUARTER_LOC,PRODUCTIONDATE_YEAR_LOC,PRIMARY_CONV_FACTOR,PLANT_DESCRIPTION,PLANT_STRATEGIC_LOCATION,PLANT_COUNTRY,PLANT_COUNTRY_DESCRIPTION,PLANT_FACILITY_TYPE,PLANT_POSTAL_CODE,PLANT_PURCHASING_ORGANIZATION,PLANT_STRATEGIC_LOCATION_DESCRIPTION,PLANT_LATITUDE,PLANT_LONGITUDE,PLANT_DIVISION,PLANT_DIVISION_DESCRIPTION,PLANT_SUB_DIVISION,PLANT_SUB_DIVISION_DESCRIPTION,AE_MODEL_CATEGORY,TOTAL_TIME_SECONDS,TOTAL_TIME,BUSINESS_EXTERNAL_TIME,PLANT_AVAILABLE_TIME,EFFECTIVE_RUNTIME,PLANT_DECISION_TIME,PRODUCTION_AVAILABLE_TIME,GOOD_PRODUCTION_QTY,REJECT_PRODUCTION_QTY,DOWNTIME,RUN_TIME,NOT_ENTERED,WAITING_TIME,PLANT_EXPERIMENTATION,ALL_MAINTENANCE,AUTONOMOUS_MAINTENANCE,PLANNED_MAINTENANCE,DAYS_MTD,DAYS_YTD,AVG_THROUGHPUT_MTD,AVG_THROUGHPUT_YTD,CHANGEOVER_COUNT,CHANGEOVER_DURATION,CLEANING_AND_SANITIZATION,LUNCH_AND_BREAK,LUNCH,BREAK,MEETING_AND_TRAINING,NO_DEMAND,SOURCE_DATASET,SOURCE_DATASET_FUNCTIONAL_AREA,SOURCE_DATASET_SUBFUNCTIONAL_AREA
-FIPCO006,FIPCO006,224.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Kids,TFS30,000000000061024733,61024733,OFT 38FR_4.6oz_12_Size,CS,12.0,12.0,12.0,108432658.0,108432658.0,12.0,CS,2025-02-05 22:40:21.000 -0500,2025-02-09 00:26:51.000 -0500,DOWNTIME,Ending order,Terminando Orden,Size,,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,7,0.116667,0.0,0.116667,0.0,0.0,0.116667,0,0,0.116667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Filler,152.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,MX05316A,MX05316A,OFT 38FR_4.0oz_24_Size,CS,24.0,24.0,24.0,108430841.0,108430841.0,450.0,CS,2025-02-05 09:02:46.000 -0500,2025-02-06 14:17:21.000 -0500,DOWNTIME,Copas,Copas,ALL,ALL,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,747,12.45,0.0,12.45,0.0,0.0,12.45,0,0,12.45,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO006,FIPCO006_Filler,225.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Kids,TFS30,MX03109A,MX03109A,OFT 38TP_75ml_12_Size,CS,12.0,12.0,12.0,108430287.0,108430287.0,144.0,CS,2025-02-05 20:12:40.000 -0500,2025-02-05 20:13:31.000 -0500,PLANNED,Cleaning and Sanitation,C&S,Size,Size,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,1255,20.916667,0.0,20.916667,0.0,20.916667,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,20.916667,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00G,FIPCO00G_CasePacker,193.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061028649,61028649,OFT 35FT_115ml_36_2P_Size,CS,72.0,72.0,72.0,108431439.0,108431439.0,5.829999924,CS,2025-02-05 19:17:20.000 -0500,,DOWNTIME,Entrada plegadiza CCC,Entrada plegadiza CCC,ALL,ALL,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,36.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,153,2.55,0.0,2.55,0.0,0.0,2.55,0,0,2.55,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Cartoner,206.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061038725,61038725,OFT 38FR_3.0oz_12_2P_Size,CS,24.0,24.0,24.0,108433948.0,108433948.0,210.0,CS,2025-02-07 02:17:18.000 -0500,2025-02-08 03:28:39.000 -0500,PLANNED,Cleaning and Sanitation,C&S,ALL,ALL,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,849,14.15,0.0,14.15,0.0,14.15,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,14.15,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_CasePacker,146.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,000000000000151105,151105,OFT 25FZ_2.5oz_24_Size,CS,24.0,24.0,24.0,108433946.0,108433946.0,18.75,CS,2025-02-07 14:04:19.000 -0500,2025-02-09 20:23:49.000 -0500,RUNNING,Running,Corriendo,Product,Product,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,9343,155.716666,0.0,155.716666,0.0,0.0,155.716666,0,0,0.0,155.716666,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_CasePacker,165.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX03180C,FMX03180C,OFT 32FT_100ml_72_Size,CS,72.0,72.0,72.0,108429892.0,108429892.0,6.079999924,CS,2025-02-05 00:08:14.000 -0500,2025-02-06 22:02:41.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,114.638159333,0.0,0.0,697,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,36.684210526,8.935897436,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO001,FIPCO001_CasePacker2,309.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,MX03924A,MX03924A,OFT 25FT_50ml_144_Size,CS,144.0,144.0,144.0,108429891.0,108429891.0,3.130000114,CS,2025-02-04 15:21:14.000 -0500,,BUSINESS EXTERNAL,No Demand,No Demanda,Product,,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,144.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Business External,27042,450.7,450.7,0.0,0.0,0.0,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,450.7,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002,162.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Secondary Line,TFS80-6,FMX00035B,FMX00035B,OFT 38FT_150ml_72_Size,CS,72.0,72.0,72.0,108432977.0,108432977.0,5.42,CS,2025-02-06 22:02:43.000 -0500,2025-02-06 22:59:03.000 -0500,DOWNTIME,Ending order,Terminando Orden,Size,Size,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,262,4.366667,0.0,4.366667,0.0,0.0,4.366667,0,0,4.366667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Cartoner,206.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061038725,61038725,OFT 38FR_3.0oz_12_2P_Size,CS,24.0,24.0,24.0,108433948.0,108433948.0,210.0,CS,2025-02-07 02:17:18.000 -0500,2025-02-08 03:28:39.000 -0500,DOWNTIME,Cinta de descarga,Cinta de descarga,ALL,ALL,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,49,0.816667,0.0,0.816667,0.0,0.0,0.816667,0,0,0.816667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Cartoner,164.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX00035B,FMX00035B,OFT 38FT_150ml_72_Size,CS,72.0,72.0,72.0,108432977.0,108432977.0,390.0,CS,2025-02-06 22:03:12.000 -0500,2025-02-06 22:59:08.000 -0500,WAITING,Upstream,Falta Producto,Size,Size,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,196,3.266666,0.0,3.266666,0.0,0.0,3.266666,0,0,0.0,0.0,0.0,3.266666,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E_Bundler,177.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000000151114,151114,OFT 35FT_4.0oz_24_Size,CS,24.0,24.0,24.0,108432723.0,108432723.0,450.0,CS,2025-02-06 06:52:20.000 -0500,2025-02-06 20:14:53.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,13056,217.600001,0.0,217.600001,0.0,0.0,217.600001,0,0,0.0,217.600001,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Filler,166.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX00035B,FMX00035B,OFT 38FT_150ml_72_Size,CS,72.0,72.0,72.0,108433722.0,108433722.0,390.0,CS,2025-02-06 23:03:27.000 -0500,,PLANNED,Meeting,Junta,Size,Size,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,711,11.85,0.0,11.85,0.0,11.85,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,11.85,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E_Cartoner,178.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000000156755,156755,OFT 35FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108430289.0,108430289.0,450.0,CS,2025-02-05 00:04:30.000 -0500,2025-02-05 16:37:35.000 -0500,DOWNTIME,Paro operador,Paro operador,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,49,0.816667,0.0,0.816667,0.0,0.0,0.816667,0,0,0.816667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E_Filler,180.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000000151406,151406,OFT 35FT_4.0oz_24_Size,CS,24.0,24.0,24.0,108433622.0,108433622.0,450.0,CS,2025-02-06 20:15:08.000 -0500,2025-02-07 13:06:17.000 -0500,CHANGE OVER,Product,Producto,Product,Product,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,2117,35.283333,0.0,35.283333,0.0,35.283333,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,1,35.283333,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_Filler,143.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,000000000000151106,151106,OFT 25FZ_2.5oz_24_Size,CS,24.0,24.0,24.0,108433945.0,108433945.0,450.0,CS,2025-02-07 00:07:52.000 -0500,2025-02-07 13:58:36.000 -0500,CHANGE OVER,Product,Producto,Size,Size,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,509,8.483333,0.0,8.483333,0.0,8.483333,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00G,FIPCO00G_Cartoner,192.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061028649,61028649,OFT 35FT_115ml_36_2P_Size,CS,72.0,72.0,72.0,108431439.0,108431439.0,210.0,CS,2025-02-05 19:17:20.000 -0500,,WAITING,Downstream,Acumulación,ALL,ALL,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,36.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,1362,22.700001,0.0,22.700001,0.0,0.0,22.700001,0,0,0.0,0.0,0.0,22.700001,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00F,FIPCO00F_Cartoner,185.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,FMX03179D,FMX03179D,OFT 28FT_75ml_72_Size,CS,72.0,72.0,72.0,108430290.0,108430290.0,450.0,CS,2025-02-05 04:12:19.000 -0500,2025-02-07 13:20:31.000 -0500,WAITING,Upstream,Falta Producto,Product,Product,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,2907,48.450002,0.0,48.450002,0.0,0.0,48.450002,0,0,0.0,0.0,0.0,48.450002,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Bundler,205.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061038725,61038725,OFT 38FR_3.0oz_12_2P_Size,CS,24.0,24.0,24.0,108433948.0,108433948.0,210.0,CS,2025-02-07 02:17:18.000 -0500,2025-02-08 03:28:39.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,4807,80.116666,0.0,80.116666,0.0,0.0,80.116666,0,0,0.0,80.116666,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E_Palletizer,181.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000000151114,151114,OFT 35FT_4.0oz_24_Size,CS,24.0,24.0,24.0,108432723.0,108432723.0,18.75,CS,2025-02-06 06:52:21.000 -0500,2025-02-06 20:14:53.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,196.0,0.0,0.0,3675,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,193.421052632,47.115384615,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO003,FIPCO003_Cartoner,171.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061001979,61001979,OFT 38FR_100ml_72_Size,CS,72.0,72.0,72.0,108427066.0,108427066.0,450.0,CS,2025-02-04 17:47:52.000 -0500,2025-02-05 10:18:42.000 -0500,DOWNTIME,Paro en Empaque,Paro En Empaque,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,1223,20.383334,0.0,20.383334,0.0,0.0,20.383334,0,0,20.383334,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00H,FIPCO00H_CasePacker,200.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX05611,FMX05611,OFT 35FT_125ml_48_Size,CS,48.0,48.0,48.0,108430843.0,108430843.0,9.380000114,CS,2025-02-05 03:02:04.000 -0500,2025-02-06 09:33:24.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,52.98507398,0.0,0.0,497,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,26.157894737,6.371794872,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Bundler,205.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061019476,61019476,OFT 38FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108429895.0,108429895.0,402.0,CS,2025-02-05 04:56:58.000 -0500,2025-02-07 02:16:42.000 -0500,CHANGE OVER,ALL,Todo,ALL,ALL,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,2269,37.816667,0.0,37.816667,0.0,37.816667,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Filler,152.0,MX11,Breakdown,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,MX05316A,MX05316A,OFT 38FR_4.0oz_24_Size,CS,24.0,24.0,24.0,108430841.0,108430841.0,450.0,CS,2025-02-05 09:02:46.000 -0500,2025-02-06 14:17:21.000 -0500,COMMON DOWNTIMES,Other,Otros,ALL,ALL,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,629,10.483333,0.0,10.483333,0.0,0.0,10.483333,0,0,10.483333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_CasePacker,151.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061045447,61045447,OFT 38FR_170ml_24 Size,CS,24.0,24.0,24.0,108432764.0,108432764.0,16.75,CS,2025-02-06 14:17:53.000 -0500,2025-02-08 01:08:30.000 -0500,DOWNTIME,Cadena de avance,Cadena de avance,ALL,ALL,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,88,1.466667,0.0,1.466667,0.0,0.0,1.466667,0,0,1.466667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Filler,152.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,MX05316A,MX05316A,OFT 38FR_4.0oz_24_Size,CS,24.0,24.0,24.0,108430841.0,108430841.0,450.0,CS,2025-02-05 09:02:46.000 -0500,2025-02-06 14:17:21.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,4841,80.683335,0.0,80.683335,0.0,0.0,80.683335,0,0,0.0,80.683335,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00J,FIPCO00J_Filler,769.0,MX11,Breakdown,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061012223,61012223,OFT 28FT_60ml_24_3P_Size,CS,72.0,72.0,72.0,108427065.0,108427065.0,450.0,CS,2025-02-05 07:07:27.000 -0500,,DOWNTIME,paro operador,Paro operador,ALL,ALL,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,108,1.799999,0.0,1.799999,0.0,0.0,1.799999,0,0,1.799999,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Cartoner,206.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061019476,61019476,OFT 38FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108429895.0,108429895.0,402.0,CS,2025-02-05 04:56:58.000 -0500,2025-02-07 02:16:42.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,10312,171.866667,0.0,171.866667,0.0,0.0,171.866667,0,0,0.0,171.866667,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E_Cartoner,178.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000000151093,151093,OFT 35FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108431438.0,108431438.0,450.0,CS,2025-02-05 16:38:05.000 -0500,2025-02-06 06:51:16.000 -0500,RUNNING,Running,Corriendo,Product,Product,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,3299,54.983334,0.0,54.983334,0.0,0.0,54.983334,0,0,0.0,54.983334,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00H,FIPCO00H_CasePacker,200.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,MX02080D,MX02080D,OFT 35FR_75ml_48_Size,CS,48.0,48.0,48.0,108432978.0,108432978.0,9.380000114,CS,2025-02-06 09:34:17.000 -0500,2025-02-07 13:38:44.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,208.31556249,0.0,0.0,1954,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,102.842105263,25.051282051,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_Cartoner,145.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,MX07159A,MX07159A,OFT 25FT_2.2oz_24_Size,CS,24.0,24.0,24.0,108429893.0,108429893.0,450.0,CS,2025-02-06 06:08:36.000 -0500,2025-02-07 00:07:28.000 -0500,PLANNED,Cleaning and Sanitation,C&S,Product,Product,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,426,7.1,0.0,7.1,0.0,7.1,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,7.1,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_Bundler,144.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,MX06994A,MX06994A,OFT_25FT_2.0oz_24_Size,CS,24.0,24.0,24.0,108432488.0,108432488.0,450.0,CS,2025-02-05 18:14:56.000 -0500,2025-02-06 06:08:02.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,34.631111111,0.0,0.0,15584,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,820.210526316,199.794871795,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_CasePacker,151.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061044255,61044255,OFT 38FR_120ml_24_Size,CS,24.0,24.0,24.0,108430288.0,108430288.0,18.75,CS,2025-02-04 16:06:17.000 -0500,2025-02-05 09:01:41.000 -0500,WAITING,Downstream,Acumulación,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,295,4.916667,0.0,4.916667,0.0,0.0,4.916667,0,0,0.0,0.0,0.0,4.916667,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO001,FIPCO001_Filler,159.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,000000000061039400,61039400,OFT 25FT_50ml_144_Size,CS,144.0,144.0,144.0,108435845.0,108435845.0,450.0,CS,2025-02-07 20:02:50.000 -0500,2025-02-10 07:14:24.000 -0500,COMMON DOWNTIMES,Lack of Cream / Change Feeding,Falta de crema/Cambio alimentación,Product,Product,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,144.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,734,12.233333,0.0,12.233333,0.0,0.0,12.233333,0,0,12.233333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00H,FIPCO00H_CasePacker,200.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,MX02080D,MX02080D,OFT 35FR_75ml_48_Size,CS,48.0,48.0,48.0,108432978.0,108432978.0,9.380000114,CS,2025-02-06 09:34:17.000 -0500,2025-02-07 13:38:44.000 -0500,PLANNED,Cleaning and Sanitation,C&S,ALL,ALL,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,587,9.783333,0.0,9.783333,0.0,9.783333,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,9.783333,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Filler,208.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061019476,61019476,OFT 38FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108429895.0,108429895.0,402.0,CS,2025-02-05 04:56:58.000 -0500,2025-02-07 02:16:42.000 -0500,DOWNTIME,Ending order,Terminando Orden,ALL,ALL,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,18,0.3,0.0,0.3,0.0,0.0,0.3,0,0,0.3,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Filler,152.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061044255,61044255,OFT 38FR_120ml_24_Size,CS,24.0,24.0,24.0,108430288.0,108430288.0,450.0,CS,2025-02-04 16:06:17.000 -0500,2025-02-05 09:01:41.000 -0500,DOWNTIME,Nivel de tanque A B C,Nivel de tanque A B C,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,258,4.3,0.0,4.3,0.0,0.0,4.3,0,0,4.3,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO003,FIPCO003,169.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,MX05532A,MX05532A,OFT 38FR_125ml_48_Size,CS,48.0,48.0,48.0,108433621.0,108433621.0,9.38,CS,2025-02-06 18:16:14.000 -0500,2025-02-08 00:18:07.000 -0500,DOWNTIME,Filler,LLenadora,ALL,ALL,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,2818,46.966667,0.0,46.966667,0.0,0.0,46.966667,0,0,46.966667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Cartoner,206.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061019476,61019476,OFT 38FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108429895.0,108429895.0,402.0,CS,2025-02-05 04:56:58.000 -0500,2025-02-07 02:16:42.000 -0500,DOWNTIME,Sistema de cola,Sistema de cola,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,824,13.733334,0.0,13.733334,0.0,0.0,13.733334,0,0,13.733334,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Bundler,149.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061045447,61045447,OFT 38FR_170ml_24 Size,CS,24.0,24.0,24.0,108432764.0,108432764.0,402.0,CS,2025-02-06 14:17:55.000 -0500,2025-02-08 01:08:30.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,18965,316.083336,0.0,316.083336,0.0,0.0,316.083336,0,0,0.0,316.083336,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I,204.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Packs,TFS80-6,000000000061038725,61038725,OFT 38FR_3.0oz_12_2P_Size,CS,24.0,24.0,24.0,108433948.0,108433948.0,17.5,CS,2025-02-07 02:16:44.000 -0500,2025-02-08 03:28:26.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,4515,75.249998,0.0,75.249998,0.0,0.0,75.249998,0,0,0.0,75.249998,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00F,FIPCO00F_Filler,187.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,FMX03179D,FMX03179D,OFT 28FT_75ml_72_Size,CS,72.0,72.0,72.0,108430290.0,108430290.0,450.0,CS,2025-02-05 04:12:19.000 -0500,2025-02-07 13:20:32.000 -0500,RUNNING,Running,Corriendo,Product,Product,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,22814,380.233334,0.0,380.233334,0.0,0.0,380.233334,0,0,0.0,380.233334,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I,204.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Packs,TFS80-6,000000000061019476,61019476,OFT 38FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108429895.0,108429895.0,16.75,CS,2025-02-05 04:56:34.000 -0500,2025-02-07 02:16:31.000 -0500,DOWNTIME,Bundler,Empaquetadora,Product,Product,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,2228,37.133331,0.0,37.133331,0.0,0.0,37.133331,0,0,37.133331,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00H,FIPCO00H_Filler,201.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX05611,FMX05611,OFT 35FT_125ml_48_Size,CS,48.0,48.0,48.0,108430843.0,108430843.0,450.0,CS,2025-02-05 03:02:04.000 -0500,2025-02-06 09:33:24.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,286.726666667,0.0,0.0,129027,121,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,6790.894736842,1654.192307692,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E,176.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,000000000000151093,151093,OFT 35FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108431438.0,108431438.0,18.75,CS,2025-02-05 16:37:43.000 -0500,2025-02-06 06:51:09.000 -0500,CHANGE OVER,Size,Tamaño,Product,Product,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,2972,49.533333,0.0,49.533333,0.0,49.533333,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00J,FIPCO00J_Cartoner,767.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061012223,61012223,OFT 28FT_60ml_24_3P_Size,CS,72.0,72.0,72.0,108427065.0,108427065.0,150.0,CS,2025-02-05 07:07:27.000 -0500,,CHANGE OVER,ALL,Todo,ALL,ALL,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,1174,19.566667,0.0,19.566667,0.0,19.566667,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,1,19.566667,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00G,FIPCO00G_CasePacker,193.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061029036,61029036,OFT 28FT_66ml_36_2P Size,CS,72.0,72.0,72.0,108423546.0,108423546.0,5.829999924,CS,2025-02-05 02:42:16.000 -0500,2025-02-05 19:16:09.000 -0500,PLANNED,Cleaning and Sanitation,C&S,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,36.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,918,15.3,0.0,15.3,0.0,15.3,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,15.3,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Cartoner,164.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX03180C,FMX03180C,OFT 32FT_100ml_72_Size,CS,72.0,72.0,72.0,108429892.0,108429892.0,438.0,CS,2025-02-05 00:08:44.000 -0500,2025-02-06 22:02:41.000 -0500,COMMON DOWNTIMES,OutSpec_Tube,FueraEspec_Tubo,Packing,Packing,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,2069,34.483333,0.0,34.483333,0.0,0.0,34.483333,0,0,34.483333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Filler,152.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061045447,61045447,OFT 38FR_170ml_24 Size,CS,24.0,24.0,24.0,108432764.0,108432764.0,402.0,CS,2025-02-06 14:17:45.000 -0500,2025-02-08 01:08:30.000 -0500,WAITING,Downstream,Acumulación,ALL,ALL,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,6868,114.466667,0.0,114.466667,0.0,0.0,114.466667,0,0,0.0,0.0,0.0,114.466667,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00G,FIPCO00G,190.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Packs,TFS80-6,000000000061028649,61028649,OFT 35FT_115ml_36_2P_Size,CS,72.0,72.0,72.0,108431439.0,108431439.0,5.83,CS,2025-02-05 19:16:10.000 -0500,2025-02-08 21:33:56.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,36.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,27170,452.833333,0.0,452.833333,0.0,0.0,452.833333,0,0,0.0,452.833333,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Cartoner,164.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX00035B,FMX00035B,OFT 38FT_150ml_72_Size,CS,72.0,72.0,72.0,108433722.0,108433722.0,390.0,CS,2025-02-06 23:03:27.000 -0500,,RUNNING,Running,Corriendo,Size,Size,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,15343,255.716665,0.0,255.716665,0.0,0.0,255.716665,0,0,0.0,255.716665,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_CasePacker,207.0,MX11,Breakdown,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061019476,61019476,OFT 38FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108429895.0,108429895.0,16.75,CS,2025-02-05 04:56:58.000 -0500,2025-02-07 02:16:42.000 -0500,DOWNTIME,Fallo de Pacrob,Fallo de Pacrob,ALL,ALL,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,141,2.35,0.0,2.35,0.0,0.0,2.35,0,0,2.35,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO001,FIPCO001,155.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Low Complexity,TFS80-6,MX03924A,MX03924A,OFT 25FT_50ml_144_Size,CS,144.0,144.0,144.0,108429891.0,108429891.0,3.13,CS,2025-02-04 15:20:53.000 -0500,2025-02-07 20:02:16.000 -0500,DOWNTIME,Filler,LLenadora,Product,,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,144.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,416,6.933333,0.0,6.933333,0.0,0.0,6.933333,0,0,6.933333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E,176.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,000000000000151093,151093,OFT 35FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108431438.0,108431438.0,18.75,CS,2025-02-05 16:37:43.000 -0500,2025-02-06 06:51:09.000 -0500,DOWNTIME,Filler,LLenadora,Product,Product,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,124,2.066666,0.0,2.066666,0.0,0.0,2.066666,0,0,2.066666,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO003,FIPCO003,169.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,MX06922A,MX06922A,OFT 38FT_160ml_72_Size,CS,72.0,72.0,72.0,108430838.0,108430838.0,5.58,CS,2025-02-05 10:18:41.000 -0500,2025-02-06 02:19:34.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,167.741935484,0.0,0.0,936,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,49.263157895,12.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO003,FIPCO003_Cartoner,171.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061001979,61001979,OFT 38FR_100ml_72_Size,CS,72.0,72.0,72.0,108427066.0,108427066.0,450.0,CS,2025-02-04 17:47:52.000 -0500,2025-02-05 10:18:42.000 -0500,DOWNTIME,Falla de operación,Falla de operación,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,366,6.1,0.0,6.1,0.0,0.0,6.1,0,0,6.1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E_Palletizer,181.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000000156755,156755,OFT 35FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108430289.0,108430289.0,18.75,CS,2025-02-05 00:04:31.000 -0500,2025-02-05 16:37:35.000 -0500,PLANNED,Cleaning and Sanitation,C&S,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,1514,25.233333,0.0,25.233333,0.0,25.233333,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,25.233333,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_CasePacker,151.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,MX05316A,MX05316A,OFT 38FR_4.0oz_24_Size,CS,24.0,24.0,24.0,108430841.0,108430841.0,18.75,CS,2025-02-05 09:02:46.000 -0500,2025-02-06 14:17:21.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,203.146666667,0.0,0.0,3809,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,200.473684211,48.833333333,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Cartoner,164.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX03180C,FMX03180C,OFT 32FT_100ml_72_Size,CS,72.0,72.0,72.0,108429892.0,108429892.0,438.0,CS,2025-02-05 00:08:44.000 -0500,2025-02-06 22:02:41.000 -0500,NOT ENTERED,Unknown,Desconocido,Packing,Packing,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,641,10.683334,0.0,10.683334,0.0,0.0,10.683334,0,0,10.683334,0.0,10.683334,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_CasePacker,165.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX03180C,FMX03180C,OFT 32FT_100ml_72_Size,CS,72.0,72.0,72.0,108429892.0,108429892.0,6.079999924,CS,2025-02-05 00:08:14.000 -0500,2025-02-06 22:02:41.000 -0500,WAITING,Upstream,Falta Producto,Packing,,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,2585,43.083333,0.0,43.083333,0.0,0.0,43.083333,0,0,0.0,0.0,0.0,43.083333,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00G,FIPCO00G,190.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Packs,TFS80-6,000000000061028649,61028649,OFT 35FT_115ml_36_2P_Size,CS,72.0,72.0,72.0,108431439.0,108431439.0,5.83,CS,2025-02-05 19:16:10.000 -0500,2025-02-08 21:33:56.000 -0500,DOWNTIME,Cartoner,Cartonadora,ALL,ALL,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,36.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,1188,19.8,0.0,19.8,0.0,0.0,19.8,0,0,19.8,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Cartoner,206.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061038725,61038725,OFT 38FR_3.0oz_12_2P_Size,CS,24.0,24.0,24.0,108433948.0,108433948.0,210.0,CS,2025-02-07 02:17:18.000 -0500,2025-02-08 03:28:39.000 -0500,DOWNTIME,Sistema de cola,Sistema de cola,ALL,ALL,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,114,1.9,0.0,1.9,0.0,0.0,1.9,0,0,1.9,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00G,FIPCO00G_Cartoner,192.0,MX11,Breakdown,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061028649,61028649,OFT 35FT_115ml_36_2P_Size,CS,72.0,72.0,72.0,108431439.0,108431439.0,210.0,CS,2025-02-05 19:17:20.000 -0500,,DOWNTIME,Error de introducción,Error de introducción,ALL,ALL,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,36.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,293,4.883333,0.0,4.883333,0.0,0.0,4.883333,0,0,4.883333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_Filler,143.0,MX11,Breakdown,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,000000000000151105,151105,OFT 25FZ_2.5oz_24_Size,CS,24.0,24.0,24.0,108433946.0,108433946.0,450.0,CS,2025-02-07 14:04:36.000 -0500,2025-02-09 20:23:49.000 -0500,DOWNTIME,Tubo Atorado en Dedo,Tubo Atorado en Dedo,Product,Product,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,339,5.65,0.0,5.65,0.0,0.0,5.65,0,0,5.65,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO003,FIPCO003_CasePacker,172.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061049090,61049090,OFT 38FR_170ml_72_Size,CS,72.0,72.0,72.0,108432487.0,108432487.0,5.579999924,CS,2025-02-06 02:20:13.000 -0500,2025-02-06 18:16:15.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,116.129033846,0.0,0.0,648,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,34.105263158,8.307692308,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO006,FIPCO006_CasePacker,227.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Kids,TFS30,000000000061024733,61024733,OFT 38FR_4.6oz_12_Size,CS,12.0,12.0,12.0,108432658.0,108432658.0,12.0,CS,2025-02-05 22:40:53.000 -0500,,PLANNED,Cleaning and Sanitation,C&S,Size,,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,548,9.133333,0.0,9.133333,0.0,9.133333,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,9.133333,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00H,FIPCO00H_Cartoner,199.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,MX02355A,MX02355A,OFT 35FR_75ml_48_Size,CS,48.0,48.0,48.0,108435404.0,108435404.0,450.0,CS,2025-02-07 13:39:17.000 -0500,2025-02-08 13:48:17.000 -0500,PLANNED,Cleaning and Sanitation,C&S,Product,Product,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,886,14.766666,0.0,14.766666,0.0,14.766666,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,14.766666,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Cartoner,164.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX00035B,FMX00035B,OFT 38FT_150ml_72_Size,CS,72.0,72.0,72.0,108432977.0,108432977.0,390.0,CS,2025-02-06 22:03:12.000 -0500,2025-02-06 22:59:08.000 -0500,CHANGE OVER,Size,Tamaño,Size,Size,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,1990,33.166667,0.0,33.166667,0.0,33.166667,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,1,33.166667,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00F,FIPCO00F_Bundler,184.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,FMX03179D,FMX03179D,OFT 28FT_75ml_72_Size,CS,72.0,72.0,72.0,108430290.0,108430290.0,450.0,CS,2025-02-05 04:12:19.000 -0500,2025-02-07 13:20:32.000 -0500,BUSINESS EXTERNAL,EMO,EMO,Product,Product,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Business External,16,0.266667,0.266667,0.0,0.0,0.0,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Bundler,149.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061045447,61045447,OFT 38FR_170ml_24 Size,CS,24.0,24.0,24.0,108432764.0,108432764.0,402.0,CS,2025-02-06 14:17:55.000 -0500,2025-02-08 01:08:30.000 -0500,DOWNTIME,Apilador,Apilador,ALL,ALL,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,42,0.7,0.0,0.7,0.0,0.0,0.7,0,0,0.7,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Filler,166.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX00035B,FMX00035B,OFT 38FT_150ml_72_Size,CS,72.0,72.0,72.0,108433722.0,108433722.0,390.0,CS,2025-02-06 23:03:27.000 -0500,,WAITING,Downstream,Acumulación,Size,Size,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,7268,121.13333,0.0,121.13333,0.0,0.0,121.13333,0,0,0.0,0.0,0.0,121.13333,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO001,FIPCO001_Palletizer,160.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,MX03924A,MX03924A,OFT 25FT_50ml_144_Size,CS,144.0,144.0,144.0,108429891.0,108429891.0,3.130000114,CS,2025-02-04 15:21:14.000 -0500,,DOWNTIME,Unknown,Desconocido,,,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,144.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,356.54950773,0.0,0.0,1116,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,58.736842105,14.307692308,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_CasePacker,146.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,000000000000151106,151106,OFT 25FZ_2.5oz_24_Size,CS,24.0,24.0,24.0,108433945.0,108433945.0,18.75,CS,2025-02-07 00:07:52.000 -0500,2025-02-07 13:58:36.000 -0500,DOWNTIME,Extracción de cajas,Extracción de cajas,Size,Size,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,39,0.65,0.0,0.65,0.0,0.0,0.65,0,0,0.65,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO003,FIPCO003_Bundler,170.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,MX05532A,MX05532A,OFT 38FR_125ml_48_Size,CS,48.0,48.0,48.0,108433621.0,108433621.0,450.0,CS,2025-02-06 18:16:21.000 -0500,2025-02-08 00:18:15.000 -0500,WAITING,Downstream,Acumulación,ALL,ALL,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,885,14.75,0.0,14.75,0.0,0.0,14.75,0,0,0.0,0.0,0.0,14.75,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO006,FIPCO006,224.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Kids,TFS30,000000000061024733,61024733,OFT 38FR_4.6oz_12_Size,CS,12.0,12.0,12.0,108432658.0,108432658.0,12.0,CS,2025-02-05 22:40:21.000 -0500,2025-02-09 00:26:51.000 -0500,BUSINESS EXTERNAL,No Demand,No Demanda,Size,,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Business External,28621,477.016667,477.016667,0.0,0.0,0.0,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,477.016667,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002_Bundler,163.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,FMX03180C,FMX03180C,OFT 32FT_100ml_72_Size,CS,72.0,72.0,72.0,108429892.0,108429892.0,438.0,CS,2025-02-05 00:08:44.000 -0500,2025-02-06 22:02:41.000 -0500,NOT ENTERED,Unknown,Desconocido,Packing,,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,170,2.833334,0.0,2.833334,0.0,0.0,2.833334,0,0,2.833334,0.0,2.833334,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00F,FIPCO00F_Bundler,184.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,MX06103A,MX06103A,OFT 28FT_75ml_72_Size,CS,72.0,72.0,72.0,108433947.0,108433947.0,450.0,CS,2025-02-07 13:21:33.000 -0500,2025-02-08 11:04:16.000 -0500,DOWNTIME,Unknown,Desconocido,,,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,0,0.0,0.0,0.0,15.4,0.0,0.0,6930,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,364.736842105,88.846153846,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I,204.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Packs,TFS80-6,000000000061038725,61038725,OFT 38FR_3.0oz_12_2P_Size,CS,24.0,24.0,24.0,108433948.0,108433948.0,17.5,CS,2025-02-07 02:16:44.000 -0500,2025-02-08 03:28:26.000 -0500,DOWNTIME,Filler,LLenadora,ALL,ALL,Shift3,2025-02-06 21:30:00.000 -0500,2025-02-07 05:59:59.000 -0500,510.0,D,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,13,0.216667,0.0,0.216667,0.0,0.0,0.216667,0,0,0.216667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO006,FIPCO006_CasePacker,227.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Kids,TFS30,000000000061024733,61024733,OFT 38FR_4.6oz_12_Size,CS,12.0,12.0,12.0,108432658.0,108432658.0,12.0,CS,2025-02-05 22:40:53.000 -0500,,PLANNED,Lunch/Break,Comida,Size,,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,4218,70.3,0.0,70.3,0.0,70.3,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,70.3,70.3,70.3,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO003,FIPCO003_Bundler,170.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,MX05532A,MX05532A,OFT 38FR_125ml_48_Size,CS,48.0,48.0,48.0,108433621.0,108433621.0,450.0,CS,2025-02-06 18:16:21.000 -0500,2025-02-08 00:18:15.000 -0500,MAINTENANCE,Autonomous Maintenance,Mntto. Autónomo,ALL,ALL,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,7,0.116667,0.0,0.116667,0.0,0.116667,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.116667,0.116667,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_CasePacker,146.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,MX07159A,MX07159A,OFT 25FT_2.2oz_24_Size,CS,24.0,24.0,24.0,108429893.0,108429893.0,18.75,CS,2025-02-06 06:08:37.000 -0500,2025-02-07 00:07:28.000 -0500,CHANGE OVER,Product,Producto,Product,Product,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,8040,134.0,0.0,134.0,0.0,134.0,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,1,134.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Cartoner,206.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061038725,61038725,OFT 38FR_3.0oz_12_2P_Size,CS,24.0,24.0,24.0,108433948.0,108433948.0,210.0,CS,2025-02-07 02:17:18.000 -0500,2025-02-08 03:28:39.000 -0500,CHANGE OVER,ALL,Todo,ALL,ALL,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,12.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,13241,220.683333,0.0,220.683333,0.0,220.683333,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_Bundler,144.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,000000000000151105,151105,OFT 25FZ_2.5oz_24_Size,CS,24.0,24.0,24.0,108433946.0,108433946.0,450.0,CS,2025-02-07 14:04:34.000 -0500,2025-02-09 20:23:49.000 -0500,DOWNTIME,Transporte de láminas,Transporte de láminas,Product,Product,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,131,2.183333,0.0,2.183333,0.0,0.0,2.183333,0,0,2.183333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00F,FIPCO00F,183.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Packs,TFS80-6,FMX03179D,FMX03179D,OFT 28FT_75ml_72_Size,CS,72.0,72.0,72.0,108430290.0,108430290.0,6.25,CS,2025-02-05 04:11:32.000 -0500,2025-02-07 13:20:13.000 -0500,DOWNTIME,Cartoner,Cartonadora,ALL,ALL,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,1114,18.566667,0.0,18.566667,0.0,0.0,18.566667,0,0,18.566667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009,148.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,000000000061045447,61045447,OFT 38FR_170ml_24 Size,CS,24.0,24.0,24.0,108432764.0,108432764.0,16.75,CS,2025-02-06 14:17:29.000 -0500,2025-02-08 01:08:22.000 -0500,CHANGE OVER,ALL,Todo,ALL,ALL,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Plant Decision,3898,64.966667,0.0,64.966667,0.0,64.966667,0.0,0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_CasePacker,207.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061019476,61019476,OFT 38FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108429895.0,108429895.0,16.75,CS,2025-02-05 04:56:58.000 -0500,2025-02-07 02:16:42.000 -0500,DOWNTIME,Transporte posterior,Transporte posterior,ALL,ALL,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,98,1.633333,0.0,1.633333,0.0,0.0,1.633333,0,0,1.633333,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00I,FIPCO00I_Cartoner,206.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061032091,61032091,OFT 38FR_4.2oz_24_Size,CS,24.0,24.0,24.0,108436118.0,108436118.0,450.0,CS,2025-02-08 03:28:58.000 -0500,2025-02-10 00:30:39.000 -0500,WAITING,Upstream,Falta Producto,ALL,ALL,Shift3,2025-02-07 21:30:00.000 -0500,2025-02-08 05:59:59.000 -0500,510.0,A,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,783,13.05,0.0,13.05,0.0,0.0,13.05,0,0,0.0,0.0,0.0,13.05,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Filler,152.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061044255,61044255,OFT 38FR_120ml_24_Size,CS,24.0,24.0,24.0,108430288.0,108430288.0,450.0,CS,2025-02-04 16:06:17.000 -0500,2025-02-05 09:01:41.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift1,2025-02-05 06:00:00.000 -0500,2025-02-05 13:59:59.000 -0500,480.0,B,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,1279,21.316666,0.0,21.316666,0.0,0.0,21.316666,0,0,0.0,21.316666,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E_Bundler,177.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000000178331,178331,OFT 35FT_4.6oz_24_Size,CS,24.0,24.0,24.0,108434583.0,108434583.0,450.0,CS,2025-02-07 13:07:08.000 -0500,2025-02-09 13:21:49.000 -0500,WAITING,Upstream,Falta Producto,ALL,ALL,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,166,2.766666,0.0,2.766666,0.0,0.0,2.766666,0,0,0.0,0.0,0.0,2.766666,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO002,FIPCO002,162.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,Secondary Line,TFS80-6,FMX03180C,FMX03180C,OFT 32FT_100ml_72_Size,CS,72.0,72.0,72.0,108429892.0,108429892.0,6.08,CS,2025-02-05 00:07:43.000 -0500,2025-02-06 22:02:32.000 -0500,DOWNTIME,Bundler,Empaquetadora,Packing,,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,72.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,2017,33.616667,0.0,33.616667,0.0,0.0,33.616667,0,0,33.616667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E,176.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,000000000000178331,178331,OFT 35FT_4.6oz_24_Size,CS,24.0,24.0,24.0,108434583.0,108434583.0,18.75,CS,2025-02-07 13:06:18.000 -0500,2025-02-09 13:21:37.000 -0500,DOWNTIME,Bundler,Empaquetadora,ALL,ALL,Shift2,2025-02-07 14:00:00.000 -0500,2025-02-07 21:29:59.000 -0500,450.0,C,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,3030,50.5,0.0,50.5,0.0,0.0,50.5,0,0,50.5,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Cartoner,150.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,MX05316A,MX05316A,OFT 38FR_4.0oz_24_Size,CS,24.0,24.0,24.0,108430841.0,108430841.0,450.0,CS,2025-02-05 09:02:46.000 -0500,2025-02-06 14:17:21.000 -0500,DOWNTIME,Ending order,Terminando Orden,ALL,ALL,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,6,0.1,0.0,0.1,0.0,0.0,0.1,0,0,0.1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_Filler,143.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,MX06994A,MX06994A,OFT_25FT_2.0oz_24_Size,CS,24.0,24.0,24.0,108432488.0,108432488.0,450.0,CS,2025-02-05 18:14:49.000 -0500,2025-02-06 06:08:00.000 -0500,WAITING,Downstream,Acumulación,Product,Product,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,1600,26.666669,0.0,26.666669,0.0,0.0,26.666669,0,0,0.0,0.0,0.0,26.666669,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E,176.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,000000000000151093,151093,OFT 35FT_6.0oz_24_Size,CS,24.0,24.0,24.0,108431438.0,108431438.0,18.75,CS,2025-02-05 16:37:43.000 -0500,2025-02-06 06:51:09.000 -0500,DOWNTIME,Cartoner,Cartonadora,Product,Product,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,1727,28.783335,0.0,28.783335,0.0,0.0,28.783335,0,0,28.783335,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00E,FIPCO00E,176.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Line,,High Complexity,TFS80-6,000000000000151114,151114,OFT 35FT_4.0oz_24_Size,CS,24.0,24.0,24.0,108432723.0,108432723.0,18.75,CS,2025-02-06 06:51:27.000 -0500,2025-02-06 20:14:45.000 -0500,DOWNTIME,Filler,LLenadora,ALL,ALL,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,3719,61.983334,0.0,61.983334,0.0,0.0,61.983334,0,0,61.983334,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00G,FIPCO00G_Palletizer,195.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061028649,61028649,OFT 35FT_115ml_36_2P_Size,CS,72.0,72.0,72.0,108431439.0,108431439.0,5.829999924,CS,2025-02-05 19:17:21.000 -0500,,RUNNING,Running,Corriendo,ALL,ALL,Shift3,2025-02-05 21:30:00.000 -0500,2025-02-06 05:59:59.000 -0500,510.0,D,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,36.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,29829,497.15,0.0,497.15,0.0,0.0,497.15,0,0,0.0,497.15,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO009,FIPCO009_Palletizer,153.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,High Complexity,TFS80-6,000000000061045447,61045447,OFT 38FR_170ml_24 Size,CS,24.0,24.0,24.0,108432764.0,108432764.0,16.75,CS,2025-02-06 14:17:45.000 -0500,2025-02-08 01:08:30.000 -0500,RUNNING,Running,Corriendo,ALL,ALL,Shift2,2025-02-06 14:00:00.000 -0500,2025-02-06 21:29:59.000 -0500,450.0,C,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Runtime,16994,283.233333,0.0,283.233333,0.0,0.0,283.233333,0,0,0.0,283.233333,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO004,FIPCO004_CasePacker,146.0,MX11,,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Low Complexity,TFS80-6,MX06994A,MX06994A,OFT_25FT_2.0oz_24_Size,CS,24.0,24.0,24.0,108432488.0,108432488.0,18.75,CS,2025-02-05 18:14:56.000 -0500,2025-02-06 06:08:02.000 -0500,WAITING,Upstream,Falta Producto,Size,Size,Shift2,2025-02-05 14:00:00.000 -0500,2025-02-05 21:29:59.000 -0500,450.0,C,False,2025-02-05,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Waiting,930,15.5,0.0,15.5,0.0,0.0,15.5,0,0,0.0,0.0,0.0,15.5,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00H,FIPCO00H_Filler,201.0,MX11,Adjustment,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Secondary Line,TFS80-6,MX02080D,MX02080D,OFT 35FR_75ml_48_Size,CS,48.0,48.0,48.0,108432978.0,108432978.0,450.0,CS,2025-02-06 09:33:48.000 -0500,2025-02-07 13:38:44.000 -0500,DOWNTIME,Transporte de cajas,Transporte de cajas,ALL,ALL,Shift1,2025-02-07 06:00:00.000 -0500,2025-02-07 13:59:59.000 -0500,480.0,B,False,2025-02-07,2025-02-01,2025-01-01,2025-01-01,48.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,46,0.766667,0.0,0.766667,0.0,0.0,0.766667,0,0,0.766667,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-FIPCO00J,FIPCO00J_Cartoner,767.0,MX11,Breakdown,Full OPERA,PACK,OC,TPST,OralCare,Equipment,,Packs,TFS80-6,000000000061012223,61012223,OFT 28FT_60ml_24_3P_Size,CS,72.0,72.0,72.0,108427065.0,108427065.0,150.0,CS,2025-02-05 07:07:27.000 -0500,,DOWNTIME,Error de propulsión general,Error de propulsión general,ALL,ALL,Shift1,2025-02-06 06:00:00.000 -0500,2025-02-06 13:59:59.000 -0500,480.0,B,False,2025-02-06,2025-02-01,2025-01-01,2025-01-01,24.0,"Mexico, Mission Hills",Y,MX,Mexico,MFG,37980,MX03,Strategic,20.9817163,-100.4223264,LA,Latin America,LA,Latin America,Unplanned,177,2.95,0.0,2.95,0.0,0.0,2.95,0,0,2.95,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19,78,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,OPERA,Supply Chain,Manufacturing
-
-
 ===========================================
 FILE: ontology_generator/__init__.py
 ===========================================
@@ -973,7 +753,7 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
     Returns:
         Tuple containing:
         - Dictionary mapping line IDs to equipment sequences
-        - Dictionary with sequence statistics
+        - Dictionary with sequence statistics and diagnostics
     """
     analysis_logger.info("Analyzing equipment sequences in ontology")
     
@@ -1000,41 +780,191 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
     
     if not lines:
         analysis_logger.warning("No production lines found in ontology")
-        return {}, {}
+        return {}, {"error": "No production lines found"}
     
+    # Get essential ontology elements
+    equipment_class = None
+    for cls in onto.classes():
+        if cls.name == "Equipment":
+            equipment_class = cls
+            break
+            
+    if not equipment_class:
+        analysis_logger.warning("Equipment class not found in ontology")
+        return {}, {"error": "Equipment class not found"}
+        
+    # Get the "equipmentIsUpstreamOf" property
+    equipment_is_upstream_of = None
+    for prop in onto.object_properties():
+        if prop.name == "equipmentIsUpstreamOf":
+            equipment_is_upstream_of = prop
+            break
+            
     # Generate sequences for each line
     sequences = {}
-    stats = {"total_lines": len(lines), "lines_with_sequence": 0, "total_equipment": 0, "class_counts": {}}
+    stats = {
+        "total_lines": len(lines), 
+        "lines_with_sequence": 0,
+        "lines_without_sequence": 0,
+        "total_equipment": 0, 
+        "class_counts": {},
+        "lines_with_equipment_but_no_sequence": [],
+        "classes_without_sequence_position": set(),
+        "equipment_without_sequence_by_line": {}
+    }
     
-    # Use safe sort
-    try:
-        sorted_lines = _safe_sort_by_attribute(lines, "lineId")
-    except Exception as e:
-        analysis_logger.error(f"Error sorting lines: {e} - using unsorted lines")
-        sorted_lines = lines
+    # Get all equipment individuals
+    all_equipment = list(onto.search(type=equipment_class))
+    stats["total_equipment"] = len(all_equipment)
     
-    for line in sorted_lines:
-        line_id = getattr(line, "lineId", line.name)
-        sequence = get_equipment_sequence_for_line(onto, line)
-        
-        if sequence:
-            sequences[line_id] = sequence
-            stats["lines_with_sequence"] += 1
-            stats["total_equipment"] += len(sequence)
+    # Track equipment classes and their sequence positions
+    class_sequence_positions = {}
+    for equip in all_equipment:
+        if hasattr(equip, "memberOfClass") and equip.memberOfClass:
+            class_ind = equip.memberOfClass
+            class_id = getattr(class_ind, "equipmentClassId", class_ind.name)
             
             # Count equipment by class
-            for eq in sequence:
-                eq_class = "Unknown"
-                if hasattr(eq, "memberOfClass") and eq.memberOfClass:
-                    if hasattr(eq.memberOfClass, "equipmentClassId"):
-                        eq_class = eq.memberOfClass.equipmentClassId
-                
-                if eq_class not in stats["class_counts"]:
-                    stats["class_counts"][eq_class] = 0
-                stats["class_counts"][eq_class] += 1
+            if class_id not in stats["class_counts"]:
+                stats["class_counts"][class_id] = 0
+            stats["class_counts"][class_id] += 1
+            
+            # Check sequence position
+            if class_id not in class_sequence_positions:
+                position = getattr(class_ind, "defaultSequencePosition", None)
+                class_sequence_positions[class_id] = position
+                if position is None:
+                    stats["classes_without_sequence_position"].add(class_id)
     
-    analysis_logger.info(f"Analysis complete. Found sequences for {stats['lines_with_sequence']} of {stats['total_lines']} lines")
-    return sequences, stats 
+    # Process each line
+    for line in lines:
+        line_id = getattr(line, "lineId", line.name)
+        line_id_str = str(line_id[0]) if isinstance(line_id, list) and line_id else str(line_id)
+        sequence = get_equipment_sequence_for_line(onto, line)
+        
+        # Map line ID to its equipment sequence
+        sequences[line_id_str] = sequence
+        
+        # Track equipment on this line that don't have a sequence
+        equipment_on_line = []
+        for equip in all_equipment:
+            if hasattr(equip, "isPartOfProductionLine"):
+                lines_list = equip.isPartOfProductionLine
+                if not isinstance(lines_list, list):
+                    lines_list = [lines_list] if lines_list else []
+                    
+                if line in lines_list:
+                    equipment_on_line.append(equip)
+        
+        # Check if this line has equipment but no sequence
+        if equipment_on_line and not sequence:
+            stats["lines_without_sequence"] += 1
+            stats["lines_with_equipment_but_no_sequence"].append(line_id_str)
+            
+            # Track equipment on this line without a sequence link
+            stats["equipment_without_sequence_by_line"][line_id_str] = []
+            for equip in equipment_on_line:
+                # Get class information
+                class_name = "Unknown"
+                if hasattr(equip, "memberOfClass") and equip.memberOfClass:
+                    class_name = getattr(equip.memberOfClass, "equipmentClassId", equip.memberOfClass.name)
+                
+                # Add to the list
+                equip_id = getattr(equip, "equipmentId", equip.name)
+                stats["equipment_without_sequence_by_line"][line_id_str].append({
+                    "id": equip_id,
+                    "name": getattr(equip, "equipmentName", equip.name),
+                    "class": class_name,
+                    "class_has_position": class_name in class_sequence_positions and class_sequence_positions[class_name] is not None
+                })
+        
+        # Add to statistics
+        if sequence:
+            stats["lines_with_sequence"] += 1
+            
+    # Add sequence position information to statistics
+    stats["classes_with_position"] = sum(1 for pos in class_sequence_positions.values() if pos is not None)
+    stats["classes_without_position"] = sum(1 for pos in class_sequence_positions.values() if pos is None)
+    stats["class_positions"] = {cls: pos for cls, pos in class_sequence_positions.items() if pos is not None}
+    
+    # Convert set to list for JSON serialization
+    stats["classes_without_sequence_position"] = list(stats["classes_without_sequence_position"])
+    
+    analysis_logger.info(f"Sequence analysis complete: {stats['lines_with_sequence']} lines with sequences, "
+                          f"{stats['lines_without_sequence']} lines without sequences, "
+                          f"{len(stats['classes_without_sequence_position'])} classes without positions")
+    
+    return sequences, stats
+
+def generate_enhanced_sequence_report(onto: Ontology) -> str:
+    """
+    Generates an enhanced report of equipment sequences and related issues.
+    
+    Args:
+        onto: The ontology object
+        
+    Returns:
+        A string with the enhanced sequence report
+    """
+    # Get sequence data and statistics
+    sequences, stats = analyze_equipment_sequences(onto)
+    
+    # Build report
+    report_lines = []
+    report_lines.append("\n=== ENHANCED EQUIPMENT SEQUENCE REPORT ===")
+    
+    # Summary statistics
+    report_lines.append(f"\nSUMMARY STATISTICS:")
+    report_lines.append(f"  Total production lines: {stats['total_lines']}")
+    report_lines.append(f"  Lines with equipment sequences: {stats['lines_with_sequence']}")
+    report_lines.append(f"  Lines with equipment but no sequence: {len(stats.get('lines_with_equipment_but_no_sequence', []))}")
+    report_lines.append(f"  Total equipment instances: {stats['total_equipment']}")
+    report_lines.append(f"  Equipment classes without sequence positions: {len(stats.get('classes_without_sequence_position', []))}")
+    
+    # Class sequence positions
+    report_lines.append(f"\nEQUIPMENT CLASS SEQUENCE POSITIONS:")
+    for cls, pos in sorted(stats.get('class_positions', {}).items(), key=lambda x: x[1]):
+        report_lines.append(f"  {cls}: Position {pos}")
+    
+    # Classes without positions
+    if stats.get('classes_without_sequence_position'):
+        report_lines.append(f"\nEQUIPMENT CLASSES WITHOUT SEQUENCE POSITIONS:")
+        for cls in sorted(stats.get('classes_without_sequence_position', [])):
+            report_lines.append(f"  {cls}")
+    
+    # Lines with equipment but no sequence
+    if stats.get('lines_with_equipment_but_no_sequence'):
+        report_lines.append(f"\nLINES WITH EQUIPMENT BUT NO SEQUENCE ESTABLISHED:")
+        for line_id in sorted(stats.get('lines_with_equipment_but_no_sequence', [])):
+            report_lines.append(f"  Line {line_id}:")
+            equip_list = stats.get('equipment_without_sequence_by_line', {}).get(line_id, [])
+            for eq in equip_list:
+                class_status = "No position" if not eq['class_has_position'] else "Has position"
+                report_lines.append(f"    {eq['id']} ({eq['name']}) - Class: {eq['class']} ({class_status})")
+    
+    # Equipment sequences by line
+    report_lines.append(f"\nEQUIPMENT SEQUENCES BY LINE:")
+    for line_id, sequence in sorted(sequences.items()):
+        report_lines.append(f"\nLine: {line_id}")
+        
+        if not sequence:
+            report_lines.append("  No equipment sequence found")
+            continue
+        
+        # List equipment in sequence
+        for i, eq in enumerate(sequence, 1):
+            eq_id = getattr(eq, "equipmentId", "Unknown")
+            eq_name = getattr(eq, "equipmentName", eq.name)
+            eq_class = "Unknown"
+            
+            # Get class information
+            if hasattr(eq, "memberOfClass") and eq.memberOfClass:
+                if hasattr(eq.memberOfClass, "equipmentClassId"):
+                    eq_class = eq.memberOfClass.equipmentClassId
+            
+            report_lines.append(f"  {i}. {eq_id} ({eq_name}) - Class: {eq_class}")
+    
+    return "\n".join(report_lines) 
 
 ===========================================
 FILE: ontology_generator/config.py
@@ -1066,7 +996,10 @@ SUPPRESSED_WARNINGS = [
     "Context entity 'EventRecord' required for ProductionRequest.hasAssociatedEvent",
     "Context entity 'EventRecord' required for Shift.includesEvent",
     "Context entity 'Person' required for EventRecord.performedBy",
-    "Created new individual"
+    "Created new individual",
+    "Context entity 'Material' required for EventRecord.consumedMaterial not found",
+    "Context entity 'Material' required for EventRecord.producedMaterial not found",
+    "Context entity 'ProductionRequest' required for EventRecord.associatedRequest not found"
 ]
 
 # --- Language Mapping for Alternative Reason Descriptions ---
@@ -1096,6 +1029,23 @@ DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
     "CaseSealer": 6,
     "Palletizer": 7,
     # Add any other classes with default positions if needed
+}
+
+# --- Line-Specific Equipment Class Sequencing ---
+# Allows for custom equipment sequences for specific lines
+# Format: {"line_id": {"equipment_class": sequence_position}}
+LINE_SPECIFIC_EQUIPMENT_SEQUENCE: Dict[str, Dict[str, int]] = {
+    # Example: Line FIPCO001 has a different sequence than the default
+    "FIPCO001": {
+        "Filler": 1,
+        "Cartoner": 2,
+        "CaseFormer": 3,
+        "CasePacker": 4,
+        "Bundler": 5,    # Different from default sequence (moved after case packer)
+        "CaseSealer": 6,
+        "Palletizer": 7
+    },
+    # Add more line-specific sequences as needed
 }
 
 # --- XSD Type Mapping ---
@@ -1414,13 +1364,47 @@ def validate_property_mappings(property_mappings: Dict[str, Dict[str, Dict[str, 
     else:
         # Check for common EventRecord properties
         event_props = property_mappings['EventRecord'].get('data_properties', {})
-        expected_props = ['downtimeMinutes', 'runTimeMinutes', 'reportedDurationMinutes']
+        # TKT-006: Expanded check for AE model metrics
+        expected_props = [
+            'downtimeMinutes', 
+            'runTimeMinutes', 
+            'effectiveRuntimeMinutes', 
+            'reportedDurationMinutes',
+            'goodProductionQuantity',
+            'rejectProductionQuantity',
+            'allMaintenanceTimeMinutes'
+        ]
         missing_props = [p for p in expected_props if p not in event_props]
         
         if missing_props:
-            logger.warning(f"Some expected EventRecord properties are missing from mappings: {missing_props}")
+            logger.warning(f"Some expected EventRecord AE model properties are missing from mappings: {missing_props}")
             # Don't fail validation for this, but log the warning
-    
+        
+        # TKT-006: Verify that xsd:double is used for time metrics and xsd:integer for quantities
+        time_metrics = [
+            'downtimeMinutes', 
+            'runTimeMinutes', 
+            'effectiveRuntimeMinutes', 
+            'reportedDurationMinutes',
+            'allMaintenanceTimeMinutes'
+        ]
+        quantity_metrics = [
+            'goodProductionQuantity',
+            'rejectProductionQuantity'
+        ]
+        
+        for prop in time_metrics:
+            if prop in event_props:
+                data_type = event_props[prop].get('data_type')
+                if data_type not in ['xsd:double', 'xsd:decimal', 'xsd:float']:
+                    logger.warning(f"EventRecord time metric '{prop}' should use 'xsd:double' data type, found '{data_type}'")
+        
+        for prop in quantity_metrics:
+            if prop in event_props:
+                data_type = event_props[prop].get('data_type')
+                if data_type not in ['xsd:integer', 'xsd:int']:
+                    logger.warning(f"EventRecord quantity metric '{prop}' should use 'xsd:integer' data type, found '{data_type}'")
+
     # Log summary stats
     logger.info(f"Property mapping validation complete. Found {entity_count} entities, {data_prop_count} data properties, {object_prop_count} object properties.")
     logger.info(f"Validation {'PASSED' if validation_passed else 'FAILED'}")
@@ -2620,31 +2604,46 @@ def test_property_mappings(spec_file_path: str):
 
 def analyze_equipment_sequence_in_ontology(owl_file_path: str, verbose: bool = False) -> bool:
     """
-    Analyze equipment sequences in an existing ontology file.
+    Standalone function to analyze equipment sequences in an existing ontology file.
     
     Args:
         owl_file_path: Path to the OWL file to analyze
-        verbose: Whether to output verbose logging
+        verbose: Enable verbose output
         
     Returns:
-        bool: True if analysis was successful, False otherwise
+        True if analysis was successful, False otherwise
     """
     # Configure logging
-    log_level = logging.DEBUG if verbose else logging.INFO
-    configure_logging(log_level)
-    logger = main_logger
-    
-    logger.info(f"Analyzing equipment sequences in ontology file: {owl_file_path}")
+    configure_logging(logging.DEBUG if verbose else logging.INFO)
+    logger = logging.getLogger(__name__)
     
     try:
-        # Load the ontology
+        # Import here to avoid circular imports
+        from ontology_generator.analysis.sequence_analysis import (
+            generate_equipment_sequence_report, 
+            analyze_equipment_sequences,
+            generate_enhanced_sequence_report
+        )
+        from owlready2 import get_ontology, IRIS
+        
+        logger.info(f"Loading ontology from {owl_file_path} for sequence analysis...")
+        # Initialize owlready2 world and load ontology
+        from owlready2 import World
         world = World()
         onto = world.get_ontology(owl_file_path).load()
+        
+        # Get namespace
+        IRIS.prefixes[""] = onto.base_iri
+        
         logger.info(f"Loaded ontology: {onto.base_iri}")
         
-        # Generate and print the equipment sequence report
+        # Generate and print the standard equipment sequence report
         sequence_report = generate_equipment_sequence_report(onto)
         print(sequence_report)
+        
+        # Generate and print the enhanced sequence report 
+        enhanced_report = generate_enhanced_sequence_report(onto)
+        print(enhanced_report)
         
         # Run deeper analysis if verbose
         if verbose:
@@ -2654,7 +2653,7 @@ def analyze_equipment_sequence_in_ontology(owl_file_path: str, verbose: bool = F
             print(f"Lines with Equipment Sequence: {stats['lines_with_sequence']}")
             print(f"Total Equipment in Sequences: {stats['total_equipment']}")
             print("\nEquipment Classes:")
-            for cls, count in sorted(stats['class_counts'].items(), key=lambda x: x[1], reverse=True):
+            for cls, count in sorted(stats.get('class_counts', {}).items(), key=lambda x: x[1], reverse=True):
                 print(f"  {cls}: {count}")
         
         return True
@@ -3287,6 +3286,20 @@ def set_prop_if_col_exists(
 
     # Set the property
     context.set_prop(individual, prop_name, value)
+    
+    # TKT-006: Add specific debug logging for AE model metrics
+    ae_metrics = [
+        'downtimeMinutes', 
+        'runTimeMinutes', 
+        'effectiveRuntimeMinutes',
+        'goodProductionQuantity',
+        'rejectProductionQuantity',
+        'allMaintenanceTimeMinutes'
+    ]
+    
+    if prop_name in ae_metrics:
+        logger.info(f"TKT-006: Successfully set AE model metric {prop_name} = {value} (from column {col_name}) on {individual.name}")
+    
     return True
 
 def truncate_row_repr(row: Dict[str, Any], max_length: int = 100) -> str:
@@ -3488,6 +3501,12 @@ def apply_object_property_mappings(
                  logger.warning(f"Cannot link via context key '{link_context_key}' for {entity_name}.{prop_name}: individuals_in_row dictionary was not provided or invalid for row {row.get('row_num', 'N/A')}. Skipping link.")
                  continue
 
+             # Added for TKT-002: Extra debugging for ProductionLine context lookups
+             if entity_name == "Equipment" and prop_name == "isPartOfProductionLine":
+                 logger.debug(f"Row {row.get('row_num', 'N/A')} - Equipment.isPartOfProductionLine context lookup - Available keys in individuals_in_row: {list(individuals_in_row.keys())}")
+                 if "EQUIPMENT_TYPE" in row:
+                     logger.debug(f"Row {row.get('row_num', 'N/A')} - EQUIPMENT_TYPE value in row: {row.get('EQUIPMENT_TYPE')}")
+
              target_individual = individuals_in_row.get(link_context_key)
              if not target_individual:
                  # Track missing context entity to log only once
@@ -3520,6 +3539,19 @@ def apply_object_property_mappings(
             if entity_name == "EventRecord":
                 if prop_name == "involvesResource":
                     logger.debug(f"Successfully linked EventRecord {individual.name} to resource {target_individual.name} via {prop_name}")
+                # TKT-004: Add specific logging for event context relationships
+                elif prop_name == "duringShift":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to Shift {target_individual.name} via context key '{link_context_key}'")
+                elif prop_name == "occursDuring":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to TimeInterval {target_individual.name} via context key '{link_context_key}'")
+                elif prop_name == "eventHasState":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to OperationalState {target_individual.name} via context key '{link_context_key}'")
+                elif prop_name == "eventHasReason":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to OperationalReason {target_individual.name} via context key '{link_context_key}'")
+            
+            # Added for TKT-002: Track Equipment-Line links specifically
+            if entity_name == "Equipment" and prop_name == "isPartOfProductionLine":
+                logger.info(f"Successfully linking Equipment {individual.name} to Line {target_individual.name} via context key '{link_context_key}'")
 
     # logger.debug(f"Applied {links_applied_count} object property links for {entity_name} individual {individual.name}. Row {row.get('row_num', 'N/A')}.")
 
@@ -3727,31 +3759,61 @@ def process_equipment_and_class(
 
     eq_class_ind = get_or_create_individual(cls_EquipmentClass, eq_class_base_name, context.onto, all_created_individuals_by_uid, add_labels=eq_class_labels)
 
+    # Ensure the equipmentClassId data property is set with the correct base name
+    prop_equipmentClassId = context.get_prop("equipmentClassId")
+    if eq_class_ind and prop_equipmentClassId:
+        context.set_prop(eq_class_ind, "equipmentClassId", eq_class_base_name)
+        pop_logger.debug(f"Explicitly set equipmentClassId='{eq_class_base_name}' on individual {eq_class_ind.name}")
+
+    # Initialize sequence position to None
     eq_class_pos = None
+
     if eq_class_ind and pass_num == 1 and "EquipmentClass" in property_mappings:
+        # First check if there's a mapping for defaultSequencePosition
+        sequence_pos_mapping = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('defaultSequencePosition')
+        sequence_pos_column = sequence_pos_mapping.get('column') if sequence_pos_mapping else None
+        
+        # Try to get sequence position from mapped column if available
+        if sequence_pos_column and sequence_pos_column in row:
+            raw_pos_from_data = row.get(sequence_pos_column)
+            # Use safe_cast to convert to integer
+            pos_from_data = safe_cast(raw_pos_from_data, int)
+            if pos_from_data is not None:
+                # Set the position directly from data
+                context.set_prop(eq_class_ind, "defaultSequencePosition", pos_from_data)
+                eq_class_pos = pos_from_data
+                pop_logger.info(f"Set sequence position {pos_from_data} for equipment class '{eq_class_base_name}' from column '{sequence_pos_column}'")
+            else:
+                pop_logger.debug(f"Column '{sequence_pos_column}' exists but value '{raw_pos_from_data}' could not be cast to int")
+        
+        # Apply all other mapped data properties
         apply_data_property_mappings(eq_class_ind, property_mappings["EquipmentClass"], row, context, "EquipmentClass", pop_logger)
-        # Extract sequence position after applying data properties
-        pos_prop_name = "defaultSequencePosition"
-        if context.get_prop(pos_prop_name):
-            try:
-                # Use safe_cast directly on the potential attribute value
-                # getattr might return None or the value
-                raw_pos = getattr(eq_class_ind, pos_prop_name, None)
-                eq_class_pos = safe_cast(raw_pos, int) if raw_pos is not None else None
-                
-                # If no position set, try using the default from config
-                if eq_class_pos is None and eq_class_base_name in DEFAULT_EQUIPMENT_SEQUENCE:
-                    default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
-                    pop_logger.info(f"Using default sequence position {default_pos} for equipment class '{eq_class_base_name}' from config.DEFAULT_EQUIPMENT_SEQUENCE")
-                    # Set the position in the individual
-                    context.set_prop(eq_class_ind, pos_prop_name, default_pos)
-                    eq_class_pos = default_pos
-                elif eq_class_pos is None:
-                    pop_logger.debug(f"No sequence position available for equipment class '{eq_class_base_name}' (not in config defaults)")
-            except Exception as e:
-                 pop_logger.warning(f"Could not read or cast {pos_prop_name} for {eq_class_ind.name}: {e}")
+        
+        # If no position was set from mapped column, check if we already have one from prior processing or try config
+        if eq_class_pos is None:
+            # Check if position was set by apply_data_property_mappings
+            raw_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+            eq_class_pos = safe_cast(raw_pos, int) if raw_pos is not None else None
+            
+            # If still no position, try using the default from config
+            if eq_class_pos is None and eq_class_base_name in DEFAULT_EQUIPMENT_SEQUENCE:
+                default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
+                pop_logger.info(f"Using default sequence position {default_pos} for equipment class '{eq_class_base_name}' from config.DEFAULT_EQUIPMENT_SEQUENCE")
+                # Set the position in the individual
+                context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
+                eq_class_pos = default_pos
+            elif eq_class_pos is None:
+                pop_logger.debug(f"No sequence position available for equipment class '{eq_class_base_name}' (not in mapped column or config defaults)")
+        
         # Prepare info for tracking
         eq_class_info_out = (eq_class_base_name, eq_class_ind, eq_class_pos)
+        
+        # Add some validation logging to verify the position was properly set
+        final_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+        if final_pos is not None:
+            pop_logger.debug(f"Verified equipment class '{eq_class_base_name}' has defaultSequencePosition set to {final_pos}")
+        else:
+            pop_logger.warning(f"Equipment class '{eq_class_base_name}' still has no defaultSequencePosition after all attempts")
 
     elif not eq_class_ind:
         pop_logger.warning(f"Failed to create/retrieve EquipmentClass individual for base '{eq_class_base_name}'. Equipment processing might be incomplete.")
@@ -4799,6 +4861,7 @@ from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.population.core import PopulationContext, _set_property_value
+from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE, LINE_SPECIFIC_EQUIPMENT_SEQUENCE
 
 def _safe_sort_by_position(items, default_position=999999):
     """
@@ -4946,6 +5009,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
     The approach:
     1. Group equipment instances by production line and equipment class
     2. For each line, sequence equipment classes based on the positions
+       - Check for line-specific sequence configuration first
+       - Fall back to global sequence positions if no line-specific config exists
     3. For each class on a line, sort its instances by equipmentId
     4. Chain instances within the same class sequentially
     5. Chain the last instance of one class to the first instance of the next class
@@ -4998,6 +5063,10 @@ def setup_equipment_instance_relationships(onto: Ontology,
     # Group equipment instances by line and class name
     pop_logger.debug("Grouping equipment instances by production line and class name...")
     line_equipment_map: Dict[Thing, Dict[str, List[Thing]]] = {}  # {line_individual: {class_name_str: [equipment_instances]}}
+    # Track equipment classes without sequence position
+    unsequenced_classes: Dict[str, List[str]] = {}  # {line_id: [class_names_without_position]}
+    # Track lines with equipment but no sequence
+    lines_without_sequence: List[str] = []
 
     # Iterate through all Equipment individuals in the ontology
     for equipment_inst in onto.search(type=cls_Equipment):
@@ -5020,15 +5089,24 @@ def setup_equipment_instance_relationships(onto: Ontology,
             continue
 
         # Check if this class name is in our sequence map
-        if class_name_str not in equipment_class_positions:
-            pop_logger.debug(f"Equipment {equipment_inst.name}'s class '{class_name_str}' not in sequence map. Skipping.")
-            continue
+        has_position = class_name_str in equipment_class_positions
 
         # Add equipment to the map for each line it belongs to
         for equipment_line in equipment_lines:
             if not isinstance(equipment_line, cls_ProductionLine):
                 pop_logger.warning(f"Equipment {equipment_inst.name} linked to non-ProductionLine '{equipment_line}'. Skipping this link.")
                 continue
+                
+            # Get line ID for tracking
+            line_id_str = getattr(equipment_line, "lineId", equipment_line.name)
+            
+            # Track classes without positions for diagnostics
+            if not has_position:
+                if line_id_str not in unsequenced_classes:
+                    unsequenced_classes[line_id_str] = []
+                if class_name_str not in unsequenced_classes[line_id_str]:
+                    unsequenced_classes[line_id_str].append(class_name_str)
+                    pop_logger.warning(f"Equipment class '{class_name_str}' on line {line_id_str} has no sequence position.")
 
             # Add equipment to the map structure
             if equipment_line not in line_equipment_map:
@@ -5044,7 +5122,7 @@ def setup_equipment_instance_relationships(onto: Ontology,
     # Create instance-level relationships within each line
     total_relationships = 0
     line_relationship_counts: Dict[str, int] = {}
-    pop_logger.info(f"Found {len(line_equipment_map)} lines with sequenced equipment.")
+    pop_logger.info(f"Found {len(line_equipment_map)} lines with equipment.")
 
     def safe_get_equipment_id(equipment: Thing) -> str:
         """Helper to safely get equipmentId or fallback to name for sorting."""
@@ -5057,13 +5135,38 @@ def setup_equipment_instance_relationships(onto: Ontology,
         for line_ind, class_equipment_map_on_line in line_equipment_map.items():
             line_id_str = getattr(line_ind, "lineId", line_ind.name)
             line_relationships = 0
+            
+            # Check for line-specific sequence configuration
+            line_specific_sequence = LINE_SPECIFIC_EQUIPMENT_SEQUENCE.get(line_id_str)
+            
+            if line_specific_sequence:
+                pop_logger.info(f"Using line-specific sequence configuration for line {line_id_str}")
+                
+                # Create a sorted list of class names based on the line-specific configuration
+                line_sorted_classes = _safe_sort_by_position(line_specific_sequence.items())
+                sorted_class_names_for_line = [item[0] for item in line_sorted_classes]
+                
+                # Log the line-specific sequence
+                pos_str = ", ".join([f"{cls}:{pos}" for cls, pos in line_sorted_classes])
+                pop_logger.info(f"Line-specific sequence for {line_id_str}: {pos_str}")
+            else:
+                # Use the default global sequence
+                pop_logger.info(f"Using default sequence configuration for line {line_id_str}")
+                sorted_class_names_for_line = sorted_class_names_by_pos
+            
+            # If no classes were found with positions, track this line
+            if not sorted_class_names_for_line:
+                lines_without_sequence.append(line_id_str)
+                pop_logger.warning(f"Line {line_id_str} has equipment but no sequence could be established. Skipping.")
+                continue
+                
             pop_logger.info(f"Processing equipment instance relationships for line: {line_id_str}")
 
             # Track the last instance in the chain to link between classes
             last_instance_in_chain = None
 
-            # Process each equipment class in sequence order
-            for class_name in sorted_class_names_by_pos:
+            # Process each equipment class in sequence order specific to this line
+            for class_name in sorted_class_names_for_line:
                 equipment_instances = class_equipment_map_on_line.get(class_name, [])
 
                 if not equipment_instances:
@@ -5141,11 +5244,29 @@ def setup_equipment_instance_relationships(onto: Ontology,
         print("\nChaining approach:")
         print("  • Equipment instances of the same class are chained in sequence by their equipmentId")
         print("  • Last instance of each class is linked to first instance of the next class in sequence")
-        print("  • Class sequence is determined by the DEFAULT_EQUIPMENT_SEQUENCE dictionary")
+        print("  • Class sequence is determined by:")
+        print("    - Line-specific configuration (if available in LINE_SPECIFIC_EQUIPMENT_SEQUENCE)")
+        print("    - Global DEFAULT_EQUIPMENT_SEQUENCE configuration (fallback)")
     else:
         pop_logger.warning("No equipment instance relationships were created or verified.")
         print("No equipment instance relationships could be established or verified.")
         print("Possible reasons: Equipment not linked to lines/classes, missing sequence positions, or no equipment found on the same line.")
+        
+    # Report sequence analysis issues
+    if unsequenced_classes:
+        print("\n=== EQUIPMENT SEQUENCE DIAGNOSTIC ISSUES ===")
+        print(f"Found {sum(len(classes) for classes in unsequenced_classes.values())} equipment classes without sequence positions:")
+        for line_id, classes in sorted(unsequenced_classes.items()):
+            print(f"  Line {line_id}: {', '.join(sorted(classes))}")
+            
+    if lines_without_sequence:
+        if not unsequenced_classes:  # Only print header if not already printed
+            print("\n=== EQUIPMENT SEQUENCE DIAGNOSTIC ISSUES ===")
+        print(f"Found {len(lines_without_sequence)} lines with equipment but no sequence established:")
+        for line_id in sorted(lines_without_sequence):
+            print(f"  Line {line_id}")
+        
+    print("\n---")
 
 
 ===========================================
@@ -5373,11 +5494,27 @@ def safe_cast(value: Any, target_type: Type[T], default: Optional[T] = None) -> 
             # Handle potential floats in data like '224.0' -> 224
             # Also handle direct integers or strings representing integers
             try:
+                # TKT-006: Handle empty strings, whitespace, etc.
+                if not value_str or value_str.isspace():
+                    return default
+                
+                # Special case for numeric metrics: treat "" or "0" as 0
+                if value_str == "" or value_str == "0":
+                    return 0
+                    
                 return int(float(value_str))
             except ValueError:
                 # Maybe it was already an int disguised as string?
                 return int(value_str)
         if target_type is float:
+            # TKT-006: Handle empty strings, whitespace, etc.
+            if not value_str or value_str.isspace():
+                return default
+                
+            # Special case for numeric metrics: treat "" or "0" as 0.0
+            if value_str == "" or value_str == "0":
+                return 0.0
+                
             # Handles standard float conversion
             return float(value_str)
         # Note: xsd:decimal maps to float based on XSD_TYPE_MAP

@@ -54,14 +54,16 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
                     'propertyName': {
                         'column': 'RAW_DATA_COLUMN',
                         'data_type': 'xsd:type',
-                        'functional': True/False
+                        'functional': True/False,
+                        'programmatic': True/False
                     }
                 },
                 'object_properties': {
                     'propertyName': {
                         'column': 'RAW_DATA_COLUMN',
                         'target_class': 'TargetClassName',
-                        'functional': True/False
+                        'functional': True/False,
+                        'programmatic': True/False
                     }
                 }
             }
@@ -84,6 +86,10 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
     has_target_link_context_col = 'Target Link Context' in fieldnames
     if not has_target_link_context_col:
         logger.warning("Specification file does not contain the 'Target Link Context' column. Context-based object property links may not be parsed.")
+        
+    has_programmatic_col = 'Programmatic' in fieldnames
+    if not has_programmatic_col:
+        logger.warning("Specification file does not contain the 'Programmatic' column. Programmatically-populated properties may not validate correctly.")
 
     for row_num, row in enumerate(specification):
         entity = row.get('Proposed OWL Entity', '').strip()
@@ -110,13 +116,20 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
         # Determine if the property is functional
         is_functional = 'Functional' in row.get('OWL Property Characteristics', '')
         
+        # Determine if the property is populated programmatically - Fix for None issue
+        programmatic_value = row.get('Programmatic', '')
+        is_programmatic = False
+        if programmatic_value is not None and str(programmatic_value).strip().lower() == 'true':
+            is_programmatic = True
+        
         # Process data properties
         if property_type == 'DatatypeProperty':
             data_type = row.get('Target/Range (xsd:) / Target Class', '').strip()
             # Create mapping info dictionary
             map_info = {
                 'data_type': data_type,
-                'functional': is_functional
+                'functional': is_functional,
+                'programmatic': is_programmatic
             }
             # Conditionally add the 'column' key
             if not raw_data_col_is_na:
@@ -137,7 +150,8 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
             # Initialize mapping info
             map_info = {
                 'target_class': target_class,
-                'functional': is_functional
+                'functional': is_functional,
+                'programmatic': is_programmatic
             }
 
             # Check if there's a way to populate/link this property later
@@ -155,6 +169,10 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
                 map_info['target_link_context'] = target_link_context
                 can_populate = True
                 logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) via context '{target_link_context}', target '{target_class}'")
+            elif is_programmatic:
+                # Property is populated programmatically
+                can_populate = True
+                logger.debug(f"Defined {entity}.{property_name} (ObjectProperty) target '{target_class}' to be populated programmatically.")
             else:
                  # Defined but cannot be populated from data/context
                  logger.debug(f"Defined {entity}.{property_name} (ObjectProperty) target '{target_class}' but no column or context for mapping.")
@@ -211,11 +229,12 @@ def validate_property_mappings(property_mappings: Dict[str, Dict[str, Dict[str, 
                 column = details.get('column', 'MISSING_COLUMN')
                 data_type = details.get('data_type', 'MISSING_TYPE')
                 functional = details.get('functional', False)
+                programmatic = details.get('programmatic', False)
                 
-                logger.debug(f"    {prop_name}: column='{column}', type='{data_type}', functional={functional}")
+                logger.debug(f"    {prop_name}: column='{column}', type='{data_type}', functional={functional}, programmatic={programmatic}")
                 
                 # Validate required fields
-                if not column or not data_type:
+                if not column and not programmatic and not data_type:
                     logger.warning(f"Missing required field for {entity_name}.{prop_name}: column='{column}', type='{data_type}'")
                     validation_passed = False
         
@@ -227,21 +246,24 @@ def validate_property_mappings(property_mappings: Dict[str, Dict[str, Dict[str, 
                 target = details.get('target_class', 'MISSING_TARGET')
                 functional = details.get('functional', False)
                 link_context = details.get('target_link_context', None) # Added context check
+                programmatic = details.get('programmatic', False) # Check for programmatic flag
 
                 log_msg = f"    {prop_name}: target='{target}', functional={functional}"
                 if column:
                      log_msg += f", column='{column}'"
                 if link_context:
                      log_msg += f", context='{link_context}'"
+                if programmatic:
+                     log_msg += f", programmatic=True"
                 logger.debug(log_msg)
                 
                 # Validate required fields
                 if not target:
                     logger.warning(f"Missing required field target_class for {entity_name}.{prop_name}")
                     validation_passed = False
-                # Must have either column or context
-                if not column and not link_context:
-                    logger.warning(f"Missing required field: Needs 'column' or 'target_link_context' for {entity_name}.{prop_name}")
+                # Must have either column or context or be programmatic
+                if not column and not link_context and not programmatic:
+                    logger.warning(f"Missing required field: Needs 'column', 'target_link_context', or 'Programmatic=True' for {entity_name}.{prop_name}")
                     validation_passed = False
     
     # Check for EventRecord specifically
