@@ -267,7 +267,7 @@ def process_event_record(
 
     start_time_str = None
     if hasattr(time_interval_ind, 'startTime') and time_interval_ind.startTime:
-        start_time_str = time_interval_ind.startTime[0] # Assumes functional
+        start_time_str = time_interval_ind.startTime
     else:
         pop_logger.warning(f"Cannot find startTime on provided TimeInterval individual {time_interval_ind.name}. Cannot create unique event ID. Skipping event.")
         return None, None

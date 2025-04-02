@@ -112,43 +112,54 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
         
         # Process data properties
         if property_type == 'DatatypeProperty':
-            if raw_data_col_is_na:
-                logger.warning(f"Skipping row {row_num+1}: DatatypeProperty {entity}.{property_name} must have a 'Raw Data Column Name'.")
-                continue
             data_type = row.get('Target/Range (xsd:) / Target Class', '').strip()
-            mappings[entity]['data_properties'][property_name] = {
-                'column': raw_data_col,
+            # Create mapping info dictionary
+            map_info = {
                 'data_type': data_type,
                 'functional': is_functional
             }
-            logger.debug(f"Mapped {entity}.{property_name} (DatatypeProperty) to column '{raw_data_col}', type '{data_type}'")
+            # Conditionally add the 'column' key
+            if not raw_data_col_is_na:
+                map_info['column'] = raw_data_col
+                logger.debug(f"Mapped {entity}.{property_name} (DatatypeProperty) to column '{raw_data_col}', type '{data_type}'")
+            else:
+                # Log definition without mapping
+                logger.debug(f"Defined {entity}.{property_name} (DatatypeProperty) type '{data_type}' but no data column mapping.")
+            
+            # Add to mappings regardless of column presence
+            mappings[entity]['data_properties'][property_name] = map_info
             
         # Process object properties
         elif property_type == 'ObjectProperty':
             target_class = row.get('Target/Range (xsd:) / Target Class', '').strip()
             target_link_context = row.get('Target Link Context', '').strip() if has_target_link_context_col else ''
             
-            # We need either a raw data column or a target link context
-            if raw_data_col_is_na and not target_link_context:
-                logger.warning(f"Skipping row {row_num+1}: ObjectProperty {entity}.{property_name} requires either 'Raw Data Column Name' or 'Target Link Context'.")
-                continue
-
-            # If both are provided, prefer Raw Data Column Name but log a warning
-            if not raw_data_col_is_na and target_link_context:
-                 logger.warning(f"Row {row_num+1}: Both 'Raw Data Column Name' ('{raw_data_col}') and 'Target Link Context' ('{target_link_context}') provided for {entity}.{property_name}. Prioritizing column lookup.")
-                 target_link_context = '' # Clear context if column is present
-
+            # Initialize mapping info
             map_info = {
                 'target_class': target_class,
                 'functional': is_functional
             }
-            if not raw_data_col_is_na:
-                map_info['column'] = raw_data_col
-                logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) to column '{raw_data_col}', target '{target_class}'")
-            else: # Must have target_link_context here due to earlier check
-                map_info['target_link_context'] = target_link_context
-                logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) via context '{target_link_context}', target '{target_class}'")
 
+            # Check if there's a way to populate/link this property later
+            can_populate = False
+            if not raw_data_col_is_na:
+                # Prefer column mapping if available
+                map_info['column'] = raw_data_col
+                can_populate = True
+                logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) to column '{raw_data_col}', target '{target_class}'")
+                # Warn if context is also provided but will be ignored
+                if target_link_context:
+                    logger.warning(f"Row {row_num+1}: Both 'Raw Data Column Name' ('{raw_data_col}') and 'Target Link Context' ('{target_link_context}') provided for {entity}.{property_name}. Prioritizing column lookup.")
+            elif target_link_context:
+                # Use context mapping if column is not available
+                map_info['target_link_context'] = target_link_context
+                can_populate = True
+                logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) via context '{target_link_context}', target '{target_class}'")
+            else:
+                 # Defined but cannot be populated from data/context
+                 logger.debug(f"Defined {entity}.{property_name} (ObjectProperty) target '{target_class}' but no column or context for mapping.")
+
+            # Add to mappings regardless of populatability, including mapping info if available
             mappings[entity]['object_properties'][property_name] = map_info
     
     # Convert defaultdict to regular dict for return
