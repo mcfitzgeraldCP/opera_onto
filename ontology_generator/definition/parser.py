@@ -251,13 +251,47 @@ def validate_property_mappings(property_mappings: Dict[str, Dict[str, Dict[str, 
     else:
         # Check for common EventRecord properties
         event_props = property_mappings['EventRecord'].get('data_properties', {})
-        expected_props = ['downtimeMinutes', 'runTimeMinutes', 'reportedDurationMinutes']
+        # TKT-006: Expanded check for AE model metrics
+        expected_props = [
+            'downtimeMinutes', 
+            'runTimeMinutes', 
+            'effectiveRuntimeMinutes', 
+            'reportedDurationMinutes',
+            'goodProductionQuantity',
+            'rejectProductionQuantity',
+            'allMaintenanceTimeMinutes'
+        ]
         missing_props = [p for p in expected_props if p not in event_props]
         
         if missing_props:
-            logger.warning(f"Some expected EventRecord properties are missing from mappings: {missing_props}")
+            logger.warning(f"Some expected EventRecord AE model properties are missing from mappings: {missing_props}")
             # Don't fail validation for this, but log the warning
-    
+        
+        # TKT-006: Verify that xsd:double is used for time metrics and xsd:integer for quantities
+        time_metrics = [
+            'downtimeMinutes', 
+            'runTimeMinutes', 
+            'effectiveRuntimeMinutes', 
+            'reportedDurationMinutes',
+            'allMaintenanceTimeMinutes'
+        ]
+        quantity_metrics = [
+            'goodProductionQuantity',
+            'rejectProductionQuantity'
+        ]
+        
+        for prop in time_metrics:
+            if prop in event_props:
+                data_type = event_props[prop].get('data_type')
+                if data_type not in ['xsd:double', 'xsd:decimal', 'xsd:float']:
+                    logger.warning(f"EventRecord time metric '{prop}' should use 'xsd:double' data type, found '{data_type}'")
+        
+        for prop in quantity_metrics:
+            if prop in event_props:
+                data_type = event_props[prop].get('data_type')
+                if data_type not in ['xsd:integer', 'xsd:int']:
+                    logger.warning(f"EventRecord quantity metric '{prop}' should use 'xsd:integer' data type, found '{data_type}'")
+
     # Log summary stats
     logger.info(f"Property mapping validation complete. Found {entity_count} entities, {data_prop_count} data properties, {object_prop_count} object properties.")
     logger.info(f"Validation {'PASSED' if validation_passed else 'FAILED'}")

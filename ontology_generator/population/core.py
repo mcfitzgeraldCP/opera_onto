@@ -191,6 +191,20 @@ def set_prop_if_col_exists(
 
     # Set the property
     context.set_prop(individual, prop_name, value)
+    
+    # TKT-006: Add specific debug logging for AE model metrics
+    ae_metrics = [
+        'downtimeMinutes', 
+        'runTimeMinutes', 
+        'effectiveRuntimeMinutes',
+        'goodProductionQuantity',
+        'rejectProductionQuantity',
+        'allMaintenanceTimeMinutes'
+    ]
+    
+    if prop_name in ae_metrics:
+        logger.info(f"TKT-006: Successfully set AE model metric {prop_name} = {value} (from column {col_name}) on {individual.name}")
+    
     return True
 
 def truncate_row_repr(row: Dict[str, Any], max_length: int = 100) -> str:

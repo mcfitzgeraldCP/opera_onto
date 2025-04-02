@@ -39,11 +39,27 @@ def safe_cast(value: Any, target_type: Type[T], default: Optional[T] = None) -> 
             # Handle potential floats in data like '224.0' -> 224
             # Also handle direct integers or strings representing integers
             try:
+                # TKT-006: Handle empty strings, whitespace, etc.
+                if not value_str or value_str.isspace():
+                    return default
+                
+                # Special case for numeric metrics: treat "" or "0" as 0
+                if value_str == "" or value_str == "0":
+                    return 0
+                    
                 return int(float(value_str))
             except ValueError:
                 # Maybe it was already an int disguised as string?
                 return int(value_str)
         if target_type is float:
+            # TKT-006: Handle empty strings, whitespace, etc.
+            if not value_str or value_str.isspace():
+                return default
+                
+            # Special case for numeric metrics: treat "" or "0" as 0.0
+            if value_str == "" or value_str == "0":
+                return 0.0
+                
             # Handles standard float conversion
             return float(value_str)
         # Note: xsd:decimal maps to float based on XSD_TYPE_MAP
