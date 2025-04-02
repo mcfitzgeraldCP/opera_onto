@@ -67,8 +67,9 @@ def link_equipment_events_to_line_events(onto: Ontology,
 
         # Check if it's a line event or equipment event
         if isinstance(resource_ind, cls_ProductionLine):
-            if associated_line_ind == resource_ind:
+            if associated_line_ind and associated_line_ind.name == resource_ind.name:
                 line_events_by_line[associated_line_ind].append((event_ind, start_time, end_time))
+                link_logger.debug(f"Indexed line event {event_ind.name} for line {associated_line_ind.name}")
             else:
                  link_logger.warning(f"Line event {event_ind.name} has mismatch between resource ({resource_ind.name}) and stored associated line ({associated_line_ind.name if associated_line_ind else 'None'}). Skipping indexing.")
         elif isinstance(resource_ind, cls_Equipment):

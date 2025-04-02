@@ -14,6 +14,7 @@ from ontology_generator.population.core import (
     PopulationContext, get_or_create_individual, apply_data_property_mappings
 )
 from ontology_generator.config import COUNTRY_TO_LANGUAGE, DEFAULT_LANGUAGE
+from ontology_generator.population.linking import link_equipment_events_to_line_events
 
 # Type Alias for registry
 IndividualRegistry = Dict[Tuple[str, str], Thing] # Key: (entity_type_str, unique_id_str), Value: Individual Object
@@ -232,11 +233,12 @@ def process_event_record(
     Processes EventRecord from a row (Pass 1: Create/Data Props).
     Links to other entities (State, Reason, Shift, Resource, etc.) are deferred to Pass 2.
 
-    Requires mappings for startTime, endTime (to identify interval) and involvedResource (Equipment ID).
+    Uses hints like 'EQUIPMENT_TYPE' column to determine if it's a line or equipment event.
+    Requires mappings for startTime, endTime (to identify interval).
 
     Returns:
         Tuple: (event_individual, event_context_for_linking)
-               event_context_for_linking: (event_ind, resource_ind, time_interval_ind, line_ind)
+               event_context_for_linking: (event_ind, primary_resource_ind, time_interval_ind, line_ind_for_context)
     """
     if not property_mappings or "EventRecord" not in property_mappings:
         pop_logger.debug("Property mappings for 'EventRecord' not provided. Skipping event record processing.")
@@ -246,65 +248,91 @@ def process_event_record(
     cls_Event = context.get_class("EventRecord")
     if not cls_Event: return None, None
 
-    # Essential info for unique ID: Resource (Equipment) ID and Start Time
-    # We use the equipment *individual* passed in, assuming it was processed first.
-    # Get start time from the TimeInterval individual, assuming it was processed first.
-    if not equipment_ind:
-        pop_logger.warning("Equipment individual not provided for event record. Cannot create unique event ID. Skipping event.")
-        return None, None
+    # --- Determine Primary Resource --- 
+    # Use EQUIPMENT_TYPE column as a hint (based on linking log errors)
+    resource_type_hint = row.get('EQUIPMENT_TYPE', 'Equipment').strip()
+    primary_resource_ind = None
+    resource_id_for_name = None
+
+    if resource_type_hint == 'Line':
+        if line_ind:
+            primary_resource_ind = line_ind
+            # Try to get a stable ID for the name
+            resource_id_for_name = line_ind.lineId[0] if hasattr(line_ind, 'lineId') and line_ind.lineId else line_ind.name
+            pop_logger.debug(f"Identified event for Line: {resource_id_for_name}")
+        else:
+            pop_logger.warning(f"Row indicates a Line event based on '{resource_type_hint}', but no Line individual found. Skipping event.")
+            return None, None
+    # Default to Equipment if hint is 'Equipment' or unknown/fallback
+    else: 
+        if resource_type_hint != 'Equipment':
+             pop_logger.debug(f"Unknown resource type hint '{resource_type_hint}' in row. Defaulting event resource to Equipment.")
+        
+        if equipment_ind:
+            primary_resource_ind = equipment_ind
+            # Try to get a stable ID for the name
+            resource_id_for_name = equipment_ind.equipmentId[0] if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId else equipment_ind.name
+            pop_logger.debug(f"Identified event for Equipment: {resource_id_for_name}")
+        else:
+            # If it should be an equipment event but no equipment_ind, we cannot proceed
+            pop_logger.warning(f"Row indicates an Equipment event (type: '{resource_type_hint}'), but no Equipment individual found. Skipping event.")
+            return None, None
+
+    # --- Check Dependencies (Time Interval) --- 
     if not time_interval_ind:
-         pop_logger.warning("TimeInterval individual not provided for event record. Cannot create unique event ID. Skipping event.")
+         pop_logger.warning("TimeInterval individual not provided for event record. Skipping event.")
          return None, None
 
-    # Extract equipment ID and start time for the unique name
-    equip_id = None
-    if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId:
-        equip_id = equipment_ind.equipmentId[0] # Assumes functional
-    else:
-        # Fallback: try to parse from name? Risky.
-        pop_logger.warning(f"Cannot find equipmentId on provided Equipment individual {equipment_ind.name}. Attempting to use name as fallback ID.")
-        equip_id = equipment_ind.name # Use individual name as last resort
-
+    # Extract start time from the interval for the unique name
     start_time_str = None
     if hasattr(time_interval_ind, 'startTime') and time_interval_ind.startTime:
-        start_time_str = time_interval_ind.startTime
+        # Ensure startTime is stringified correctly, handle potential datetime objects
+        st_val = time_interval_ind.startTime
+        if isinstance(st_val, datetime):
+            start_time_str = st_val.isoformat() # Use ISO format for consistency
+        else:
+            start_time_str = str(st_val)
     else:
         pop_logger.warning(f"Cannot find startTime on provided TimeInterval individual {time_interval_ind.name}. Cannot create unique event ID. Skipping event.")
         return None, None
 
-    if not equip_id or not start_time_str:
-         pop_logger.error(f"Could not determine Equipment ID or Start Time for event involving {equipment_ind.name}. Skipping event.")
+    # --- Create Unique ID & Labels --- 
+    # Ensure resource_id_for_name was set
+    if not resource_id_for_name:
+         pop_logger.error(f"Could not determine a valid ID for the primary resource ('{resource_type_hint}'). Skipping event.")
          return None, None
 
-    event_unique_base = f"Event_{equip_id}_{start_time_str}"
-    event_labels = [f"Event for {equip_id} at {start_time_str}"]
+    event_unique_base = f"Event_{resource_id_for_name}_{start_time_str}"
+    event_labels = [f"Event for {resource_id_for_name} at {start_time_str}"]
     # Add state/reason descriptions to label if available?
     if state_ind and hasattr(state_ind, 'stateDescription') and state_ind.stateDescription:
-        event_labels.append(f"State: {state_ind.stateDescription[0]}")
+        # Handle potential locstr or list
+        state_desc = state_ind.stateDescription[0] if isinstance(state_ind.stateDescription, list) else state_ind.stateDescription
+        event_labels.append(f"State: {state_desc}")
     if reason_ind and hasattr(reason_ind, 'reasonDescription') and reason_ind.reasonDescription:
-        event_labels.append(f"Reason: {reason_ind.reasonDescription[0]}")
+        reason_desc = reason_ind.reasonDescription[0] if isinstance(reason_ind.reasonDescription, list) else reason_ind.reasonDescription
+        event_labels.append(f"Reason: {reason_desc}")
 
+    # --- Create Individual --- 
     event_ind = get_or_create_individual(cls_Event, event_unique_base, context.onto, all_created_individuals_by_uid, add_labels=event_labels)
 
+    # --- Apply Data Properties & Prepare Context --- 
     event_context_out = None
     if event_ind and pass_num == 1:
         # Apply data properties
         apply_data_property_mappings(event_ind, property_mappings["EventRecord"], row, context, "EventRecord", pop_logger)
 
-        # DEFER ALL OBJECT PROPERTY LINKS to Pass 2:
-        # - occursDuring -> time_interval_ind
-        # - duringShift -> shift_ind
-        # - eventHasState -> state_ind
-        # - eventHasReason -> reason_ind
-        # - involvesResource -> equipment_ind
-        # - usesMaterial -> material_ind (if mapping exists)
-        # - associatedWithProductionRequest -> request_ind (if mapping exists)
-        # - isPartOfLineEvent (Handled later by _link_equipment_events)
-        # - hasDetailedEquipmentEvent (Handled later?)
-        # - performedBy (Person) (Handled later?)
+        # FIX: Directly link the resource right away during creation (involvesResource property)
+        if primary_resource_ind:
+            involves_resource_prop = context.get_prop("involvesResource")
+            if involves_resource_prop:
+                context.set_prop(event_ind, "involvesResource", primary_resource_ind)
+                pop_logger.debug(f"Linked event {event_ind.name} directly to resource {primary_resource_ind.name} via involvesResource")
 
         # Prepare context for later linking steps if needed
-        event_context_out = (event_ind, equipment_ind, time_interval_ind, line_ind)
+        # Use the *determined* primary_resource_ind as the 2nd element
+        # The 4th element (line_ind) provides context for where equipment events occurred
+        event_context_out = (event_ind, primary_resource_ind, time_interval_ind, line_ind)
 
     return event_ind, event_context_out
 

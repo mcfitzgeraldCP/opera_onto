@@ -361,6 +361,13 @@ def apply_object_property_mappings(
         target_individual: Optional[Thing] = None
         lookup_method = "None"
 
+        # Add debug for EventRecord.involvesResource specifically
+        if entity_name == "EventRecord" and prop_name == "involvesResource":
+            if hasattr(individual, "involvesResource") and individual.involvesResource:
+                logger.debug(f"EventRecord {individual.name} already has involvesResource set to {individual.involvesResource.name if hasattr(individual.involvesResource, 'name') else individual.involvesResource}")
+                # Skip this property if already set
+                continue
+
         if col_name:
             # --- Link via Column Lookup (using GLOBAL registry) ---
             target_base_id = safe_cast(row.get(col_name), str)
@@ -410,6 +417,11 @@ def apply_object_property_mappings(
             # Set the property
             context.set_prop(individual, prop_name, target_individual)
             links_applied_count += 1
+            
+            # Add specific debug for important links
+            if entity_name == "EventRecord":
+                if prop_name == "involvesResource":
+                    logger.debug(f"Successfully linked EventRecord {individual.name} to resource {target_individual.name} via {prop_name}")
 
     # logger.debug(f"Applied {links_applied_count} object property links for {entity_name} individual {individual.name}. Row {row.get('row_num', 'N/A')}.")
 
