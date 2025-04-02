@@ -5,15 +5,19 @@ This module provides the base functionality for ontology population, including t
 PopulationContext class and property application functions.
 """
 from typing import Dict, Any, Optional, List, Set, Tuple, Union
+import logging
 
 from owlready2 import (
     Ontology, Thing, ThingClass, PropertyClass,
-    locstr, FunctionalProperty, ObjectProperty, DataProperty
+    locstr, FunctionalProperty, ObjectProperty, DataProperty, ObjectPropertyClass, DataPropertyClass
 )
 
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.config import XSD_TYPE_MAP
-from ontology_generator.utils.types import safe_cast
+from ontology_generator.utils.types import safe_cast, sanitize_name
+
+# Type Alias for registry used in linking
+IndividualRegistry = Dict[Tuple[str, str], Thing] # Key: (entity_type_str, unique_id_str), Value: Individual Object
 
 class PopulationContext:
     """
@@ -40,9 +44,11 @@ class PopulationContext:
             property_is_functional: Dictionary mapping property names to boolean functionality flags
         """
         self.onto = onto
-        self.classes = defined_classes
-        self.props = defined_properties
-        self.is_functional = property_is_functional
+        self.defined_classes = defined_classes
+        self.defined_properties = defined_properties
+        self.property_is_functional = property_is_functional
+        self._property_cache = {} # Cache for faster property lookup
+        self._class_cache = {} # Cache for faster class lookup
 
     def get_class(self, name: str) -> Optional[ThingClass]:
         """
@@ -54,9 +60,19 @@ class PopulationContext:
         Returns:
             The class object or None if not found
         """
-        cls = self.classes.get(name)
+        if name in self._class_cache:
+            return self._class_cache[name]
+
+        cls = self.defined_classes.get(name)
         if not cls: 
             pop_logger.error(f"Essential class '{name}' not found in defined_classes.")
+            return None
+        # Basic validation (could add more specific checks if needed)
+        if not isinstance(cls, ThingClass):
+             pop_logger.error(f"Item '{name}' found but is not a ThingClass (checked via isinstance).")
+             return None
+
+        self._class_cache[name] = cls
         return cls
 
     def get_prop(self, name: str) -> Optional[PropertyClass]:
@@ -69,7 +85,19 @@ class PopulationContext:
         Returns:
             The property object or None if not found
         """
-        prop = self.props.get(name)
+        if name in self._property_cache:
+            return self._property_cache[name]
+
+        prop = self.defined_properties.get(name)
+        if not prop:
+            pop_logger.warning(f"Property '{name}' not found in defined properties.")
+            return None
+        # Basic validation (could add more specific checks if needed)
+        if not isinstance(prop, (ObjectPropertyClass, DataPropertyClass)):
+            pop_logger.error(f"Item '{name}' found but is not a PropertyClass (Object or Data).")
+            return None
+
+        self._property_cache[name] = prop
         return prop
 
     def set_prop(self, individual: Thing, prop_name: str, value: Any) -> None:
@@ -82,9 +110,15 @@ class PopulationContext:
             value: The value to set
         """
         prop = self.get_prop(prop_name)
-        if prop and individual:
-            is_func = self.is_functional.get(prop_name, False)  # Default to non-functional if not specified
-            _set_property_value(individual, prop, value, is_func)
+        if not prop:
+            # Error logged by get_prop
+            return
+        is_functional = self.property_is_functional.get(prop_name, False) # Assume non-functional if not specified
+
+        try:
+            _set_property_value(individual, prop, value, is_functional)
+        except Exception as e:
+            pop_logger.error(f"Error setting property '{prop_name}' on individual '{individual.name}' with value '{value}': {e}", exc_info=True)
 
 
 def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_functional: bool) -> None:
@@ -171,78 +205,126 @@ def set_prop_if_col_exists(context: PopulationContext,
         logger.error(f"Error casting or setting property '{prop_name}' from column '{col_name}' on individual '{individual.name}': {e}")
 
 
-def get_or_create_individual(onto_class: ThingClass, individual_name_base: Any, onto: Ontology, add_labels: Optional[List[str]] = None) -> Optional[Thing]:
+def get_or_create_individual(
+    onto_class: ThingClass,
+    individual_name_base: Any,
+    onto: Ontology,
+    registry: IndividualRegistry, # Use the defined type alias
+    add_labels: Optional[List[str]] = None
+) -> Optional[Thing]:
     """
-    Gets an individual if it exists, otherwise creates it.
-    Uses a class-prefixed, sanitized name for the individual IRI. Returns None on failure.
-    
+    Gets an individual from the registry or creates a new one if it doesn't exist.
+    Uses a combination of class name and a base ID/name for the registry key.
+    Adds labels if provided.
+
     Args:
-        onto_class: The class to create an individual of
-        individual_name_base: The base name for the individual
-        onto: The ontology to create the individual in
-        add_labels: Optional list of labels to add to the individual
-        
+        onto_class: The owlready2 class of the individual.
+        individual_name_base: The base name or ID (will be sanitized) used for the individual's name and registry key.
+        onto: The ontology instance.
+        registry: The dictionary acting as the central registry.
+        add_labels: Optional list of labels to add to the individual (if created or found).
+
     Returns:
-        The individual or None on failure
+        The existing or newly created individual, or None if creation fails.
     """
-    from ontology_generator.utils.types import sanitize_name
-    
-    if individual_name_base is None or str(individual_name_base).strip() == '':
-        pop_logger.warning(f"Cannot get/create individual with empty base name for class {onto_class.name if onto_class else 'None'}")
-        return None
-    if not onto_class:
-        pop_logger.error(f"Cannot get/create individual: onto_class parameter is None for base name '{individual_name_base}'.")
+    if not onto_class or not individual_name_base:
+        pop_logger.error(f"Missing onto_class ({onto_class}) or individual_name_base ({individual_name_base}) for get_or_create.")
         return None
 
-    # 1. Sanitize the base name
-    safe_base = sanitize_name(individual_name_base)
+    # Sanitize the base name for use in IRI and registry key
+    sanitized_name_base = sanitize_name(str(individual_name_base))
+    if not sanitized_name_base:
+        pop_logger.error(f"Could not sanitize base name '{individual_name_base}' for individual of class '{onto_class.name}'.")
+        return None
 
-    # 2. Create the class-specific, sanitized name
-    final_name = f"{onto_class.name}_{safe_base}"
+    class_name_str = onto_class.name
+    registry_key = (class_name_str, sanitized_name_base)
 
-    # 3. Check if individual exists using namespace search
-    individual = onto.search_one(iri=f"{onto.base_iri}{final_name}")
+    # Check registry first
+    if registry_key in registry:
+        existing_individual = registry[registry_key]
+        pop_logger.debug(f"Found existing individual '{existing_individual.name}' (Key: {registry_key}) in registry.")
+        # Optionally add labels even if found? Decide based on requirements.
+        # if add_labels:
+        #     for label in add_labels:
+        #         if label and label not in existing_individual.label:
+        #             existing_individual.label.append(label)
+        return existing_individual
 
-    if individual:
-        # Check if the existing individual is of the correct type (or a subclass)
-        if isinstance(individual, onto_class):
-            # Optionally add labels even if retrieved
-            if add_labels:
-                current_labels = individual.label
-                for lbl in add_labels:
-                    lbl_str = safe_cast(lbl, str)
-                    if lbl_str and lbl_str not in current_labels:
-                            individual.label.append(lbl_str)
-            return individual
-        else:
-            # This is a serious issue - IRI collision with different types
-            pop_logger.error(f"IRI collision: Individual '{final_name}' ({individual.iri}) exists but is not of expected type {onto_class.name} (or its subclass). It has type(s): {individual.is_a}. Cannot proceed reliably for this individual.")
-            # Decide how to handle: raise error, return None, or try alternative naming?
-            # Raising an error might be safest to prevent corrupting the ontology.
-            raise TypeError(f"IRI collision: {final_name} exists with incompatible type(s) {individual.is_a} (expected {onto_class.name}).")
-            # return None # Alternative: Skip this individual
+    # --- If not found, create ---
+    individual_name = f"{class_name_str}_{sanitized_name_base}"
 
-    # 4. Create the new individual
     try:
-        pop_logger.debug(f"Creating new individual '{final_name}' of class {onto_class.name}")
-        # Use the final_name directly - owlready2 handles IRI creation with the namespace
-        new_individual = onto_class(final_name, namespace=onto)
+        with onto: # Ensure operation within ontology context
+             # Check if an individual with this *exact* name already exists in owlready's cache
+             # This can happen if safe_name produces the same result for different inputs,
+             # or if an individual was created outside the registry mechanism.
+            existing_by_name = onto.search_one(iri=f"*{individual_name}")
+            if existing_by_name and isinstance(existing_by_name, onto_class):
+                pop_logger.warning(f"Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Returning existing one and adding to registry.")
+                new_individual = existing_by_name
+            elif existing_by_name:
+                 # Name collision with an individual of a DIFFERENT class - should be rare with prefixing
+                 pop_logger.error(f"Cannot create individual '{individual_name}': Name collision with existing individual '{existing_by_name.name}' of different class ({type(existing_by_name).__name__})")
+                 return None
+            else:
+                # Create the new individual
+                new_individual = onto_class(individual_name)
+                pop_logger.info(f"Created new individual '{individual_name}' (Class: {class_name_str}, Base: '{individual_name_base}')")
 
-        # Add labels if provided
-        if add_labels:
-            for lbl in add_labels:
-                lbl_str = safe_cast(lbl, str)
-                if lbl_str: new_individual.label.append(lbl_str)
+                # Add labels if provided
+                if add_labels:
+                    for label in add_labels:
+                        if label: # Ensure label is not empty
+                            new_individual.label.append(str(label)) # Ensure labels are strings
 
+        # Add to registry *after* successful creation
+        registry[registry_key] = new_individual
         return new_individual
+
     except Exception as e:
-        pop_logger.error(f"Failed to create individual '{final_name}' of class {onto_class.name}: {e}")
+        pop_logger.error(f"Failed to create individual '{individual_name}' of class '{class_name_str}': {e}", exc_info=True)
         return None
 
 
-# --- In ontology_generator/population/core.py ---
+# --- Mappings Application Functions ---
 
-# ... (keep apply_data_property_mappings and other functions as they are) ...
+def apply_data_property_mappings(
+    individual: Thing,
+    mappings: Dict[str, Dict[str, Any]],
+    row: Dict[str, Any],
+    context: PopulationContext,
+    entity_name: str, # Name of the entity type being processed (for logging)
+    logger # Pass logger explicitly
+) -> None:
+    """Applies data property mappings defined in the configuration."""
+    if not mappings or 'data_properties' not in mappings:
+        return
+
+    data_prop_mappings = mappings.get('data_properties', {})
+
+    for prop_name, details in data_prop_mappings.items():
+        col_name = details.get('column')
+        # Get cast type from mapping, default to string
+        data_type_str = details.get('data_type', 'xsd:string')
+        target_type = XSD_TYPE_MAP.get(data_type_str, str) # Map XSD type to Python type
+        cast_func = safe_cast # Use the safe_cast utility
+
+        if not col_name:
+            logger.warning(f"Data property mapping for {entity_name}.{prop_name} is missing 'column'. Skipping.")
+            continue
+
+        # Use helper function to handle casting, existence check, and setting
+        set_prop_if_col_exists(
+            context=context,
+            individual=individual,
+            prop_name=prop_name,
+            col_name=col_name,
+            row=row,
+            cast_func=cast_func,
+            target_type=target_type,
+            logger=logger
+        )
 
 def apply_object_property_mappings(
     individual: Thing,

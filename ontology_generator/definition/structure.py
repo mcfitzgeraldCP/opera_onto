@@ -97,11 +97,14 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                         if safe_class_name != class_name:
                             logger.warning(f"Class name '{class_name}' sanitized to '{safe_class_name}' for internal use. Using original name for IRI.")
                             # Sticking with original name as owlready2 often handles non-standard chars in IRIs
+
+                        # Revert to types.new_class
                         new_class: ThingClass = types.new_class(class_name, (parent_class_obj,))
+
                         defined_classes[class_name] = new_class
                         defined_order.append(class_name)
                         defined_in_pass.add(class_name)
-                        logger.debug(f"Defined Class: {new_class.iri} (Parent: {parent_class_obj.iri})")
+                        logger.debug(f"Defined Class: {new_class.iri} (Parent: {parent_class_obj.iri})") # Removed the extra type check log
 
                         # Add annotations like comments/labels from pre-processed metadata
                         meta = class_metadata.get(class_name)

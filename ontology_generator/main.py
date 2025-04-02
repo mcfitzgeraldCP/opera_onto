@@ -27,7 +27,6 @@ from ontology_generator.definition import (
     parse_property_mappings, validate_property_mappings, read_data
 )
 from ontology_generator.population import (
-    populate_ontology_from_data, # Keep this high-level call
     setup_equipment_sequence_relationships, # Need these post-population steps
     setup_equipment_instance_relationships,
     link_equipment_events_to_line_events
@@ -36,7 +35,7 @@ from ontology_generator.analysis import (
     analyze_ontology_population, generate_population_report,
     generate_optimization_recommendations, generate_reasoning_report
 )
-from ontology_generator.utils.utils import safe_cast # Keep if used elsewhere in main
+from ontology_generator.utils import safe_cast # Import directly from utils now
 
 # Initialize XSD type map and datetime types
 init_xsd_type_map(locstr)

@@ -11,7 +11,7 @@ from owlready2 import Thing
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.utils.types import safe_cast
 from ontology_generator.population.core import (
-    PopulationContext, get_or_create_individual, apply_property_mappings,
+    PopulationContext, get_or_create_individual, 
     apply_data_property_mappings, apply_object_property_mappings
 )
 
