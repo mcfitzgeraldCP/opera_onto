@@ -269,7 +269,7 @@ def process_event_record(
     Processes EventRecord from a row (Pass 1: Create/Data Props).
     Links to other entities (State, Reason, Shift, Resource, etc.) are deferred to Pass 2.
 
-    Uses hints like 'EQUIPMENT_TYPE' column to determine if it's a line or equipment event.
+    Uses EQUIPMENT_TYPE column as the authoritative source to determine if it's a line or equipment event.
     Requires mappings for startTime, endTime (to identify interval).
 
     Returns:
@@ -284,34 +284,46 @@ def process_event_record(
     cls_Event = context.get_class("EventRecord")
     if not cls_Event: return None, None
 
-    # --- Determine Primary Resource --- 
-    # Use EQUIPMENT_TYPE column as a hint (based on linking log errors)
-    resource_type_hint = row.get('EQUIPMENT_TYPE', 'Equipment').strip()
+    # --- Determine Primary Resource Based on EQUIPMENT_TYPE ---
+    # EQUIPMENT_TYPE is the authoritative source for the type of resource involved
+    equipment_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
     primary_resource_ind = None
     resource_id_for_name = None
 
-    if resource_type_hint == 'Line':
+    # Clear decision based on EQUIPMENT_TYPE
+    if equipment_type == 'Line':
         if line_ind:
             primary_resource_ind = line_ind
             # Try to get a stable ID for the name
             resource_id_for_name = line_ind.lineId[0] if hasattr(line_ind, 'lineId') and line_ind.lineId else line_ind.name
-            pop_logger.debug(f"Identified event for Line: {resource_id_for_name}")
+            pop_logger.debug(f"Identified event for Line: {resource_id_for_name} based on EQUIPMENT_TYPE='{equipment_type}'")
         else:
-            pop_logger.warning(f"Row indicates a Line event based on '{resource_type_hint}', but no Line individual found. Skipping event.")
+            pop_logger.warning(f"Row indicates a Line event (EQUIPMENT_TYPE='{equipment_type}'), but no Line individual found. Skipping event.")
             return None, None
-    # Default to Equipment if hint is 'Equipment' or unknown/fallback
-    else: 
-        if resource_type_hint != 'Equipment':
-             pop_logger.debug(f"Unknown resource type hint '{resource_type_hint}' in row. Defaulting event resource to Equipment.")
-        
+    elif equipment_type == 'Equipment':
         if equipment_ind:
             primary_resource_ind = equipment_ind
             # Try to get a stable ID for the name
             resource_id_for_name = equipment_ind.equipmentId[0] if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId else equipment_ind.name
-            pop_logger.debug(f"Identified event for Equipment: {resource_id_for_name}")
+            pop_logger.debug(f"Identified event for Equipment: {resource_id_for_name} based on EQUIPMENT_TYPE='{equipment_type}'")
         else:
-            # If it should be an equipment event but no equipment_ind, we cannot proceed
-            pop_logger.warning(f"Row indicates an Equipment event (type: '{resource_type_hint}'), but no Equipment individual found. Skipping event.")
+            pop_logger.warning(f"Row indicates an Equipment event (EQUIPMENT_TYPE='{equipment_type}'), but no Equipment individual found. Skipping event.")
+            return None, None
+    else:
+        # Unknown equipment type, log warning and try to make a reasonable decision
+        pop_logger.warning(f"Unknown EQUIPMENT_TYPE value: '{equipment_type}'. Trying to determine resource type.")
+        
+        # Fallback logic - check which resources are available
+        if equipment_ind:
+            primary_resource_ind = equipment_ind
+            resource_id_for_name = equipment_ind.equipmentId[0] if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId else equipment_ind.name
+            pop_logger.debug(f"Defaulting to Equipment: {resource_id_for_name} (unknown EQUIPMENT_TYPE='{equipment_type}')")
+        elif line_ind:
+            primary_resource_ind = line_ind
+            resource_id_for_name = line_ind.lineId[0] if hasattr(line_ind, 'lineId') and line_ind.lineId else line_ind.name
+            pop_logger.debug(f"Defaulting to Line: {resource_id_for_name} (unknown EQUIPMENT_TYPE='{equipment_type}')")
+        else:
+            pop_logger.warning(f"Cannot determine primary resource for event (EQUIPMENT_TYPE='{equipment_type}'). Skipping event.")
             return None, None
 
     # --- Check Dependencies (Time Interval) --- 
@@ -342,7 +354,7 @@ def process_event_record(
     # --- Create Unique ID & Labels --- 
     # Ensure resource_id_for_name was set
     if not resource_id_for_name:
-         pop_logger.error(f"Could not determine a valid ID for the primary resource ('{resource_type_hint}'). Skipping event.")
+         pop_logger.error(f"Could not determine a valid ID for the primary resource ('{equipment_type}'). Skipping event.")
          return None, None
 
     # Use row_num in the unique base name for robustness
@@ -366,15 +378,15 @@ def process_event_record(
         # Apply data properties
         apply_data_property_mappings(event_ind, property_mappings["EventRecord"], row, context, "EventRecord", pop_logger)
 
-        # FIX: Directly link the resource right away during creation (involvesResource property)
-        if primary_resource_ind:
-            involves_resource_prop = context.get_prop("involvesResource")
-            if involves_resource_prop:
-                context.set_prop(event_ind, "involvesResource", primary_resource_ind)
-                pop_logger.debug(f"Linked event {event_ind.name} directly to resource {primary_resource_ind.name} via involvesResource")
+        # ALWAYS link the primary resource in Pass 1
+        involves_resource_prop = context.get_prop("involvesResource")
+        if involves_resource_prop:
+            context.set_prop(event_ind, "involvesResource", primary_resource_ind)
+            pop_logger.debug(f"Linked event {event_ind.name} directly to primary resource {primary_resource_ind.name} via involvesResource")
+        else:
+            pop_logger.error(f"Cannot find involvesResource property in ontology. Event {event_ind.name} resource link not set.")
 
-        # Prepare context for later linking steps if needed
-        # Use the *determined* primary_resource_ind as the 2nd element
+        # Prepare context for later linking steps
         # The 4th element (line_ind) provides context for where equipment events occurred
         event_context_out = (event_ind, primary_resource_ind, time_interval_ind, line_ind)
 

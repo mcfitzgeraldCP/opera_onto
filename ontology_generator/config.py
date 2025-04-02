@@ -5,6 +5,7 @@ This module contains constants, mappings, and configuration settings for the ont
 """
 from typing import Dict, Any, Type, Optional
 from datetime import datetime, date, time
+import logging
 
 # --- General Configuration ---
 DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
@@ -27,8 +28,55 @@ SUPPRESSED_WARNINGS = [
     "Created new individual",
     "Context entity 'Material' required for EventRecord.consumedMaterial not found",
     "Context entity 'Material' required for EventRecord.producedMaterial not found",
-    "Context entity 'ProductionRequest' required for EventRecord.associatedRequest not found"
+    "Context entity 'ProductionRequest' required for EventRecord.associatedRequest not found",
+    "Successfully linked EventRecord",
+    "Successfully linking Equipment",
+    "Linked (Start-Time Containment):"
 ]
+
+# --- Log Filter Class ---
+class MessageFilter(logging.Filter):
+    """
+    A logging filter that suppresses specific log messages at any level
+    """
+    def __init__(self, suppressed_messages):
+        super().__init__()
+        self.suppressed_messages = suppressed_messages
+        
+    def filter(self, record):
+        # Return False to suppress the message
+        for msg in self.suppressed_messages:
+            if msg in record.getMessage():
+                return False
+        return True
+
+def setup_logging_filters():
+    """
+    Set up logging filters for all configured levels.
+    This should be called during initial setup.
+    """
+    # Create the message filter with our suppressed warnings
+    message_filter = MessageFilter(SUPPRESSED_WARNINGS)
+    
+    # Get the root logger
+    root_logger = logging.getLogger()
+    
+    # Add the filter to the root logger
+    root_logger.addFilter(message_filter)
+    
+    # Also add the filter directly to specific loggers that we know generate these messages
+    pop_logger = logging.getLogger("ontology_generator.population")
+    pop_logger.addFilter(message_filter)
+    
+    row_proc_logger = logging.getLogger("ontology_generator.population.row_processor")
+    row_proc_logger.addFilter(message_filter)
+    
+    core_logger = logging.getLogger("ontology_generator.population.core")
+    core_logger.addFilter(message_filter)
+    
+    # Add filter to event_linking logger
+    event_linking_logger = logging.getLogger("event_linking")
+    event_linking_logger.addFilter(message_filter)
 
 # --- Language Mapping for Alternative Reason Descriptions ---
 # Mapping from country descriptions to BCP 47 language tags
@@ -46,8 +94,12 @@ COUNTRY_TO_LANGUAGE: Dict[str, str] = {
 }
 DEFAULT_LANGUAGE = "en"  # Default language if country not found in mapping
 
+
 # --- Default Equipment Class Sequencing ---
 # Defines a default linear sequence for common equipment types
+# NOTE: This is a restricted list for safety during the proof of concept phase.
+# TODO: In the future, this will be expanded to support additional equipment classes
+# and potentially be loaded from an external configuration source.
 DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
     # Standard equipment classes with their sequence positions
     "Filler": 1,
@@ -56,37 +108,8 @@ DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
     "CaseFormer": 4,
     "CasePacker": 5,
     "CaseSealer": 6,
-    "Palletizer": 7,
-    "Packer": 5,      # Alternative to CasePacker
-    "Labeler": 2      # Alternative position near Cartoner
+    "Palletizer": 7
     # Add any other standard equipment classes with default positions as needed
-}
-
-# --- Line-Specific Equipment Class Sequencing ---
-# Allows for custom equipment sequences for specific lines
-# Format: {"line_id": {"equipment_class": sequence_position}}
-LINE_SPECIFIC_EQUIPMENT_SEQUENCE: Dict[str, Dict[str, int]] = {
-    # Example: Line FIPCO001 has a different sequence than the default
-    "FIPCO001": {
-        "Filler": 1,
-        "Cartoner": 2,
-        "CaseFormer": 3,
-        "CasePacker": 4,
-        "Bundler": 5,    # Different from default sequence (moved after case packer)
-        "CaseSealer": 6,
-        "Palletizer": 7
-    },
-    
-    # FIPCO006 line has a custom sequence
-    "FIPCO006": {
-        "Filler": 1,
-        "Labeler": 2,
-        "Cartoner": 3,
-        "Bundler": 4,
-        "CasePacker": 5,
-        "CaseSealer": 6
-    }
-    # Add more line-specific sequences as needed
 }
 
 # --- XSD Type Mapping ---

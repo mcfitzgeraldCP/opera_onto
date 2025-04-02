@@ -7,7 +7,7 @@ import logging
 import sys
 from typing import Optional, List
 
-from ontology_generator.config import LOG_FORMAT, SUPPRESSED_WARNINGS
+from ontology_generator.config import LOG_FORMAT, SUPPRESSED_WARNINGS, MessageFilter, setup_logging_filters
 
 # --- Logger Instances ---
 # Main module loggers that will be configured at initialization
@@ -114,6 +114,9 @@ def configure_logging(
     global _warning_filter, _info_filter
     _warning_filter = warning_filter
     _info_filter = info_filter
+    
+    # Set up message filter for SUPPRESSED_WARNINGS at all log levels
+    setup_logging_filters()
     
     # Log confirmation
     main_logger.info("Logging configured.")

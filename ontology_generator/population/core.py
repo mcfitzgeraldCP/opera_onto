@@ -203,7 +203,7 @@ def set_prop_if_col_exists(
     ]
     
     if prop_name in ae_metrics:
-        logger.info(f"TKT-006: Successfully set AE model metric {prop_name} = {value} (from column {col_name}) on {individual.name}")
+        logger.debug(f"TKT-006: Successfully set AE model metric {prop_name} = {value} (from column {col_name}) on {individual.name}")
     
     return True
 
@@ -344,7 +344,8 @@ def apply_object_property_mappings(
     entity_name: str, # Name of the entity type being processed (for logging)
     logger, # Pass logger explicitly
     linking_context: IndividualRegistry, # The GLOBAL registry of ALL individuals
-    individuals_in_row: Dict[str, Thing] # Individuals created/found specifically for THIS row in Pass 1
+    individuals_in_row: Dict[str, Thing], # Individuals created/found specifically for THIS row in Pass 1
+    exclude_structural: bool = False
 ) -> None:
     """Applies ONLY object property mappings, using linking_context or individuals_in_row to find targets."""
     if not mappings or 'object_properties' not in mappings:
@@ -353,10 +354,18 @@ def apply_object_property_mappings(
     obj_prop_mappings = mappings.get('object_properties', {})
     links_applied_count = 0
     
+    # Define known structural properties that should be handled in post-processing
+    structural_properties = ["isPartOfProductionLine", "hasEquipmentPart", "memberOfClass"]
+    
     # Track missing entities per row to log only once
     missing_context_entities = set()
 
     for prop_name, details in obj_prop_mappings.items():
+        # Skip structural properties if requested
+        if exclude_structural and prop_name in structural_properties:
+            logger.debug(f"Skipping structural property {entity_name}.{prop_name} for post-processing")
+            continue
+            
         target_class_name = details.get('target_class')
         col_name = details.get('column') # For linking via ID lookup in GLOBAL registry
         link_context_key = details.get('target_link_context') # For linking via key lookup in CURRENT row context

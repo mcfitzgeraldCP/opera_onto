@@ -20,37 +20,43 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
                       equipment_model: Optional[str] = None, model: Optional[str] = None,
                       complexity: Optional[str] = None) -> Optional[str]:
     """
-    Parses the EquipmentClass from equipment data using multiple potential sources.
+    Parses the EquipmentClass from equipment name.
     
-    Priority order for determining equipment class:
-    1. Parse from EQUIPMENT_NAME (if contains underscore or matches known pattern)
-    2. Use EQUIPMENT_MODEL if available and valid
-    3. Use MODEL if available and valid
-    4. Consider COMPLEXITY as additional context if available
+    Priority logic for determining equipment class:
+    1. Parse from EQUIPMENT_NAME if contains underscore (FIPCO009_Filler)
+    2. Check if name matches or contains a known class name
     
     Args:
-        equipment_name: The equipment name to parse
-        equipment_type: Optional equipment type to influence parsing (e.g. 'Line')
-        equipment_model: Optional equipment model information
-        model: Optional alternative model information
-        complexity: Optional complexity level information
+        equipment_name: The equipment name to parse (primary source)
+        equipment_type: Used to validate if it's a Line or Equipment
+        equipment_model: Ignored (maintained for backwards compatibility)
+        model: Ignored (maintained for backwards compatibility)
+        complexity: Ignored (maintained for backwards compatibility)
         
     Returns:
         The parsed equipment class name or None
     
     Examples:
     - FIPCO009_Filler -> Filler
-    - FIPCO009_Filler2 -> Filler
-    - FIPCO009_CaseFormer3 -> CaseFormer
-    - If EQUIPMENT_NAME parsing fails but EQUIPMENT_MODEL="Filler 3000" -> Filler
+    - FIPCO009_Filler2 -> Filler (trailing numbers are removed)
+    - CasePacker2 -> CasePacker (trailing numbers are removed)
+    - FIPCO009_CaseFormer3 -> CaseFormer (trailing numbers are removed)
     """
+    # Skip processing immediately if equipment_type is 'Line'
+    if equipment_type and equipment_type.lower() == 'line':
+        pop_logger.warning(f"'{equipment_name}' is a Line type - not a valid equipment class")
+        return None
+        
     # Known equipment class patterns (standard equipment types)
+    # NOTE: This is a hard-coded list for safety during the proof of concept phase.
+    # TODO: In the future, this will be expanded or replaced with a more flexible mechanism
+    # for equipment class identification (e.g., from configuration or database).
     known_equipment_classes = [
         "Filler", "Cartoner", "Bundler", "CaseFormer", "CasePacker", 
-        "CaseSealer", "Palletizer", "Packer", "Labeler"
+        "CaseSealer", "Palletizer"
     ]
     
-    # --- Priority 1: Parse from EQUIPMENT_NAME ---
+    # --- Parse from EQUIPMENT_NAME ---
     if equipment_name and isinstance(equipment_name, str):
         # Case 1: Names with underscores (FIPCO009_Filler)
         if '_' in equipment_name:
@@ -69,63 +75,37 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
                 else:
                     pop_logger.warning(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
         
-        # Case 2: Check if the name itself is a known equipment class
+        # Case 2: Check for equipment names that match known classes with potential trailing numbers
+        # First try exact/direct matching
         for known_class in known_equipment_classes:
-            if equipment_name.startswith(known_class):
-                # Return just the class name without any trailing numbers
-                base_class = re.sub(r'\d+$', '', known_class)
-                pop_logger.debug(f"Matched known equipment class '{base_class}' in '{equipment_name}'")
-                return base_class
-        
-        # Case 3: If EQUIPMENT_TYPE is Line, we should NOT use the line ID as the class
-        if equipment_type and equipment_type.lower() == 'line':
-            pop_logger.warning(f"'{equipment_name}' is a Line type - not a valid equipment class")
-        else:
-            pop_logger.debug(f"Could not extract valid equipment class from EQUIPMENT_NAME '{equipment_name}', trying other sources")
-    
-    # --- Priority 2: Try EQUIPMENT_MODEL ---
-    if equipment_model and isinstance(equipment_model, str):
-        # First check if any known class is contained in the equipment model
-        for known_class in known_equipment_classes:
-            if known_class in equipment_model:
-                # Extract the class name and remove any trailing digits
-                base_class = re.sub(r'\d+$', '', known_class)
-                pop_logger.debug(f"Extracted equipment class '{base_class}' from EQUIPMENT_MODEL '{equipment_model}'")
-                return base_class
-        
-        # Try to extract a potential class by splitting on spaces and taking the first part
-        # (common pattern in models like "Filler 3000" or "CasePacker X1")
-        model_parts = equipment_model.split()
-        if model_parts:
-            potential_class = re.sub(r'\d+$', '', model_parts[0])
-            # Validate that it looks like a class name (not just numbers or codes)
-            if re.match(r'^[A-Za-z]+$', potential_class) and len(potential_class) > 2:
-                pop_logger.debug(f"Extracted potential equipment class '{potential_class}' from EQUIPMENT_MODEL '{equipment_model}'")
-                return potential_class
+            # Check if the equipment name IS the class name (with optional trailing digits)
+            class_pattern = re.compile(f"^{known_class}\\d*$", re.IGNORECASE)
+            if class_pattern.match(equipment_name):
+                pop_logger.debug(f"Matched equipment name '{equipment_name}' to class '{known_class}'")
+                return known_class
             
-    # --- Priority 3: Try MODEL column ---
-    if model and isinstance(model, str):
-        # Same logic as for EQUIPMENT_MODEL
-        for known_class in known_equipment_classes:
-            if known_class in model:
-                base_class = re.sub(r'\d+$', '', known_class)
-                pop_logger.debug(f"Extracted equipment class '{base_class}' from MODEL '{model}'")
-                return base_class
+            # Alternatively check if name starts with known class
+            if equipment_name.startswith(known_class):
+                # Check if what follows is just digits
+                remainder = equipment_name[len(known_class):]
+                if not remainder or remainder.isdigit() or remainder[0].isdigit():
+                    pop_logger.debug(f"Extracted equipment class '{known_class}' from '{equipment_name}'")
+                    return known_class
+            
+            # Also look for known class within the name
+            if known_class in equipment_name:
+                # Only use this if we can't determine a more specific match
+                pop_logger.debug(f"Found equipment class '{known_class}' within '{equipment_name}'")
+                return known_class
         
-        model_parts = model.split()
-        if model_parts:
-            potential_class = re.sub(r'\d+$', '', model_parts[0])
-            if re.match(r'^[A-Za-z]+$', potential_class) and len(potential_class) > 2:
-                pop_logger.debug(f"Extracted potential equipment class '{potential_class}' from MODEL '{model}'")
-                return potential_class
+        # Case 3: Handle model-specific patterns in equipment name
+        # Not returning any special model names as classes, as requested
+        
+        # Log that we couldn't extract a class
+        pop_logger.debug(f"Could not extract valid equipment class from EQUIPMENT_NAME '{equipment_name}'")
     
-    # --- Consider COMPLEXITY as additional context ---
-    # This is more for logging/debugging than actual class determination
-    if complexity and isinstance(complexity, str):
-        pop_logger.debug(f"COMPLEXITY '{complexity}' available but not used for class determination")
-    
-    # If we reach here, no valid equipment class could be extracted from any source
-    pop_logger.warning(f"Could not extract valid equipment class from any available source (name='{equipment_name}', model='{equipment_model}', alt_model='{model}')")
+    # If we reach here, no valid equipment class could be extracted
+    pop_logger.warning(f"Could not extract valid equipment class from EQUIPMENT_NAME='{equipment_name}'")
     return None
 
 def process_equipment_and_class(
@@ -197,45 +177,52 @@ def process_equipment_and_class(
         # *** ENHANCED LOGIC: Check multiple sources for class determination ***
         # Prepare additional sources for class determination
         equipment_type = safe_cast(row.get('EQUIPMENT_TYPE'), str) if 'EQUIPMENT_TYPE' in row else None
-        equipment_model = safe_cast(row.get('EQUIPMENT_MODEL'), str) if 'EQUIPMENT_MODEL' in row else None
-        model = safe_cast(row.get('MODEL'), str) if 'MODEL' in row else None
-        complexity = safe_cast(row.get('COMPLEXITY'), str) if 'COMPLEXITY' in row else None
+        equipment_name = safe_cast(row.get('EQUIPMENT_NAME'), str) if 'EQUIPMENT_NAME' in row else None
         
-        # Log available columns for class determination
-        pop_logger.debug(f"Available columns for class determination: " + 
-                         f"EQUIPMENT_NAME='{eq_class_id_value if eq_class_col == 'EQUIPMENT_NAME' else None}', " +
-                         f"EQUIPMENT_MODEL='{equipment_model}', " + 
-                         f"MODEL='{model}', " +
-                         f"COMPLEXITY='{complexity}'")
+        # IMPORTANT: Only use EQUIPMENT_NAME for determining equipment class, not other columns
+        if not equipment_name:
+            pop_logger.warning(f"Missing EQUIPMENT_NAME column or value. Cannot determine equipment class.")
+            return None, None, None
+
+        # Log what we're using for class determination
+        pop_logger.debug(f"Using EQUIPMENT_NAME='{equipment_name}' for equipment class determination")
         
-        # Try to determine class using enhanced parse_equipment_class 
+        # Try to determine class using parse_equipment_class with ONLY equipment_name
         eq_class_base_name = parse_equipment_class(
-            equipment_name=eq_class_id_value if eq_class_col == 'EQUIPMENT_NAME' else None,
+            equipment_name=equipment_name,
             equipment_type=equipment_type,
-            equipment_model=equipment_model,
-            model=model,
-            complexity=complexity
+            # Not passing equipment_model, model, or complexity to ensure we only parse from equipment_name
         )
         is_parsed_from_name = True
         
         if not eq_class_base_name:
-            pop_logger.warning(f"Failed to determine equipment class from any available source. Skipping equipment class processing.")
-            # Skip further class processing if parsing fails from all sources
+            pop_logger.warning(f"Failed to determine equipment class from EQUIPMENT_NAME='{equipment_name}'. Skipping equipment class processing.")
+            # Skip further class processing if parsing fails from equipment_name
             return None, None, None
         else:
-            pop_logger.debug(f"Determined equipment class name: '{eq_class_base_name}' from available sources")
+            pop_logger.debug(f"Determined equipment class name: '{eq_class_base_name}' from EQUIPMENT_NAME")
     else:
-        # Attempt 2: Fallback to using equipmentClassName property mapping as the ID source
-        pop_logger.debug("No mapping found for equipmentClassId, trying equipmentClassName as fallback ID source.")
-        if eq_class_name_map and eq_class_name_map.get('column'):
-            eq_class_col = eq_class_name_map['column']
-            eq_class_id_value = safe_cast(row.get(eq_class_col), str)
-            eq_class_base_name = eq_class_id_value # Use directly when falling back to name column
-            pop_logger.debug(f"Falling back to EquipmentClass.equipmentClassName mapping (column '{eq_class_col}') for class ID: '{eq_class_base_name}'.")
-        else:
-            pop_logger.warning("Cannot determine column for EquipmentClass ID (tried equipmentClassId, equipmentClassName). Skipping EquipmentClass processing.")
-            # Cannot proceed without class ID
+        # Don't attempt to use alternative sources - only EQUIPMENT_NAME is valid
+        pop_logger.warning("No mapping for equipmentClassId found. Will attempt to use EQUIPMENT_NAME directly.")
+        equipment_name = safe_cast(row.get('EQUIPMENT_NAME'), str) if 'EQUIPMENT_NAME' in row else None
+        
+        if not equipment_name:
+            pop_logger.warning("EQUIPMENT_NAME column not found or empty. Cannot determine equipment class.")
             return None, None, None
+            
+        equipment_type = safe_cast(row.get('EQUIPMENT_TYPE'), str) if 'EQUIPMENT_TYPE' in row else None
+        
+        # Try to parse from EQUIPMENT_NAME
+        eq_class_base_name = parse_equipment_class(
+            equipment_name=equipment_name,
+            equipment_type=equipment_type
+        )
+        
+        if not eq_class_base_name:
+            pop_logger.warning(f"Failed to determine equipment class from EQUIPMENT_NAME='{equipment_name}'. Skipping equipment class processing.")
+            return None, None, None
+            
+        pop_logger.debug(f"Determined equipment class name: '{eq_class_base_name}' from EQUIPMENT_NAME")
 
     # Check if we obtained a base name
     if not eq_class_base_name:

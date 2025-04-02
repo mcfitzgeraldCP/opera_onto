@@ -48,7 +48,7 @@ def populate_ontology_from_data(onto: Ontology,
                                 property_is_functional: Dict[str, bool],
                                 specification: List[Dict[str, str]],
                                 property_mappings: Dict[str, Dict[str, Dict[str, Any]]] = None
-                              ) -> Tuple[int, Dict[str, object], Dict[str, int], List[Tuple[object, object, object, object]]]:
+                              ) -> Tuple[int, Dict[str, object], Dict[str, int], List[Tuple[object, object, object, object]], Dict]:
     """
     Populates the ontology with individuals and relations from data rows using a two-pass approach.
     Pass 1: Creates individuals and sets data properties.
@@ -64,7 +64,7 @@ def populate_ontology_from_data(onto: Ontology,
         property_mappings: Optional property mappings dictionary
         
     Returns:
-        tuple: (failed_rows_count, created_equipment_class_inds, equipment_class_positions, created_events_context)
+        tuple: (failed_rows_count, created_equipment_class_inds, equipment_class_positions, created_events_context, all_created_individuals_by_uid)
     """
     # Ensure imports required *within* this function are present
     from ontology_generator.population.core import PopulationContext
@@ -85,7 +85,7 @@ def populate_ontology_from_data(onto: Ontology,
     if missing_classes:
         # get_class already logged errors, just return failure
         main_logger.error(f"Cannot proceed. Missing essential classes definitions: {missing_classes}")
-        return len(data_rows), {}, {}, []  # Empty context
+        return len(data_rows), {}, {}, [], {}  # Empty context
 
     essential_prop_names = { # Focus on IDs and core structure for initial checks
         "plantId", "areaId", "processCellId", "lineId", "equipmentId", "equipmentName",
@@ -95,7 +95,7 @@ def populate_ontology_from_data(onto: Ontology,
     missing_essential_props = [name for name in essential_prop_names if not context.get_prop(name)]
     if missing_essential_props:
         main_logger.error(f"Cannot reliably proceed. Missing essential data properties definitions: {missing_essential_props}")
-        return len(data_rows), {}, {}, []  # Empty context
+        return len(data_rows), {}, {}, [], {}  # Empty context
 
     # Warn about other missing properties defined in spec but not found
     all_spec_prop_names = {row.get('Proposed OWL Property','').strip() for row in specification if row.get('Proposed OWL Property')}
@@ -217,8 +217,8 @@ def populate_ontology_from_data(onto: Ontology,
     final_failed_rows = pass1_failed_rows # Or potentially max(pass1_failed_rows, pass2_failed_rows) or other logic
 
     main_logger.info(f"Ontology population complete. Final failed row count (based on Pass 1): {final_failed_rows}.")
-    # Return collected contexts from Pass 1
-    return final_failed_rows, created_equipment_class_inds, equipment_class_positions, created_events_context
+    # Return collected contexts from Pass 1 and the registry
+    return final_failed_rows, created_equipment_class_inds, equipment_class_positions, created_events_context, all_created_individuals_by_uid
 
 
 def _log_initial_parameters(args, logger):
@@ -320,14 +320,15 @@ def _populate_abox(onto, data_rows, defined_classes, defined_properties, prop_is
     created_eq_classes = {}
     eq_class_positions = {}
     created_events_context = []
+    all_created_individuals_by_uid = {}
 
     if not data_rows:
         logger.warning("Skipping population as no data rows were provided.")
         # Return success=True but with zero counts/empty contexts
-        return True, 0, {}, {}, []
+        return True, 0, {}, {}, [], {}
 
     try:
-        failed_rows_count, created_eq_classes, eq_class_positions, created_events_context = populate_ontology_from_data(
+        failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid = populate_ontology_from_data(
             onto, data_rows, defined_classes, defined_properties, prop_is_functional,
             specification, property_mappings
         )
@@ -344,7 +345,7 @@ def _populate_abox(onto, data_rows, defined_classes, defined_properties, prop_is
         population_successful = False
 
     logger.info("ABox population phase finished.")
-    return population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context
+    return population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid
 
 def _run_analysis_and_optimization(onto, defined_classes, specification, optimize_ontology, output_owl_path, logger):
     logger.info("Analyzing ontology population status...")
@@ -412,6 +413,44 @@ def _link_equipment_events(onto, created_events_context, defined_classes, define
     except Exception as link_exc:
         logger.error(f"Error during event linking pass: {link_exc}", exc_info=True)
         # Log error but continue
+
+def _process_structural_relationships(onto, data_rows, defined_classes, defined_properties, property_is_functional, property_mappings, all_created_individuals_by_uid, logger):
+    """
+    Process structural relationships between entities after all individuals have been created.
+    This is specifically for relationships that can't be established during row-by-row processing.
+    
+    Args:
+        onto: The ontology being populated
+        data_rows: The data rows (used for referencing column information)
+        defined_classes: Dictionary of defined classes
+        defined_properties: Dictionary of defined properties 
+        property_is_functional: Dictionary indicating whether properties are functional
+        property_mappings: Parsed property mappings
+        all_created_individuals_by_uid: Registry of all created individuals
+        logger: Logger to use
+    
+    Returns:
+        int: Number of structural links created
+    """
+    logger.info("Processing structural relationships between entities...")
+    try:
+        # Import the function from row_processor
+        from ontology_generator.population.row_processor import process_structural_relationships
+        from ontology_generator.population.core import PopulationContext
+        
+        # Create the context
+        context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
+        
+        # Call the structural relationship processor
+        links_created = process_structural_relationships(
+            context, property_mappings, all_created_individuals_by_uid, logger
+        )
+        
+        logger.info(f"Structural relationship processing complete. Created {links_created} links.")
+        return links_created
+    except Exception as e:
+        logger.error(f"Error processing structural relationships: {e}", exc_info=True)
+        return 0  # Indicate no links were created due to error
 
 def _run_reasoning_phase(onto, world, world_db_path, reasoner_report_max_entities, reasoner_report_verbose, logger):
     logger.info("Applying reasoner (ensure HermiT or compatible reasoner is installed)...")
@@ -605,33 +644,41 @@ def main_ontology_generation(spec_file_path: str,
         if data_rows is None: return False # Indicate failure if reading failed
 
         # 6. Populate Ontology (ABox)
-        population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context = _populate_abox(
+        population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid = _populate_abox(
             onto, data_rows, defined_classes, defined_properties, property_is_functional,
             specification, property_mappings, main_logger
         )
-        # Population failure is handled later in saving/reasoning steps
+        
+        # 7. Process Structural Relationships (NEW STEP)
+        if population_successful:
+            # Process structural relationships with the registry from population
+            _process_structural_relationships(
+                onto, data_rows, defined_classes, defined_properties, property_is_functional,
+                property_mappings, all_created_individuals_by_uid, main_logger
+            )
+            main_logger.info("Structural relationship processing complete.")
 
-        # 7. Analyze Population & Optimize (Optional)
+        # 8. Analyze Population & Optimize (Optional)
         if population_successful and args.analyze_population:
             _run_analysis_and_optimization(onto, defined_classes, specification, args.optimize_ontology, args.output_file, main_logger)
         elif not args.analyze_population:
             main_logger.warning("Skipping ontology population analysis as requested.")
 
-        # 8. Setup Sequence Relationships (Optional)
+        # 9. Setup Sequence Relationships (Optional)
         if population_successful and created_eq_classes and eq_class_positions:
              _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
         elif population_successful:
              main_logger.warning("Skipping sequence relationship setup: No EquipmentClass info available.")
         # No action needed if population failed, handled by checks below
 
-        # 9. Link Events (Optional)
+        # 10. Link Events (Optional)
         if population_successful and created_events_context:
             _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger)
         elif population_successful:
              main_logger.warning("Skipping event linking: No event context available.")
         # No action needed if population failed
 
-        # 10. Apply Reasoning (Optional)
+        # 11. Apply Reasoning (Optional)
         if args.reasoner and population_successful:
             reasoning_successful = _run_reasoning_phase(onto, world, args.worlddb, args.max_report_entities, args.full_report, main_logger)
         elif args.reasoner and not population_successful:
@@ -639,14 +686,14 @@ def main_ontology_generation(spec_file_path: str,
             reasoning_successful = False # Ensure overall success reflects this skipped step
         # If reasoner not used, reasoning_successful remains True
 
-        # 11. Save Ontology
+        # 12. Save Ontology
         # Saving logic depends on population and reasoning success
         # The helper returns True if saving *failed*
         save_failed = _save_ontology_file(onto, world, args.output_file, args.format, args.worlddb, population_successful, reasoning_successful, main_logger)
         if save_failed:
             return False # Saving failed, overall process is unsuccessful
 
-        # 12. Determine overall success
+        # 13. Determine overall success
         overall_success = population_successful and reasoning_successful and not save_failed
         return overall_success
 
