@@ -126,6 +126,51 @@ def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_f
         pop_logger.error(f"Error setting property '{prop.name}' on individual '{individual.name}' with value '{repr(value)}': {e}", exc_info=False)
 
 
+def set_prop_if_col_exists(context: PopulationContext, 
+                             individual: Thing, 
+                             prop_name: str, 
+                             col_name: str, 
+                             row: Dict[str, Any], 
+                             cast_func: callable, 
+                             target_type: type, 
+                             logger, 
+                             default: Optional[Any] = None) -> None:
+    """
+    Safely sets a property value using the context, but only if the 
+    corresponding column exists in the data row, logging an error otherwise.
+    
+    Args:
+        context: The population context
+        individual: The individual to set the property on
+        prop_name: The name of the property to set
+        col_name: The name of the column in the data row
+        row: The data row dictionary
+        cast_func: The casting function (e.g., safe_cast)
+        target_type: The target type for casting
+        logger: Logger object for logging errors
+        default: Optional default value to pass to cast_func
+    """
+    if col_name not in row or row[col_name] is None or str(row[col_name]).strip() == '':
+        logger.error(f"Missing required column '{col_name}' for property '{prop_name}' on individual '{individual.name}' in row: {context.row_to_string(row) if hasattr(context, 'row_to_string') else 'Row details unavailable'}")
+        return
+        
+    try:
+        # Prepare arguments for cast_func
+        cast_args = [row.get(col_name), target_type]
+        if default is not None:
+            cast_args.append(default) # Append default only if provided
+            
+        value = cast_func(*cast_args)
+        
+        if value is not None:  # Don't set if casting resulted in None (unless default=None was intended)
+            context.set_prop(individual, prop_name, value)
+        elif default is not None and value is None: # Log if default was used but result is still None (unexpected from safe_cast typically)
+             logger.debug(f"Casting column '{col_name}' for '{prop_name}' resulted in None even with default={default}")
+
+    except Exception as e:
+        logger.error(f"Error casting or setting property '{prop_name}' from column '{col_name}' on individual '{individual.name}': {e}")
+
+
 def get_or_create_individual(onto_class: ThingClass, individual_name_base: Any, onto: Ontology, add_labels: Optional[List[str]] = None) -> Optional[Thing]:
     """
     Gets an individual if it exists, otherwise creates it.
@@ -199,7 +244,8 @@ def apply_property_mappings(individual: Thing,
                            mappings: Dict[str, Dict[str, Dict[str, Any]]], 
                            row: Dict[str, Any],
                            context: PopulationContext, 
-                           entity_name: str) -> None:
+                           entity_name: str,
+                           logger) -> None:
     """
     Apply property mappings to an individual based on the mappings dictionary.
     
@@ -209,6 +255,7 @@ def apply_property_mappings(individual: Thing,
         row: The data row containing values
         context: The population context
         entity_name: The name of the entity (for logging)
+        logger: Logger object for logging errors
     """
     # Process data properties from mappings
     for prop_name, prop_info in mappings.get("data_properties", {}).items():
@@ -230,9 +277,8 @@ def apply_property_mappings(individual: Thing,
                         # Create localized string
                         loc_value = locstr(value_str, lang=lang_tag)
                         context.set_prop(individual, prop_name, loc_value)
-                        pop_logger.debug(f"Set localized property {entity_name}.{prop_name} from column '{col_name}' to '{value_str}'@{lang_tag}")
                     except Exception as e:
-                        pop_logger.warning(f"Failed to create localized string for {entity_name}.{prop_name}: {e}")
+                        logger.warning(f"Failed to create localized string for {entity_name}.{prop_name}: {e}")
                         # Fallback to regular string
                         context.set_prop(individual, prop_name, value_str)
             else:
@@ -245,7 +291,6 @@ def apply_property_mappings(individual: Thing,
                 # Set the property if we have a valid value
                 if value is not None:
                     context.set_prop(individual, prop_name, value)
-                    pop_logger.debug(f"Set {entity_name}.{prop_name} from column '{col_name}' to {value}")
     
     # Process object properties from mappings
     for prop_name, prop_info in mappings.get("object_properties", {}).items():
@@ -256,7 +301,7 @@ def apply_property_mappings(individual: Thing,
             # Get target class from population context
             tgt_class = context.get_class(target_class)
             if not tgt_class:
-                pop_logger.warning(f"Target class '{target_class}' not found for object property {entity_name}.{prop_name}")
+                logger.warning(f"Target class '{target_class}' not found for object property {entity_name}.{prop_name}")
                 continue
                 
             # Get value from row
@@ -268,6 +313,5 @@ def apply_property_mappings(individual: Thing,
             target_individual = get_or_create_individual(tgt_class, value_id, context.onto, add_labels=[value_id])
             if target_individual:
                 context.set_prop(individual, prop_name, target_individual)
-                pop_logger.debug(f"Set object property {entity_name}.{prop_name} to {target_individual.name}")
                 
-    pop_logger.debug(f"Applied mappings for {entity_name}: {len(mappings.get('data_properties', {}))} data properties, {len(mappings.get('object_properties', {}))} object properties")
+    logger.debug(f"Applied mappings for {entity_name}: {len(mappings.get('data_properties', {}))} data properties, {len(mappings.get('object_properties', {}))} object properties")

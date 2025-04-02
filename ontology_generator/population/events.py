@@ -11,7 +11,8 @@ from owlready2 import Thing, locstr
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.utils.types import safe_cast
 from ontology_generator.population.core import (
-    PopulationContext, get_or_create_individual, apply_property_mappings
+    PopulationContext, get_or_create_individual, apply_property_mappings,
+    set_prop_if_col_exists
 )
 from ontology_generator.config import COUNTRY_TO_LANGUAGE, DEFAULT_LANGUAGE
 
@@ -66,7 +67,7 @@ def process_shift(row: Dict[str, Any],
                     continue
                     
                 # Apply the property mapping
-                apply_property_mappings(shift_ind, {"data_properties": {prop_name: prop_info}}, row, context, "Shift")
+                apply_property_mappings(shift_ind, {"data_properties": {prop_name: prop_info}}, row, context, "Shift", pop_logger)
                 populated_props += 1
         
         pop_logger.debug(f"Populated {populated_props} properties for Shift from dynamic mappings")
@@ -76,16 +77,13 @@ def process_shift(row: Dict[str, Any],
         # Populate shift details (Functional properties, assign only if needed/missing)
         # Check before setting to avoid redundant operations if individual already exists
         if getattr(shift_ind, "shiftId", None) != shift_name:
-            context.set_prop(shift_ind, "shiftId", shift_name)
+            context.set_prop_if_col_exists(shift_ind, "shiftId", 'SHIFT_NAME', row, safe_cast, str, pop_logger)
         if getattr(shift_ind, "shiftStartTime", None) is None:
-           st = safe_cast(row.get('SHIFT_START_DATE_LOC'), datetime)
-           if st: context.set_prop(shift_ind, "shiftStartTime", st)
+            context.set_prop_if_col_exists(shift_ind, "shiftStartTime", 'SHIFT_START_DATE_LOC', row, safe_cast, datetime, pop_logger)
         if getattr(shift_ind, "shiftEndTime", None) is None:
-           et = safe_cast(row.get('SHIFT_END_DATE_LOC'), datetime)
-           if et: context.set_prop(shift_ind, "shiftEndTime", et)
+            context.set_prop_if_col_exists(shift_ind, "shiftEndTime", 'SHIFT_END_DATE_LOC', row, safe_cast, datetime, pop_logger)
         if getattr(shift_ind, "shiftDurationMinutes", None) is None:
-           dur = safe_cast(row.get('SHIFT_DURATION_MIN'), float)
-           if dur is not None: context.set_prop(shift_ind, "shiftDurationMinutes", dur)
+            context.set_prop_if_col_exists(shift_ind, "shiftDurationMinutes", 'SHIFT_DURATION_MIN', row, safe_cast, float, pop_logger)
 
     return shift_ind
 
@@ -120,11 +118,11 @@ def process_state_reason(row: Dict[str, Any],
             # Check if we can use dynamic property mappings for state
             if property_mappings and "OperationalState" in property_mappings:
                 state_mappings = property_mappings["OperationalState"]
-                apply_property_mappings(state_ind, state_mappings, row, context, "OperationalState")
+                apply_property_mappings(state_ind, state_mappings, row, context, "OperationalState", pop_logger)
             else:
                 # Fallback to hardcoded property assignments
                 # Set description (Non-functional)
-                context.set_prop(state_ind, "stateDescription", state_desc)
+                context.set_prop_if_col_exists(state_ind, "stateDescription", 'UTIL_STATE_DESCRIPTION', row, safe_cast, str, pop_logger)
     else:
         pop_logger.debug("No UTIL_STATE_DESCRIPTION in row.")
 
@@ -161,17 +159,17 @@ def process_state_reason(row: Dict[str, Any],
                                     # Continue to regular processing as fallback
                         
                         # For all other properties, use standard property mapping
-                        apply_property_mappings(reason_ind, {"data_properties": {prop_name: prop_info}}, row, context, "OperationalReason")
+                        apply_property_mappings(reason_ind, {"data_properties": {prop_name: prop_info}}, row, context, "OperationalReason", pop_logger)
                 
                 # Also process object properties
                 if reason_mappings.get("object_properties"):
-                    apply_property_mappings(reason_ind, {"object_properties": reason_mappings["object_properties"]}, row, context, "OperationalReason")
+                    apply_property_mappings(reason_ind, {"object_properties": reason_mappings["object_properties"]}, row, context, "OperationalReason", pop_logger)
                     
                 pop_logger.debug(f"Applied mappings for OperationalReason")
             else:
                 # Fallback to hardcoded property assignments
                 # Set description (Non-functional)
-                context.set_prop(reason_ind, "reasonDescription", reason_desc)
+                context.set_prop_if_col_exists(reason_ind, "reasonDescription", 'UTIL_REASON_DESCRIPTION', row, safe_cast, str, pop_logger)
 
                 # Handle AltReasonDescription with language tag (Non-functional)
                 alt_reason = safe_cast(row.get('UTIL_ALT_LANGUAGE_REASON'), str)
@@ -188,9 +186,9 @@ def process_state_reason(row: Dict[str, Any],
                         context.set_prop(reason_ind, "altReasonDescription", alt_reason)
 
                 # Other reason properties (Non-functional)
-                context.set_prop(reason_ind, "downtimeDriver", safe_cast(row.get('DOWNTIME_DRIVER'), str))
-                co_type = safe_cast(row.get('CO_TYPE'), str) or safe_cast(row.get('CO_ORIGINAL_TYPE'), str)
-                context.set_prop(reason_ind, "changeoverType", co_type)
+                context.set_prop_if_col_exists(reason_ind, "downtimeDriver", 'DOWNTIME_DRIVER', row, safe_cast, str, pop_logger)
+                co_type = safe_cast(row.get('CO_TYPE'), str)
+                context.set_prop_if_col_exists(reason_ind, "changeoverType", 'CO_TYPE', row, safe_cast, str, pop_logger)
     else:
         pop_logger.debug("No UTIL_REASON_DESCRIPTION in row.")
 
@@ -242,9 +240,9 @@ def process_time_interval(row: Dict[str, Any],
 
     # Set TimeInterval properties (Functional)
     if start_time: 
-        context.set_prop(time_interval_ind, "startTime", start_time)
+        context.set_prop_if_col_exists(time_interval_ind, "startTime", 'JOB_START_TIME_LOC', row, safe_cast, datetime, pop_logger)
     if end_time: 
-        context.set_prop(time_interval_ind, "endTime", end_time)
+        context.set_prop_if_col_exists(time_interval_ind, "endTime", 'JOB_END_TIME_LOC', row, safe_cast, datetime, pop_logger)
 
     return time_interval_ind
 
@@ -301,13 +299,13 @@ def process_event_record(row: Dict[str, Any],
     # Check if we can use dynamic property mappings
     if property_mappings and "EventRecord" in property_mappings:
         event_mappings = property_mappings["EventRecord"]
-        apply_property_mappings(event_ind, event_mappings, row, context, "EventRecord")
+        apply_property_mappings(event_ind, event_mappings, row, context, "EventRecord", pop_logger)
     else:
         # --- Fallback to hardcoded property assignments if no mappings available ---
         pop_logger.debug("Using hardcoded property assignments (no dynamic mappings available)")
-        context.set_prop(event_ind, "operationType", safe_cast(row.get('OPERA_TYPE'), str))
-        context.set_prop(event_ind, "rampUpFlag", safe_cast(row.get('RAMPUP_FLAG'), bool, default=False))
-        context.set_prop(event_ind, "reportedDurationMinutes", safe_cast(row.get('TOTAL_TIME'), float))
+        context.set_prop_if_col_exists(event_ind, "operationType", 'OPERA_TYPE', row, safe_cast, str, pop_logger)
+        context.set_prop_if_col_exists(event_ind, "rampUpFlag", 'RAMPUP_FLAG', row, safe_cast, bool, pop_logger, default=False)
+        context.set_prop_if_col_exists(event_ind, "reportedDurationMinutes", 'TOTAL_TIME', row, safe_cast, float, pop_logger)
 
         # Time Metrics (Functional)
         time_metric_cols = {
@@ -320,7 +318,7 @@ def process_event_record(row: Dict[str, Any],
         for prop_name, col_name in time_metric_cols.items():
             val = safe_cast(row.get(col_name), float)
             if val is not None:  # Only set if value is valid
-                context.set_prop(event_ind, prop_name, val)
+                context.set_prop_if_col_exists(event_ind, prop_name, col_name, row, safe_cast, float, pop_logger)
 
         # --- Additional Performance Metrics from Spec ---
         # Time Metrics (Functional)
@@ -337,7 +335,7 @@ def process_event_record(row: Dict[str, Any],
         for prop_name, col_name in additional_time_metrics.items():
             val = safe_cast(row.get(col_name), float)
             if val is not None:  # Only set if value is valid
-                context.set_prop(event_ind, prop_name, val)
+                context.set_prop_if_col_exists(event_ind, prop_name, col_name, row, safe_cast, float, pop_logger)
         
         # Production Quantity Metrics (Functional)
         quantity_metrics = {
@@ -347,10 +345,10 @@ def process_event_record(row: Dict[str, Any],
         for prop_name, col_name in quantity_metrics.items():
             val = safe_cast(row.get(col_name), int)
             if val is not None:  # Only set if value is valid
-                context.set_prop(event_ind, prop_name, val)
+                context.set_prop_if_col_exists(event_ind, prop_name, col_name, row, safe_cast, int, pop_logger)
                 
         # Additional Event Categorization Metrics
-        context.set_prop(event_ind, "aeModelCategory", safe_cast(row.get('AE_MODEL_CATEGORY'), str))
+        context.set_prop_if_col_exists(event_ind, "aeModelCategory", 'AE_MODEL_CATEGORY', row, safe_cast, str, pop_logger)
 
     # --- Link EventRecord to other Individuals (Object Properties) ---
     # Link to resource (Line or Equipment) - involvesResource (Non-functional per spec, but logic likely implies 1:1)

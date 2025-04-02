@@ -14,7 +14,8 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from owlready2 import (
     World, Ontology, sync_reasoner, Thing,
-    OwlReadyInconsistentOntologyError, locstr, default_world
+    OwlReadyInconsistentOntologyError, locstr, default_world,
+    ThingClass, FunctionalProperty, InverseFunctionalProperty, TransitiveProperty, SymmetricProperty, AsymmetricProperty, ReflexiveProperty, IrreflexiveProperty, Nothing
 )
 
 from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map
@@ -43,6 +44,7 @@ from ontology_generator.analysis.population import (
     analyze_ontology_population, generate_population_report, generate_optimization_recommendations
 )
 from ontology_generator.analysis.reasoning import generate_reasoning_report
+from ontology_generator.population.processing import process_single_data_row
 
 # Initialize XSD type map and datetime types
 init_xsd_type_map(locstr)
@@ -128,118 +130,32 @@ def populate_ontology_from_data(onto: Ontology,
     with onto:  # Use the ontology context for creating individuals
         for i, row in enumerate(data_rows):
             row_num = i + 2  # 1-based index + header row = line number in CSV
-            main_logger.debug(f"--- Processing Row {row_num} ---")
-            try:
-                # 1. Process Asset Hierarchy -> plant, area, pcell, line individuals
-                plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(row, context, property_mappings)
-                if not plant_ind:  # Plant is essential to continue processing this row meaningfully
-                    raise ValueError("Failed to establish Plant individual, cannot proceed with row.")
+            
+            # Call the dedicated row processing function
+            success, event_context, eq_class_info = process_single_data_row(
+                row, row_num, context, property_mappings
+            )
 
-                # 2. Determine Resource (Line or Equipment) for the Event
-                eq_type = row.get('EQUIPMENT_TYPE', '')
-                resource_individual = None
-                resource_base_id = None  # For naming related individuals
-                equipment_ind = None
-                eq_class_ind = None
-                eq_class_name = None
-
-                if eq_type == 'Line' and line_ind:
-                    resource_individual = line_ind
-                    resource_base_id = line_ind.name  # Use unique IRI name
-                    main_logger.debug(f"Row {row_num}: Identified as Line record for: {line_ind.name}")
-
-                elif eq_type == 'Equipment':
-                    # Process Equipment -> equipment, eq_class individuals
-                    equipment_ind, eq_class_ind, eq_class_name = process_equipment(row, context, line_ind, property_mappings)
-                    if equipment_ind:
-                        resource_individual = equipment_ind
-                        resource_base_id = f"Eq_{equipment_ind.name}"  # Prefix for clarity
-
-                        # Track equipment class info if successfully created/retrieved
-                        if eq_class_ind and eq_class_name:
-                            if eq_class_name not in created_equipment_class_inds:
-                                created_equipment_class_inds[eq_class_name] = eq_class_ind
-                            # Update position map if a position is defined for the class
-                            pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-                            if pos is not None:
-                                # Check if existing stored pos is different (shouldn't happen with functional prop)
-                                if eq_class_name in equipment_class_positions and equipment_class_positions[eq_class_name] != pos:
-                                    main_logger.warning(f"Sequence position conflict for class '{eq_class_name}'. Existing: {equipment_class_positions[eq_class_name]}, New: {pos}. Using new value: {pos}")
-                                equipment_class_positions[eq_class_name] = pos
-                                main_logger.debug(f"Tracked position {pos} for class '{eq_class_name}'.")
-
-                    else:
-                         main_logger.warning(f"Row {row_num}: Identified as Equipment record, but failed to process Equipment individual. Event linkages might be incomplete.")
-                         # Allow continuing, but event will link to nothing specific if eq failed
-
-                else:
-                    main_logger.warning(f"Row {row_num}: Could not determine resource. EQUIPMENT_TYPE='{eq_type}', EQUIPMENT_ID='{row.get('EQUIPMENT_ID')}', LINE_NAME='{row.get('LINE_NAME')}'. Event linkages might be incomplete.")
-                    # Continue processing other parts of the row, but linkages will be affected
-
-                # Check if a resource was identified for linking the event
-                if not resource_individual:
-                    main_logger.error(f"Row {row_num}: No valid resource (Line or Equipment) individual identified or created. Cannot link event record correctly.")
-                    # Decide whether to skip the rest of the row or continue without linking event
-                    # raise ValueError("Resource individual missing, cannot proceed with event linking.") # Stricter approach
-                    # Let's continue but log the issue clearly. Event won't link to resource.
-                    resource_base_id = f"UnknownResource_Row{row_num}" # Fallback for naming interval/event
-
-
-                # 3. Process Material -> material individual
-                material_ind = process_material(row, context, property_mappings)
-
-                # 4. Process Production Request -> request individual
-                request_ind = process_production_request(row, context, material_ind, property_mappings)
-
-                # 5. Process Shift -> shift individual
-                shift_ind = process_shift(row, context, property_mappings)
-
-                # 6. Process State & Reason -> state, reason individuals
-                state_ind, reason_ind = process_state_reason(row, context, property_mappings)
-
-                # 7. Process Time Interval -> interval individual
-                time_interval_ind = process_time_interval(row, context, resource_base_id, row_num, property_mappings)
-
-                # 8. Process Event Record and Links -> event individual
-                event_ind = None
-                if resource_individual:  # Only process event if resource exists
-                    event_ind = process_event_record(row, context, resource_individual, resource_base_id, row_num,
-                                                     request_ind, material_ind, time_interval_ind,
-                                                     shift_ind, state_ind, reason_ind, property_mappings)
-                    if not event_ind:
-                        # Error logged in process_event_record
-                        raise ValueError("Failed to create EventRecord individual.")
-                    else:
-                        # Store context for event linking
-                        associated_line_ind = None
-                        if isinstance(resource_individual, context.get_class("ProductionLine")):
-                            associated_line_ind = resource_individual
-                        elif isinstance(resource_individual, context.get_class("Equipment")):
-                            # Get the line(s) this equipment belongs to
-                            part_of_prop = context.get_prop("isPartOfProductionLine")
-                            if part_of_prop:
-                                line_list = getattr(resource_individual, part_of_prop.python_name, [])
-                                if line_list and isinstance(line_list, list) and len(line_list) > 0:
-                                    associated_line_ind = line_list[0]  # Take the first line if multiple
-                                elif line_list and not isinstance(line_list, list):  # Handle single value case
-                                    associated_line_ind = line_list
-
-                        if associated_line_ind and isinstance(associated_line_ind, context.get_class("ProductionLine")):
-                            created_events_context.append((event_ind, resource_individual, time_interval_ind, associated_line_ind))
-                            main_logger.debug(f"Row {row_num}: Stored context for Event {event_ind.name} (Resource: {resource_individual.name}, Line: {associated_line_ind.name})")
-                        else:
-                            main_logger.warning(f"Row {row_num}: Could not determine associated ProductionLine for Event {event_ind.name}. Skipping for isPartOfLineEvent linking.")
-
-                else:
-                    main_logger.warning(f"Row {row_num}: Skipping EventRecord creation as no valid resource individual was found.")
-
-
+            if success:
                 successful_rows += 1
-
-            except Exception as e:
+                # Store event context if returned
+                if event_context:
+                    created_events_context.append(event_context)
+                
+                # Process equipment class info if returned
+                if eq_class_info:
+                    eq_class_name, eq_class_ind, eq_class_pos = eq_class_info
+                    if eq_class_name not in created_equipment_class_inds:
+                        created_equipment_class_inds[eq_class_name] = eq_class_ind
+                    # Update position map if a position is defined and potentially different
+                    if eq_class_pos is not None:
+                        if eq_class_name in equipment_class_positions and equipment_class_positions[eq_class_name] != eq_class_pos:
+                             main_logger.warning(f"Sequence position conflict for class '{eq_class_name}' during population. Existing: {equipment_class_positions[eq_class_name]}, New: {eq_class_pos}. Using new value: {eq_class_pos}")
+                        equipment_class_positions[eq_class_name] = eq_class_pos
+                        main_logger.debug(f"Tracked position {eq_class_pos} for class '{eq_class_name}'.")
+            else:
                 failed_rows += 1
-                main_logger.error(f"Error processing data row {row_num}: {row if len(str(row)) < 500 else str(row)[:500] + '...'}")
-                main_logger.exception("Exception details:")
+                # Error logging is handled within process_single_data_row
 
     # Log summaries
     main_logger.info("--- Unique Equipment Classes Found/Created ---")
@@ -254,6 +170,313 @@ def populate_ontology_from_data(onto: Ontology,
     main_logger.info(f"Ontology population complete. Successfully processed {successful_rows} rows, failed to process {failed_rows} rows.")
     return failed_rows, created_equipment_class_inds, equipment_class_positions, created_events_context
 
+
+def _log_initial_parameters(args, logger):
+    logger.info("--- Starting Ontology Generation ---")
+    logger.info(f"Specification file: {args.spec_file}")
+    logger.info(f"Data file: {args.data_file}")
+    logger.info(f"Output OWL file: {args.output_file}")
+    logger.info(f"Ontology IRI: {args.iri}")
+    logger.info(f"Save format: {args.format}")
+    logger.info(f"Run reasoner: {args.reasoner}")
+    if args.worlddb:
+        logger.info(f"Using persistent world DB: {args.worlddb}")
+    logger.info(f"Reasoner report max entities: {args.max_report_entities}")
+    logger.info(f"Reasoner report verbose: {args.full_report}")
+    logger.info(f"Analyze population: {args.analyze_population}")
+    logger.info(f"Strict adherence: {args.strict_adherence}")
+    logger.info(f"Skip classes: {args.skip_classes}")
+    logger.info(f"Optimize ontology: {args.optimize_ontology}")
+
+def _parse_spec_and_mappings(spec_file_path, logger):
+    logger.info(f"Parsing specification file: {spec_file_path}")
+    specification = parse_specification(spec_file_path)
+    if not specification:
+        logger.error("Specification parsing failed or resulted in empty spec. Aborting.")
+        return None, None # Indicate failure
+
+    logger.info("Parsing property mappings from specification...")
+    property_mappings = parse_property_mappings(specification)
+    logger.info(f"Parsed property mappings for {len(property_mappings)} entities")
+
+    logger.info("Validating property mappings...")
+    validation_result = validate_property_mappings(property_mappings)
+    if not validation_result:
+        logger.warning("Property mapping validation had issues. Population may be incomplete.")
+    else:
+        logger.info("Property mapping validation passed.")
+    return specification, property_mappings
+
+def _setup_world_and_ontology(ontology_iri, world_db_path, logger):
+    world = None
+    onto = None
+    if world_db_path:
+        logger.info(f"Initializing persistent World at: {world_db_path}")
+        db_dir = os.path.dirname(world_db_path)
+        if db_dir and not os.path.exists(db_dir):
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+                logger.info(f"Created directory for world DB: {db_dir}")
+            except OSError as e:
+                 logger.error(f"Failed to create directory for world DB {db_dir}: {e}")
+                 return None, None # Indicate failure
+        try:
+            world = World(filename=world_db_path)
+            onto = world.get_ontology(ontology_iri).load()
+            logger.info(f"Ontology object obtained from persistent world: {onto}")
+        except Exception as db_err:
+             logger.error(f"Failed to initialize or load from persistent world DB {world_db_path}: {db_err}", exc_info=True)
+             return None, None # Indicate failure
+    else:
+        logger.info("Initializing in-memory World.")
+        world = World()  # Create a fresh world
+        onto = world.get_ontology(ontology_iri)
+        logger.info(f"Ontology object created in memory: {onto}")
+    return world, onto
+
+def _define_tbox(onto, specification, strict_adherence, skip_classes, logger):
+    logger.info("Defining ontology structure (TBox)...")
+    if strict_adherence or skip_classes:
+        logger.info("Using selective class creation based on config.")
+        defined_classes = create_selective_classes(onto, specification,
+                                                  skip_classes=skip_classes,
+                                                  strict_adherence=strict_adherence)
+        # Define properties separately when using selective classes
+        _, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
+    else:
+        defined_classes, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
+
+    if not defined_classes:
+        logger.warning("Ontology structure definition resulted in no classes. Population might be empty.")
+    logger.info("TBox definition complete.")
+    return defined_classes, defined_properties, property_is_functional
+
+def _read_operational_data(data_file_path, logger):
+    logger.info(f"Reading operational data from: {data_file_path}")
+    try:
+        data_rows = read_data(data_file_path)
+        logger.info(f"Read {len(data_rows)} data rows.")
+        if not data_rows:
+            logger.warning("No data rows read. Ontology population will be skipped.")
+        return data_rows
+    except Exception as read_err:
+        logger.error(f"Failed to read data file {data_file_path}: {read_err}", exc_info=True)
+        return None # Indicate failure
+
+def _populate_abox(onto, data_rows, defined_classes, defined_properties, prop_is_functional, specification, property_mappings, logger):
+    logger.info("Starting ontology population (ABox)...")
+    population_successful = True
+    failed_rows_count = 0
+    created_eq_classes = {}
+    eq_class_positions = {}
+    created_events_context = []
+
+    if not data_rows:
+        logger.warning("Skipping population as no data rows were provided.")
+        # Return success=True but with zero counts/empty contexts
+        return True, 0, {}, {}, []
+
+    try:
+        failed_rows_count, created_eq_classes, eq_class_positions, created_events_context = populate_ontology_from_data(
+            onto, data_rows, defined_classes, defined_properties, prop_is_functional,
+            specification, property_mappings
+        )
+        if failed_rows_count == len(data_rows) and len(data_rows) > 0:
+            logger.error(f"Population failed for all {len(data_rows)} data rows.")
+            population_successful = False
+        elif failed_rows_count > 0:
+            logger.warning(f"Population completed with {failed_rows_count} out of {len(data_rows)} failed rows.")
+        else:
+            logger.info(f"Population completed successfully for all {len(data_rows)} rows.")
+
+    except Exception as pop_exc:
+        logger.error(f"Critical error during population: {pop_exc}", exc_info=True)
+        population_successful = False
+
+    logger.info("ABox population phase finished.")
+    return population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context
+
+def _run_analysis_and_optimization(onto, defined_classes, specification, optimize_ontology, output_owl_path, logger):
+    logger.info("Analyzing ontology population status...")
+    try:
+        population_counts, empty_classes, class_instances, class_usage_info = analyze_ontology_population(onto, defined_classes, specification)
+        population_report = generate_population_report(population_counts, empty_classes, class_instances, defined_classes, class_usage_info)
+        logger.info("Ontology Population Analysis Complete")
+        print(population_report) # Print to console
+
+        if optimize_ontology:
+            logger.info("Generating detailed optimization recommendations...")
+            optimization_recs = generate_optimization_recommendations(class_usage_info, defined_classes)
+            print("\n=== DETAILED OPTIMIZATION RECOMMENDATIONS ===")
+            if optimization_recs.get('classes_to_remove'):
+                print(f"\nClasses that could be safely removed ({len(optimization_recs['classes_to_remove'])}):")
+                for class_name in optimization_recs['classes_to_remove']:
+                    print(f"  • {class_name}")
+            if optimization_recs.get('configuration_options'):
+                print("\nSuggested configuration for future runs:")
+                for option in optimization_recs['configuration_options']:
+                    print(f"  • {option}")
+            # Save recommendations to file
+            try:
+                base_dir = os.path.dirname(output_owl_path)
+                recs_file = os.path.join(base_dir, "ontology_optimization.txt")
+                with open(recs_file, 'w') as f:
+                    f.write("# Ontology Optimization Recommendations\n\n")
+                    f.write("## Classes to Remove\n")
+                    for cls in optimization_recs.get('classes_to_remove', []):
+                        f.write(f"- {cls}\n")
+                    f.write("\n## Configuration Options\n")
+                    for opt in optimization_recs.get('configuration_options', []):
+                        f.write(f"- {opt}\n")
+                logger.info(f"Saved optimization recommendations to {recs_file}")
+            except Exception as e:
+                logger.error(f"Failed to save optimization recommendations: {e}")
+
+    except Exception as analysis_exc:
+        logger.error(f"Error analyzing ontology population: {analysis_exc}", exc_info=False)
+        # Continue despite analysis failure
+
+def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
+    logger.info("Setting up sequence relationships...")
+    try:
+        setup_equipment_sequence_relationships(onto, eq_class_positions, defined_classes, defined_properties, created_eq_classes)
+        setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
+        logger.info("Sequence relationship setup complete.")
+    except Exception as seq_exc:
+        logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
+        # Log error but continue
+
+def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger):
+    logger.info("Linking equipment events to line events...")
+    try:
+        links_made = link_equipment_events_to_line_events(
+            onto, created_events_context, defined_classes, defined_properties
+        )
+        logger.info(f"Event linking pass created {links_made} links.")
+    except Exception as link_exc:
+        logger.error(f"Error during event linking pass: {link_exc}", exc_info=True)
+        # Log error but continue
+
+def _run_reasoning_phase(onto, world, world_db_path, reasoner_report_max_entities, reasoner_report_verbose, logger):
+    logger.info("Applying reasoner (ensure HermiT or compatible reasoner is installed)...")
+    reasoning_successful = True
+    try:
+        active_world = world if world_db_path else default_world
+        with onto:
+            pre_stats = {
+                'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
+                'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
+            }
+            logger.info("Starting reasoning process...")
+            reasoning_start_time = timing.time()
+            sync_reasoner(infer_property_values=True, debug=0) # Pass world implicitly via onto context?
+            reasoning_end_time = timing.time()
+            logger.info(f"Reasoning finished in {reasoning_end_time - reasoning_start_time:.2f} seconds.")
+
+            # Post-reasoning analysis and report generation
+            inconsistent = list(active_world.inconsistent_classes())
+            inferred_hierarchy = {}
+            inferred_properties = {}
+            inferred_individuals = {}
+            for cls in onto.classes():
+                current_subclasses = set(cls.subclasses())
+                inferred_subs = [sub.name for sub in current_subclasses if sub != cls and sub != Nothing] 
+                equivalent_classes = [eq.name for eq in cls.equivalent_to if eq != cls and isinstance(eq, ThingClass)]
+                if inferred_subs or equivalent_classes:
+                    inferred_hierarchy[cls.name] = {'subclasses': inferred_subs, 'equivalent': equivalent_classes}
+
+            inferrable_chars = {
+                'FunctionalProperty': FunctionalProperty, 'InverseFunctionalProperty': InverseFunctionalProperty,
+                'TransitiveProperty': TransitiveProperty, 'SymmetricProperty': SymmetricProperty,
+                'AsymmetricProperty': AsymmetricProperty, 'ReflexiveProperty': ReflexiveProperty,
+                'IrreflexiveProperty': IrreflexiveProperty,
+            }
+            for prop in list(onto.object_properties()) + list(onto.data_properties()):
+                inferred_chars_for_prop = [char_name for char_name, char_class in inferrable_chars.items() if char_class in prop.is_a]
+                if inferred_chars_for_prop: inferred_properties[prop.name] = inferred_chars_for_prop
+
+            logger.info("Collecting simplified individual inferences (post-reasoning state).")
+            for ind in onto.individuals():
+                current_types = [c.name for c in ind.is_a if c is not Thing]
+                current_props = {}
+                for prop in list(onto.object_properties()) + list(onto.data_properties()):
+                    try:
+                        values = prop[ind]
+                        if not isinstance(values, list): values = [values] if values is not None else []
+                        if values:
+                            formatted_values = []
+                            for v in values:
+                                if isinstance(v, Thing): formatted_values.append(v.name)
+                                elif isinstance(v, locstr): formatted_values.append(f'"{v}"@{v.lang}')
+                                else: formatted_values.append(repr(v))
+                            if formatted_values: current_props[prop.name] = formatted_values
+                    except Exception: continue
+                if current_types or current_props:
+                    inferred_individuals[ind.name] = {'types': current_types, 'properties': current_props}
+
+            post_stats = {
+                'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
+                'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
+            }
+            report, has_issues = generate_reasoning_report(
+                onto, pre_stats, post_stats, inconsistent, inferred_hierarchy,
+                inferred_properties, inferred_individuals, True, # Assuming reasoner ran
+                max_entities_per_category=reasoner_report_max_entities,
+                verbose=reasoner_report_verbose
+            )
+            logger.info("\nReasoning Report:\n" + report)
+
+            if has_issues or inconsistent:
+                logger.warning("Reasoning completed but potential issues or inconsistencies were identified.")
+                if inconsistent: reasoning_successful = False
+            else: logger.info("Reasoning completed successfully.")
+
+    except OwlReadyInconsistentOntologyError:
+        logger.error("REASONING FAILED: Ontology is inconsistent!")
+        reasoning_successful = False
+        try:
+            active_world = world if world_db_path else default_world
+            inconsistent = list(active_world.inconsistent_classes())
+            logger.error(f"Inconsistent classes detected: {[c.name for c in inconsistent]}")
+        except Exception as e_inc: logger.error(f"Could not retrieve inconsistent classes: {e_inc}")
+    except NameError as ne:
+        if "sync_reasoner" in str(ne): logger.error("Reasoning failed: Reasoner (sync_reasoner) function not found.")
+        else: logger.error(f"Unexpected NameError during reasoning: {ne}")
+        reasoning_successful = False
+    except Exception as e:
+        logger.error(f"An error occurred during reasoning: {e}", exc_info=True)
+        reasoning_successful = False
+
+    logger.info("Reasoning phase finished.")
+    return reasoning_successful
+
+def _save_ontology_file(onto, world, output_owl_path, save_format, world_db_path, population_successful, reasoning_successful, logger):
+    should_save_primary = population_successful and reasoning_successful
+    final_output_path = output_owl_path
+    save_failed = False
+
+    if not should_save_primary:
+        logger.error("Ontology generation had issues (population/reasoning failure/inconsistency). Saving to debug file instead.")
+        base, ext = os.path.splitext(output_owl_path)
+        debug_output_path = f"{base}_debug{ext}"
+        if debug_output_path == output_owl_path:
+            debug_output_path = output_owl_path + "_debug"
+        final_output_path = debug_output_path
+        logger.info(f"Attempting to save potentially problematic ontology to: {final_output_path}")
+    else:
+        logger.info(f"Attempting to save final ontology to: {final_output_path}")
+
+    logger.info(f"Saving ontology in '{save_format}' format...")
+    try:
+        # Use the world associated with the ontology for saving, especially if persistent
+        # If world is None (in-memory case after setup failure?), this will likely fail, which is ok.
+        onto.save(file=final_output_path, format=save_format, world=world)
+        logger.info("Ontology saved successfully.")
+    except Exception as save_err:
+        logger.error(f"Failed to save ontology to {final_output_path}: {save_err}", exc_info=True)
+        save_failed = True # Indicate saving failed
+
+    return save_failed
 
 def main_ontology_generation(spec_file_path: str,
                              data_file_path: str,
@@ -270,342 +493,105 @@ def main_ontology_generation(spec_file_path: str,
                              optimize_ontology: bool = False
                             ) -> bool:
     """
-    Main function to generate the ontology.
-    
-    Args:
-        spec_file_path: Path to the specification CSV file
-        data_file_path: Path to the data CSV file
-        output_owl_path: Path to save the generated OWL ontology file
-        ontology_iri: Base IRI for the ontology
-        save_format: Format for saving the ontology
-        use_reasoner: Whether to run the reasoner after population
-        world_db_path: Path to use/create a persistent SQLite world database
-        reasoner_report_max_entities: Maximum number of entities to show per category in the reasoner report
-        reasoner_report_verbose: Whether to show all details in the reasoner report
-        analyze_population: Whether to analyze and report on the ontology population
-        strict_adherence: Whether to strictly adhere to the specification
-        skip_classes: List of class names to skip
-        optimize_ontology: Whether to generate optimization recommendations
-        
+    Main function to generate the ontology by orchestrating helper functions.
+    (Args documentation remains the same)
     Returns:
-        bool: True on success, False on failure
+        bool: True on overall success, False on failure
     """
     start_time = timing.time()
-    main_logger.info("--- Starting Ontology Generation ---")
-    main_logger.info(f"Specification file: {spec_file_path}")
-    main_logger.info(f"Data file: {data_file_path}")
-    main_logger.info(f"Output OWL file: {output_owl_path}")
-    main_logger.info(f"Ontology IRI: {ontology_iri}")
-    main_logger.info(f"Save format: {save_format}")
-    main_logger.info(f"Run reasoner: {use_reasoner}")
-    if world_db_path:
-        main_logger.info(f"Using persistent world DB: {world_db_path}")
-    main_logger.info(f"Reasoner report max entities: {reasoner_report_max_entities}")
-    main_logger.info(f"Reasoner report verbose: {reasoner_report_verbose}")
+    main_logger.info("--- Ontology Generation Process Started ---")
 
-    world = None  # Define world variable outside try block
+    # Use a dummy args object for logging if needed, or adapt helpers
+    # For simplicity, let's create a temporary Namespace-like object
+    class Args: pass
+    args = Args()
+    args.spec_file = spec_file_path
+    args.data_file = data_file_path
+    args.output_file = output_owl_path
+    args.iri = ontology_iri
+    args.format = save_format
+    args.reasoner = use_reasoner
+    args.worlddb = world_db_path
+    args.max_report_entities = reasoner_report_max_entities
+    args.full_report = reasoner_report_verbose
+    args.analyze_population = analyze_population
+    args.strict_adherence = strict_adherence
+    args.skip_classes = skip_classes
+    args.optimize_ontology = optimize_ontology
+
+    world = None
+    onto = None
+    population_successful = False
+    reasoning_successful = True # Assume success unless reasoner runs and fails
+    save_failed = False
 
     try:
-        # 1. Parse Specification
-        specification = parse_specification(spec_file_path)
-        if not specification:
-            main_logger.error("Specification parsing failed or resulted in empty spec. Aborting.")
-            return False
+        # 1. Log Initial Parameters
+        _log_initial_parameters(args, main_logger)
 
-        # 1.2 Parse Property Mappings from Specification
-        property_mappings = parse_property_mappings(specification)
-        main_logger.info(f"Parsed property mappings for {len(property_mappings)} entities from specification")
-        
-        # 1.3 Validate the Property Mappings
-        validation_result = validate_property_mappings(property_mappings)
-        if not validation_result:
-            main_logger.warning("Property mapping validation had issues. Will continue but some properties may not be correctly populated.")
-        else:
-            main_logger.info("Property mapping validation passed successfully!")
+        # 2. Parse Specification and Mappings
+        specification, property_mappings = _parse_spec_and_mappings(args.spec_file, main_logger)
+        if specification is None: return False
 
-        # 2. Create Ontology World and Ontology Object
-        if world_db_path:
-            main_logger.info(f"Initializing persistent World at: {world_db_path}")
-            db_dir = os.path.dirname(world_db_path)
-            if db_dir and not os.path.exists(db_dir):
-                os.makedirs(db_dir, exist_ok=True)
-                main_logger.info(f"Created directory for world DB: {db_dir}")
-            world = World(filename=world_db_path)
-            onto = world.get_ontology(ontology_iri).load()
-            main_logger.info(f"Ontology object obtained from persistent world: {onto}")
-        else:
-            main_logger.info("Initializing in-memory World.")
-            world = World()  # Create a fresh world
-            onto = world.get_ontology(ontology_iri)
-            main_logger.info(f"Ontology object created in memory: {onto}")
+        # 3. Setup World and Ontology
+        world, onto = _setup_world_and_ontology(args.iri, args.worlddb, main_logger)
+        if onto is None: return False
 
-        # 3. Define Ontology Structure (TBox)
-        if strict_adherence or skip_classes:
-            main_logger.info("Using selective class creation with custom constraints")
-            defined_classes = create_selective_classes(onto, specification, 
-                                                      skip_classes=skip_classes, 
-                                                      strict_adherence=strict_adherence)
-            # Still need to define properties
-            _, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
-        else:
-            defined_classes, defined_properties, property_is_functional = define_ontology_structure(onto, specification)
-            
-        if not defined_classes:
-            main_logger.warning("Ontology structure definition resulted in no classes. Population might be empty.")
+        # 4. Define Ontology Structure (TBox)
+        defined_classes, defined_properties, property_is_functional = _define_tbox(
+            onto, specification, args.strict_adherence, args.skip_classes, main_logger
+        )
+        # Handle case where TBox definition might yield nothing critical?
+        # Current _define_tbox logs warning, main flow continues.
 
-        # 4. Read Operational Data
-        data_rows = read_data(data_file_path)
+        # 5. Read Operational Data
+        data_rows = _read_operational_data(args.data_file, main_logger)
+        if data_rows is None: return False # Indicate failure if reading failed
 
-        # 5. Populate Ontology (ABox - First Pass)
-        population_successful = True
-        failed_rows_count = 0
-        created_eq_classes = {}
-        eq_class_positions = {}
-        created_events_context = []
+        # 6. Populate Ontology (ABox)
+        population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context = _populate_abox(
+            onto, data_rows, defined_classes, defined_properties, property_is_functional,
+            specification, property_mappings, main_logger
+        )
+        # Population failure is handled later in saving/reasoning steps
 
-        if not data_rows:
-            main_logger.warning("No data rows read from data file. Ontology will be populated with structure only.")
-        else:
-            try:
-                failed_rows_count, created_eq_classes, eq_class_positions, created_events_context = populate_ontology_from_data(
-                    onto, data_rows, defined_classes, defined_properties, property_is_functional, 
-                    specification, property_mappings
-                )
-                if failed_rows_count == len(data_rows) and len(data_rows) > 0:
-                    main_logger.error(f"Population failed for all {len(data_rows)} data rows.")
-                    population_successful = False
-                elif failed_rows_count > 0:
-                    main_logger.warning(f"Population completed with {failed_rows_count} out of {len(data_rows)} failed rows.")
-                else:
-                    main_logger.info(f"Population completed successfully for all {len(data_rows)} rows.")
+        # 7. Analyze Population & Optimize (Optional)
+        if population_successful and args.analyze_population:
+            _run_analysis_and_optimization(onto, defined_classes, specification, args.optimize_ontology, args.output_file, main_logger)
+        elif not args.analyze_population:
+            main_logger.warning("Skipping ontology population analysis as requested.")
 
-            except Exception as pop_exc:
-                main_logger.error(f"Critical error during population: {pop_exc}", exc_info=True)
-                population_successful = False
-
-        # --- Analyze Ontology Population ---
-        if population_successful and analyze_population:
-            main_logger.info("Analyzing ontology population status...")
-            try:
-                population_counts, empty_classes, class_instances, class_usage_info = analyze_ontology_population(onto, defined_classes, specification)
-                population_report = generate_population_report(population_counts, empty_classes, class_instances, defined_classes, class_usage_info)
-                main_logger.info("Ontology Population Analysis Complete")
-                print(population_report)  # Print to console for immediate visibility
-                
-                # Generate optimization recommendations if requested
-                if optimize_ontology:
-                    main_logger.info("Generating detailed optimization recommendations...")
-                    optimization_recs = generate_optimization_recommendations(class_usage_info, defined_classes)
-                    
-                    # Print the recommendations
-                    print("\n=== DETAILED OPTIMIZATION RECOMMENDATIONS ===")
-                    if optimization_recs.get('classes_to_remove'):
-                        print(f"\nClasses that could be safely removed ({len(optimization_recs['classes_to_remove'])}):")
-                        for class_name in optimization_recs['classes_to_remove']:
-                            print(f"  • {class_name}")
-                    
-                    if optimization_recs.get('configuration_options'):
-                        print("\nSuggested configuration for future runs:")
-                        for option in optimization_recs['configuration_options']:
-                            print(f"  • {option}")
-                    
-                    # Write recommendations to a file for later use
-                    try:
-                        base_dir = os.path.dirname(output_owl_path)
-                        recs_file = os.path.join(base_dir, "ontology_optimization.txt")
-                        with open(recs_file, 'w') as f:
-                            f.write("# Ontology Optimization Recommendations\n\n")
-                            f.write("## Classes to Remove\n")
-                            for cls in optimization_recs.get('classes_to_remove', []):
-                                f.write(f"- {cls}\n")
-                            f.write("\n## Configuration Options\n")
-                            for opt in optimization_recs.get('configuration_options', []):
-                                f.write(f"- {opt}\n")
-                        main_logger.info(f"Saved optimization recommendations to {recs_file}")
-                    except Exception as e:
-                        main_logger.error(f"Failed to save optimization recommendations: {e}")
-                        
-            except Exception as analysis_exc:
-                main_logger.error(f"Error analyzing ontology population: {analysis_exc}", exc_info=False)
-                # Continue with other processing despite analysis failure
-        elif not analyze_population:
-            main_logger.warning("Skipping ontology population analysis due to analyze_population flag.")
-
-        # --- Setup Sequence Relationships AFTER population ---
+        # 8. Setup Sequence Relationships (Optional)
         if population_successful and created_eq_classes and eq_class_positions:
-            main_logger.info("Proceeding to setup sequence relationships...")
-            try:
-                setup_equipment_sequence_relationships(onto, eq_class_positions, defined_classes, defined_properties, created_eq_classes)
-                setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
-            except Exception as seq_exc:
-                main_logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
-                # Continue, but log error
+             _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
         elif population_successful:
-            main_logger.warning("Skipping sequence relationship setup because no EquipmentClass individuals or positions were generated/tracked during population.")
-        else:
-             main_logger.warning("Skipping sequence relationship setup due to population failure.")
+             main_logger.warning("Skipping sequence relationship setup: No EquipmentClass info available.")
+        # No action needed if population failed, handled by checks below
 
+        # 9. Link Events (Optional)
+        if population_successful and created_events_context:
+            _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger)
+        elif population_successful:
+             main_logger.warning("Skipping event linking: No event context available.")
+        # No action needed if population failed
 
-        # --- Event Linking Pass ---
-        if population_successful:  # Only link if population didn't fail critically
-            main_logger.info("Proceeding to link equipment events to line events...")
-            try:
-                links_made = link_equipment_events_to_line_events(
-                    onto, created_events_context, defined_classes, defined_properties
-                )
-                main_logger.info(f"Event linking pass created {links_made} links.")
-            except Exception as link_exc:
-                main_logger.error(f"Error during event linking pass: {link_exc}", exc_info=True)
-                # Decide if this error should prevent saving or reasoning
-                # For now, allow continuing but log the error clearly.
-        else:
-            main_logger.warning("Skipping event linking pass due to population failure.")
+        # 10. Apply Reasoning (Optional)
+        if args.reasoner and population_successful:
+            reasoning_successful = _run_reasoning_phase(onto, world, args.worlddb, args.max_report_entities, args.full_report, main_logger)
+        elif args.reasoner and not population_successful:
+            main_logger.warning("Skipping reasoning due to prior population failure.")
+            reasoning_successful = False # Ensure overall success reflects this skipped step
+        # If reasoner not used, reasoning_successful remains True
 
+        # 11. Save Ontology
+        # Saving logic depends on population and reasoning success
+        # The helper returns True if saving *failed*
+        save_failed = _save_ontology_file(onto, world, args.output_file, args.format, args.worlddb, population_successful, reasoning_successful, main_logger)
+        if save_failed:
+            return False # Saving failed, overall process is unsuccessful
 
-        # 6. Apply Reasoning (Optional)
-        reasoning_successful = True
-        if use_reasoner and population_successful:
-            main_logger.info("Applying reasoner (ensure HermiT or compatible reasoner is installed)...")
-            try:
-                # Use the active world (persistent or default)
-                active_world = world if world_db_path else default_world
-                with onto:  # Use ontology context for reasoning
-                    pre_stats = {
-                        'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
-                        'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
-                    }
-                    main_logger.info("Starting reasoning process...")
-                    reasoning_start_time = timing.time()
-                    # Run reasoner on the specific world containing the ontology
-                    sync_reasoner(infer_property_values=True, debug=0)
-                    reasoning_end_time = timing.time()
-                    main_logger.info(f"Reasoning finished in {reasoning_end_time - reasoning_start_time:.2f} seconds.")
-
-                    # Collect results from the correct world
-                    inconsistent = list(active_world.inconsistent_classes())
-                    inferred_hierarchy = {}
-                    inferred_properties = {}
-                    inferred_individuals = {}
-                    
-                    # Simplified post-reasoning state collection
-                    for cls in onto.classes():
-                        current_subclasses = set(cls.subclasses())
-                        inferred_subs = [sub.name for sub in current_subclasses if sub != cls and sub != Nothing]  # Exclude self and Nothing
-                        equivalent_classes = [eq.name for eq in cls.equivalent_to if eq != cls and isinstance(eq, ThingClass)]
-                        if inferred_subs or equivalent_classes:
-                            inferred_hierarchy[cls.name] = {'subclasses': inferred_subs, 'equivalent': equivalent_classes}
-
-                    inferrable_chars = {
-                        'FunctionalProperty': FunctionalProperty, 'InverseFunctionalProperty': InverseFunctionalProperty,
-                        'TransitiveProperty': TransitiveProperty, 'SymmetricProperty': SymmetricProperty,
-                        'AsymmetricProperty': AsymmetricProperty, 'ReflexiveProperty': ReflexiveProperty,
-                        'IrreflexiveProperty': IrreflexiveProperty,
-                    }
-                    for prop in list(onto.object_properties()) + list(onto.data_properties()):
-                        # Check direct types post-reasoning
-                        inferred_chars_for_prop = [char_name for char_name, char_class in inferrable_chars.items() if char_class in prop.is_a]
-                        if inferred_chars_for_prop: inferred_properties[prop.name] = inferred_chars_for_prop
-
-                    main_logger.info("Collecting simplified individual inferences (post-reasoning state).")
-                    for ind in onto.individuals():
-                        # Get direct types post-reasoning
-                        current_types = [c.name for c in ind.is_a if c is not Thing]
-                        current_props = {}
-                        # Check all properties for inferred values
-                        for prop in list(onto.object_properties()) + list(onto.data_properties()):
-                            try:
-                                # Use direct property access post-reasoning
-                                values = prop[ind]  # Gets inferred values
-                                if not isinstance(values, list): values = [values] if values is not None else []
-
-                                if values:
-                                    formatted_values = []
-                                    for v in values:
-                                        if isinstance(v, Thing): formatted_values.append(v.name)
-                                        elif isinstance(v, locstr): formatted_values.append(f'"{v}"@{v.lang}')
-                                        else: formatted_values.append(repr(v))
-                                    if formatted_values: current_props[prop.name] = formatted_values
-                            except Exception: continue  # Ignore props not applicable or errors
-
-                        if current_types or current_props:  # Only report if types or properties inferred/present
-                            inferred_individuals[ind.name] = {'types': current_types, 'properties': current_props}
-
-
-                    post_stats = {
-                        'classes': len(list(onto.classes())), 'object_properties': len(list(onto.object_properties())),
-                        'data_properties': len(list(onto.data_properties())), 'individuals': len(list(onto.individuals()))
-                    }
-                    report, has_issues = generate_reasoning_report(
-                        onto, pre_stats, post_stats, inconsistent, inferred_hierarchy, 
-                        inferred_properties, inferred_individuals, use_reasoner,
-                        max_entities_per_category=reasoner_report_max_entities,
-                        verbose=reasoner_report_verbose
-                    )
-                    main_logger.info("\nReasoning Report:\n" + report)
-
-                    if has_issues or inconsistent:
-                        main_logger.warning("Reasoning completed but potential issues or inconsistencies were identified.")
-                        if inconsistent: reasoning_successful = False
-                    else: main_logger.info("Reasoning completed successfully with no inconsistencies identified.")
-
-            except OwlReadyInconsistentOntologyError:
-                main_logger.error("REASONING FAILED: Ontology is inconsistent!")
-                reasoning_successful = False
-                try:
-                    # Use the active world (persistent or default)
-                    active_world = world if world_db_path else default_world
-                    inconsistent = list(active_world.inconsistent_classes())
-                    main_logger.error(f"Inconsistent classes detected: {[c.name for c in inconsistent]}")
-                except Exception as e_inc: main_logger.error(f"Could not retrieve inconsistent classes: {e_inc}")
-            except NameError as ne:
-                if "sync_reasoner" in str(ne): main_logger.error("Reasoning failed: Reasoner (sync_reasoner) function not found. Is owlready2 installed correctly?")
-                else: main_logger.error(f"Unexpected NameError during reasoning: {ne}")
-                reasoning_successful = False
-            except Exception as e:
-                main_logger.error(f"An error occurred during reasoning: {e}", exc_info=True)
-                reasoning_successful = False
-        elif use_reasoner and not population_successful:
-             main_logger.warning("Skipping reasoning due to population failure.")
-
-
-        # 7. Save Ontology
-        should_save_primary = population_successful and (not use_reasoner or reasoning_successful)
-        final_output_path = output_owl_path
-        save_attempted = False
-
-        if not should_save_primary:
-            main_logger.error("Ontology generation encountered errors (population or reasoning failure/inconsistency). Ontology will NOT be saved to the primary output file.")
-            # Construct debug file path
-            base, ext = os.path.splitext(output_owl_path)
-            debug_output_path = f"{base}_debug{ext}"
-            if debug_output_path == output_owl_path:  # Avoid overwriting if extension wasn't .owl or similar
-                debug_output_path = output_owl_path + "_debug"
-
-            main_logger.info(f"Attempting to save potentially problematic ontology to: {debug_output_path}")
-            final_output_path = debug_output_path
-            should_save_debug = True  # We always try to save the debug file if primary fails
-        else:
-            should_save_debug = False  # No need for debug file
-
-        if should_save_primary or should_save_debug:
-            main_logger.info(f"Saving ontology to {final_output_path} in '{save_format}' format...")
-            save_attempted = True
-            try:
-                # Explicitly pass the world if using persistent storage
-                if world_db_path:
-                    onto.save(file=final_output_path, format=save_format, world=world)
-                else:
-                    onto.save(file=final_output_path, format=save_format)  # Use default world
-                main_logger.info("Ontology saved successfully.")
-            except Exception as save_err:
-                main_logger.error(f"Failed to save ontology to {final_output_path}: {save_err}", exc_info=True)
-                # If saving the primary failed, it's a failure. If saving debug failed, it's still a failure overall.
-                return False
-
-        # Determine overall success: Population must succeed, and if reasoning ran, it must succeed.
-        # Saving must also have been attempted and not failed (implicit check via not returning False above).
-        overall_success = population_successful and (not use_reasoner or reasoning_successful)
-
+        # 12. Determine overall success
+        overall_success = population_successful and reasoning_successful and not save_failed
         return overall_success
 
     except Exception as e:
@@ -614,8 +600,7 @@ def main_ontology_generation(spec_file_path: str,
 
     finally:
         end_time = timing.time()
-        main_logger.info(f"--- Ontology Generation Finished ---")
-        main_logger.info(f"Total time: {end_time - start_time:.2f} seconds")
+        main_logger.info(f"--- Ontology Generation Finished --- Total time: {end_time - start_time:.2f} seconds")
 
 
 def test_property_mappings(spec_file_path: str):

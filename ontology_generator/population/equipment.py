@@ -11,7 +11,8 @@ from owlready2 import Thing
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.utils.types import safe_cast
 from ontology_generator.population.core import (
-    PopulationContext, get_or_create_individual, apply_property_mappings
+    PopulationContext, get_or_create_individual, apply_property_mappings, 
+    set_prop_if_col_exists
 )
 from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
 
@@ -121,20 +122,19 @@ def process_equipment(row: Dict[str, Any],
     # Check if we can use dynamic property mappings for Equipment
     if property_mappings and "Equipment" in property_mappings:
         equipment_mappings = property_mappings["Equipment"]
-        apply_property_mappings(equipment_ind, equipment_mappings, row, context, "Equipment")
+        apply_property_mappings(equipment_ind, equipment_mappings, row, context, "Equipment", pop_logger)
         # Link Equipment to ProductionLine (not in mappings)
         if line_ind:
             context.set_prop(equipment_ind, "isPartOfProductionLine", line_ind)
     else:
         # Fallback to hardcoded property assignments
         pop_logger.debug("Using hardcoded property assignments for Equipment (no dynamic mappings available)")
-        # --- Set Equipment Properties ---
-        context.set_prop(equipment_ind, "equipmentId", eq_id_str)
-        if eq_name: 
-            context.set_prop(equipment_ind, "equipmentName", eq_name)
-        context.set_prop(equipment_ind, "equipmentModel", safe_cast(row.get('EQUIPMENT_MODEL'), str))
-        context.set_prop(equipment_ind, "complexity", safe_cast(row.get('COMPLEXITY'), str))
-        context.set_prop(equipment_ind, "alternativeModel", safe_cast(row.get('MODEL'), str))
+        # --- Set Equipment Properties (Checking Column Existence) ---
+        context.set_prop_if_col_exists(equipment_ind, "equipmentId", 'EQUIPMENT_ID', row, safe_cast, str, pop_logger)
+        context.set_prop_if_col_exists(equipment_ind, "equipmentName", 'EQUIPMENT_NAME', row, safe_cast, str, pop_logger)
+        context.set_prop_if_col_exists(equipment_ind, "equipmentModel", 'EQUIPMENT_MODEL', row, safe_cast, str, pop_logger)
+        context.set_prop_if_col_exists(equipment_ind, "complexity", 'COMPLEXITY', row, safe_cast, str, pop_logger)
+        context.set_prop_if_col_exists(equipment_ind, "alternativeModel", 'MODEL', row, safe_cast, str, pop_logger)
 
         # Link Equipment to ProductionLine
         if line_ind:
@@ -157,13 +157,13 @@ def process_equipment(row: Dict[str, Any],
             # Check if we can use dynamic property mappings for EquipmentClass
             if property_mappings and "EquipmentClass" in property_mappings:
                 eqclass_mappings = property_mappings["EquipmentClass"]
-                apply_property_mappings(eq_class_ind, eqclass_mappings, row, context, "EquipmentClass")
+                apply_property_mappings(eq_class_ind, eqclass_mappings, row, context, "EquipmentClass", pop_logger)
                 # Also set equipment class ID if not set by mappings
                 if not getattr(eq_class_ind, "equipmentClassId", None):
-                    context.set_prop(eq_class_ind, "equipmentClassId", eq_class_name)
+                    context.set_prop_if_col_exists(eq_class_ind, "equipmentClassId", 'EQUIPMENT_NAME', row, lambda r, c: parse_equipment_class(safe_cast(r.get(c), str)), None, pop_logger)
             else:
                 # Assign equipmentClassId (Functional)
-                context.set_prop(eq_class_ind, "equipmentClassId", eq_class_name)
+                context.set_prop_if_col_exists(eq_class_ind, "equipmentClassId", 'EQUIPMENT_NAME', row, lambda r, c: parse_equipment_class(safe_cast(r.get(c), str)), None, pop_logger)
 
             # Link Equipment to EquipmentClass (Functional)
             context.set_prop(equipment_ind, "memberOfClass", eq_class_ind)
@@ -172,16 +172,14 @@ def process_equipment(row: Dict[str, Any],
             default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_name)
             if default_pos is not None:
                  # Only set if not already set or different
-                 context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
+                 existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+                 if existing_pos != default_pos: # Check actual value, not just existence
+                     # Ensure we don't overwrite a potential mapping-based value if using defaults
+                     # (Assume set_prop handles functional check correctly) 
+                     context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
             else:
                  # If no default, ensure any existing position is captured for later use
                  existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-                 if existing_pos is not None:
-                     # We don't need to set it again, but it's good it exists.
-                     # The main population function will collect this later.
-                     pass
-                 else:
-                     pop_logger.debug(f"No default sequence position found for class '{eq_class_name}'.")
 
         else:
             pop_logger.error(f"Failed to get/create EquipmentClass '{eq_class_name}' for Equipment '{equipment_ind.name}'.")
