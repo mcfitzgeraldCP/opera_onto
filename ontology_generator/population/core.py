@@ -430,6 +430,15 @@ def apply_object_property_mappings(
             if entity_name == "EventRecord":
                 if prop_name == "involvesResource":
                     logger.debug(f"Successfully linked EventRecord {individual.name} to resource {target_individual.name} via {prop_name}")
+                # TKT-004: Add specific logging for event context relationships
+                elif prop_name == "duringShift":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to Shift {target_individual.name} via context key '{link_context_key}'")
+                elif prop_name == "occursDuring":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to TimeInterval {target_individual.name} via context key '{link_context_key}'")
+                elif prop_name == "eventHasState":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to OperationalState {target_individual.name} via context key '{link_context_key}'")
+                elif prop_name == "eventHasReason":
+                    logger.info(f"Successfully linked EventRecord {individual.name} to OperationalReason {target_individual.name} via context key '{link_context_key}'")
             
             # Added for TKT-002: Track Equipment-Line links specifically
             if entity_name == "Equipment" and prop_name == "isPartOfProductionLine":
