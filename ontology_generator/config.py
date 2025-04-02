@@ -4,6 +4,7 @@ Ontology Generator Configuration
 This module contains constants, mappings, and configuration settings for the ontology generator.
 """
 from typing import Dict, Any, Type, Optional
+from datetime import datetime, date, time
 
 # --- General Configuration ---
 DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
@@ -72,9 +73,9 @@ def init_xsd_type_map(locstr_type: Any) -> None:
         "xsd:unsignedInt": int,
         "xsd:unsignedShort": int,
         "xsd:unsignedByte": int,
-        "xsd:dateTime": None,  # Will be set based on imported datetime
-        "xsd:date": None,  # Will be set based on imported date
-        "xsd:time": None,  # Will be set based on imported time
+        "xsd:dateTime": datetime,
+        "xsd:date": date,
+        "xsd:time": time,
         "xsd:boolean": bool,
         "xsd:anyURI": str,
         "xsd:string (with lang tag)": locstr_type,

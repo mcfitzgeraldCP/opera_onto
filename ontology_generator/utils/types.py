@@ -112,10 +112,14 @@ def safe_cast(value: Any, target_type: Type[T], default: Optional[T] = None) -> 
         return target_type(value_str)
 
     except (ValueError, TypeError, InvalidOperation) as e:
-        pop_logger.warning(f"Failed to cast {original_value_repr} to {target_type.__name__}: {e}. Returning default: {default}")
+        target_type_name = target_type.__name__ if target_type else "None"
+        original_value_repr = repr(value)[:50] + ('...' if len(repr(value)) > 50 else '') # Added for clarity
+        pop_logger.warning(f"Failed to cast {original_value_repr} to {target_type_name}: {e}. Returning default: {default}")
         return default
     except Exception as e:
-        pop_logger.error(f"Unexpected error casting {original_value_repr} to {target_type.__name__}: {e}", exc_info=False)
+        target_type_name = target_type.__name__ if target_type else "None"
+        original_value_repr = repr(value)[:50] + ('...' if len(repr(value)) > 50 else '') # Added for clarity
+        pop_logger.error(f"Unexpected error casting {original_value_repr} to {target_type_name}: {e}", exc_info=False)
         return default
 
 def sanitize_name(name: Any) -> str:
