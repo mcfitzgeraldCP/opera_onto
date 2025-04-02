@@ -199,6 +199,11 @@ def setup_equipment_instance_relationships(onto: Ontology,
     if not equipment_class_positions:
         pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish instance relationships.")
         return
+        
+    # Log the equipment class positions for better diagnostics
+    pop_logger.info(f"Equipment class positions from configuration (total: {len(equipment_class_positions)}):")
+    for class_name, position in sorted(equipment_class_positions.items(), key=lambda x: (x[1] if x[1] is not None else 999999)):
+        pop_logger.info(f"  • Class '{class_name}': Position {position}")
 
     # Sort class names by position (safely handling None values)
     sorted_classes = _safe_sort_by_position(equipment_class_positions.items())
@@ -221,19 +226,30 @@ def setup_equipment_instance_relationships(onto: Ontology,
     # Track lines with equipment but no sequence
     lines_without_sequence: List[str] = []
 
+    # Count totals for diagnostic tracking
+    total_equipment_processed = 0
+    total_equipment_with_class = 0
+    total_equipment_with_line = 0
+    
     # Iterate through all Equipment individuals in the ontology
     for equipment_inst in onto.search(type=cls_Equipment):
+        total_equipment_processed += 1
+        
         # Get the line(s) this equipment belongs to (Non-functional)
         equipment_lines = getattr(equipment_inst, "isPartOfProductionLine", [])
         if not equipment_lines:
             pop_logger.debug(f"Equipment {equipment_inst.name} is not linked to any ProductionLine. Skipping.")
             continue
+        
+        total_equipment_with_line += 1
 
         # Get the EquipmentClass this equipment belongs to (Functional)
         equipment_class_ind = getattr(equipment_inst, "memberOfClass", None)
         if not equipment_class_ind or not isinstance(equipment_class_ind, cls_EquipmentClass):
             pop_logger.debug(f"Equipment {equipment_inst.name} is not linked to an EquipmentClass. Skipping.")
             continue
+        
+        total_equipment_with_class += 1
 
         # Get the class name string from the EquipmentClass individual (Functional)
         class_name_str = getattr(equipment_class_ind, "equipmentClassId", None)
@@ -241,6 +257,15 @@ def setup_equipment_instance_relationships(onto: Ontology,
             pop_logger.warning(f"EquipmentClass {equipment_class_ind.name} (linked from {equipment_inst.name}) is missing 'equipmentClassId'. Skipping.")
             continue
 
+        # Get defaultSequencePosition for diagnostics
+        class_position = getattr(equipment_class_ind, "defaultSequencePosition", None)
+        position_source = "class individual"
+        
+        # If not in individual, check the positions dictionary
+        if class_position is None and class_name_str in equipment_class_positions:
+            class_position = equipment_class_positions[class_name_str]
+            position_source = "positions dictionary"
+            
         # Check if this class name is in our sequence map
         has_position = class_name_str in equipment_class_positions
 
@@ -252,6 +277,13 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 
             # Get line ID for tracking
             line_id_str = getattr(equipment_line, "lineId", equipment_line.name)
+            
+            # Detailed diagnostic logging for each equipment-line-class combination
+            eq_id = getattr(equipment_inst, "equipmentId", equipment_inst.name)
+            if has_position:
+                pop_logger.debug(f"Equipment '{eq_id}' on line '{line_id_str}' belongs to class '{class_name_str}' with position {class_position} (from {position_source})")
+            else:
+                pop_logger.warning(f"Equipment '{eq_id}' on line '{line_id_str}' belongs to class '{class_name_str}' with NO POSITION")
             
             # Track classes without positions for diagnostics
             if not has_position:
@@ -273,6 +305,12 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 line_equipment_map[equipment_line][class_name_str].append(equipment_inst)
                 pop_logger.debug(f"Mapped Equipment {equipment_inst.name} to Line {equipment_line.name} under Class '{class_name_str}'")
 
+    # Log summary of equipment distribution for diagnosis
+    pop_logger.info(f"Equipment distribution summary:")
+    pop_logger.info(f"  • Total equipment found: {total_equipment_processed}")
+    pop_logger.info(f"  • Equipment linked to lines: {total_equipment_with_line}")
+    pop_logger.info(f"  • Equipment linked to equipment classes: {total_equipment_with_class}")
+    
     # Create instance-level relationships within each line
     total_relationships = 0
     line_relationship_counts: Dict[str, int] = {}
@@ -315,6 +353,16 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 continue
                 
             pop_logger.info(f"Processing equipment instance relationships for line: {line_id_str}")
+            
+            # Log detailed equipment class distribution for this line
+            class_counts = {cls: len(insts) for cls, insts in class_equipment_map_on_line.items() if insts}
+            pop_logger.info(f"Equipment class distribution on line {line_id_str}:")
+            for cls_name, count in sorted(class_counts.items(), key=lambda x: equipment_class_positions.get(x[0], 999999)):
+                pos = equipment_class_positions.get(cls_name, "None")
+                pop_logger.info(f"  • {cls_name}: {count} instances (position: {pos})")
+                # If position is None but we have instances, this is a problem
+                if pos == "None" and count > 0:
+                    pop_logger.warning(f"Line {line_id_str} has {count} instances of class '{cls_name}' with no sequence position!")
 
             # Track the last instance in the chain to link between classes
             last_instance_in_chain = None
@@ -406,18 +454,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
         print("No equipment instance relationships could be established or verified.")
         print("Possible reasons: Equipment not linked to lines/classes, missing sequence positions, or no equipment found on the same line.")
         
-    # Report sequence analysis issues
-    if unsequenced_classes:
-        print("\n=== EQUIPMENT SEQUENCE DIAGNOSTIC ISSUES ===")
-        print(f"Found {sum(len(classes) for classes in unsequenced_classes.values())} equipment classes without sequence positions:")
-        for line_id, classes in sorted(unsequenced_classes.items()):
-            print(f"  Line {line_id}: {', '.join(sorted(classes))}")
-            
-    if lines_without_sequence:
-        if not unsequenced_classes:  # Only print header if not already printed
-            print("\n=== EQUIPMENT SEQUENCE DIAGNOSTIC ISSUES ===")
-        print(f"Found {len(lines_without_sequence)} lines with equipment but no sequence established:")
-        for line_id in sorted(lines_without_sequence):
-            print(f"  Line {line_id}")
-        
-    print("\n---")
+        # Print diagnostics about equipment with missing positions
+        if unsequenced_classes:
+            print("\nEquipment classes without sequence positions:")
+            for line_id, classes in sorted(unsequenced_classes.items()):
+                print(f"  Line {line_id}: {', '.join(sorted(classes))}")
