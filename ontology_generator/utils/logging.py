@@ -24,6 +24,7 @@ class WarningSuppressionFilter(logging.Filter):
     def __init__(self, suppressed_warnings=None):
         super().__init__()
         self.suppressed_warnings = suppressed_warnings or []
+        self.suppressed_count = 0
         
     def filter(self, record):
         if record.levelno == logging.WARNING:
@@ -32,7 +33,28 @@ class WarningSuppressionFilter(logging.Filter):
             # Check if any suppressed warning substring is in the message
             for suppressed in self.suppressed_warnings:
                 if suppressed in message:
+                    self.suppressed_count += 1
                     return False  # Suppress this warning
+        return True  # Let other messages through
+
+class InfoSuppressionFilter(logging.Filter):
+    """
+    A logging filter that suppresses specific INFO messages based on configured substrings.
+    """
+    def __init__(self, suppressed_info=None):
+        super().__init__()
+        self.suppressed_info = suppressed_info or []
+        self.suppressed_count = 0
+        
+    def filter(self, record):
+        if record.levelno == logging.INFO:
+            # Get the formatted message
+            message = record.getMessage()
+            # Check if any suppressed info substring is in the message
+            for suppressed in self.suppressed_info:
+                if suppressed in message:
+                    self.suppressed_count += 1
+                    return False  # Suppress this info message
         return True  # Let other messages through
 
 def configure_logging(
@@ -84,6 +106,15 @@ def configure_logging(
     ]:
         logging.getLogger(logger_name).addFilter(warning_filter)
     
+    # Set up info suppression filter for individual creation messages
+    info_filter = InfoSuppressionFilter(["Created new individual"])
+    pop_logger.addFilter(info_filter)
+    
+    # Store filters for later access
+    global _warning_filter, _info_filter
+    _warning_filter = warning_filter
+    _info_filter = info_filter
+    
     # Log confirmation
     main_logger.info("Logging configured.")
     if log_level == logging.DEBUG:
@@ -93,6 +124,34 @@ def configure_logging(
     else:
         main_logger.info("Standard logging enabled (INFO level).")
     main_logger.info(f"Warning suppression filter applied for {len(SUPPRESSED_WARNINGS)} message patterns.")
+
+# Global variables to store filter instances
+_warning_filter = None
+_info_filter = None
+
+def get_suppressed_message_counts():
+    """
+    Get counts of suppressed messages.
+    
+    Returns:
+        A tuple of (warning_count, info_count)
+    """
+    warning_count = _warning_filter.suppressed_count if _warning_filter else 0
+    info_count = _info_filter.suppressed_count if _info_filter else 0
+    return warning_count, info_count
+
+def log_suppressed_message_counts():
+    """
+    Log the counts of suppressed messages.
+    """
+    warning_count, info_count = get_suppressed_message_counts()
+    total_count = warning_count + info_count
+    
+    if total_count > 0:
+        main_logger.info(f"Message suppression summary: {total_count} messages suppressed "
+                         f"({warning_count} warnings, {info_count} info messages)")
+    else:
+        main_logger.info("No messages have been suppressed by filters")
 
 def get_module_logger(name: str) -> logging.Logger:
     """

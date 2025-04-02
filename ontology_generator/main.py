@@ -33,7 +33,8 @@ from ontology_generator.population import (
 )
 from ontology_generator.analysis import (
     analyze_ontology_population, generate_population_report,
-    generate_optimization_recommendations, generate_reasoning_report
+    generate_optimization_recommendations, generate_reasoning_report,
+    generate_equipment_sequence_report, analyze_equipment_sequences
 )
 from ontology_generator.utils import safe_cast # Import directly from utils now
 
@@ -391,6 +392,12 @@ def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, 
         setup_equipment_sequence_relationships(onto, eq_class_positions, defined_classes, defined_properties, created_eq_classes)
         setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
         logger.info("Sequence relationship setup complete.")
+        
+        # Add equipment sequence report generation
+        sequence_report = generate_equipment_sequence_report(onto)
+        logger.info("Equipment sequence report generated.")
+        print(sequence_report)  # Print to console for immediate visibility
+        
     except Exception as seq_exc:
         logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
         # Log error but continue
@@ -650,6 +657,10 @@ def main_ontology_generation(spec_file_path: str,
     finally:
         end_time = timing.time()
         main_logger.info(f"--- Ontology Generation Finished --- Total time: {end_time - start_time:.2f} seconds")
+        
+        # Log suppressed message counts
+        from ontology_generator.utils.logging import log_suppressed_message_counts
+        log_suppressed_message_counts()
 
 
 def test_property_mappings(spec_file_path: str):
@@ -764,6 +775,50 @@ def test_property_mappings(spec_file_path: str):
         test_logger.error(f"Error during property mapping test: {e}", exc_info=True)
 
 
+def analyze_equipment_sequence_in_ontology(owl_file_path: str, verbose: bool = False) -> bool:
+    """
+    Analyze equipment sequences in an existing ontology file.
+    
+    Args:
+        owl_file_path: Path to the OWL file to analyze
+        verbose: Whether to output verbose logging
+        
+    Returns:
+        bool: True if analysis was successful, False otherwise
+    """
+    # Configure logging
+    log_level = logging.DEBUG if verbose else logging.INFO
+    configure_logging(log_level)
+    logger = main_logger
+    
+    logger.info(f"Analyzing equipment sequences in ontology file: {owl_file_path}")
+    
+    try:
+        # Load the ontology
+        world = World()
+        onto = world.get_ontology(owl_file_path).load()
+        logger.info(f"Loaded ontology: {onto.base_iri}")
+        
+        # Generate and print the equipment sequence report
+        sequence_report = generate_equipment_sequence_report(onto)
+        print(sequence_report)
+        
+        # Run deeper analysis if verbose
+        if verbose:
+            sequences, stats = analyze_equipment_sequences(onto)
+            print("\n=== EQUIPMENT SEQUENCE STATISTICS ===")
+            print(f"Total Lines: {stats['total_lines']}")
+            print(f"Lines with Equipment Sequence: {stats['lines_with_sequence']}")
+            print(f"Total Equipment in Sequences: {stats['total_equipment']}")
+            print("\nEquipment Classes:")
+            for cls, count in sorted(stats['class_counts'].items(), key=lambda x: x[1], reverse=True):
+                print(f"  {cls}: {count}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error analyzing equipment sequences: {e}", exc_info=True)
+        return False
+
 def main():
     """Main entry point for the ontology generator."""
     parser = argparse.ArgumentParser(description="Generate an OWL ontology from specification and data CSV files.")
@@ -781,10 +836,16 @@ def main():
     parser.add_argument("--skip-classes", type=str, nargs='+', help="List of class names to skip during ontology creation.")
     parser.add_argument("--optimize", action="store_true", dest="optimize_ontology", help="Generate detailed optimization recommendations.")
     parser.add_argument("--test-mappings", action="store_true", help="Test the property mapping functionality only, without generating the ontology.")
+    parser.add_argument("--analyze-sequences", metavar="OWL_FILE", help="Analyze equipment sequences in an existing ontology file.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging.")
 
     args = parser.parse_args()
+
+    # If analyze-sequences mode is requested, just run the analysis and exit
+    if hasattr(args, 'analyze_sequences') and args.analyze_sequences:
+        success = analyze_equipment_sequence_in_ontology(args.analyze_sequences, args.verbose)
+        sys.exit(0 if success else 1)
 
     # If test mode is requested, just run the test and exit
     if hasattr(args, 'test_mappings') and args.test_mappings:
@@ -812,7 +873,7 @@ def main():
         skip_classes=args.skip_classes,
         optimize_ontology=args.optimize_ontology
     )
-
+    
     # Exit with appropriate code
     if success:
         main_logger.info("Ontology generation process completed.")

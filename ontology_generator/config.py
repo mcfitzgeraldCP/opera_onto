@@ -23,7 +23,8 @@ SUPPRESSED_WARNINGS = [
     "Context entity 'EventRecord' required for OperationalState.stateOfEvent",
     "Context entity 'EventRecord' required for ProductionRequest.hasAssociatedEvent",
     "Context entity 'EventRecord' required for Shift.includesEvent",
-    "Context entity 'Person' required for EventRecord.performedBy"
+    "Context entity 'Person' required for EventRecord.performedBy",
+    "Created new individual"
 ]
 
 # --- Language Mapping for Alternative Reason Descriptions ---
