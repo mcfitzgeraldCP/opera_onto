@@ -8,6 +8,29 @@ from owlready2 import Thing, Ontology
 
 from ontology_generator.utils.logging import analysis_logger
 
+def _safe_sort_by_attribute(items, attr_name, default_value="Unknown"):
+    """
+    Safely sorts items by an attribute, handling None values gracefully.
+    
+    Args:
+        items: List of objects to sort
+        attr_name: Name of attribute to sort by
+        default_value: Default value to use for None attributes
+        
+    Returns:
+        Sorted list of items
+    """
+    def get_safe_attribute(item):
+        value = getattr(item, attr_name, None)
+        if value is None:
+            value = getattr(item, "name", default_value)
+            if value is None:
+                analysis_logger.warning(f"Item has neither {attr_name} nor name attribute, using default value for sorting")
+                return default_value
+        return value
+        
+    return sorted(items, key=get_safe_attribute)
+
 def get_equipment_sequence_for_line(onto: Ontology, line_individual: Thing) -> List[Thing]:
     """
     Retrieves the equipment sequence for a specific production line.
@@ -109,10 +132,31 @@ def generate_equipment_sequence_report(onto: Ontology) -> str:
     
     # Find all production lines
     lines = []
-    for ind in onto.individuals():
-        # Check if it's a ProductionLine by looking for lineId property
-        if hasattr(ind, "lineId"):
-            lines.append(ind)
+    
+    # Get the ProductionLine class - search by name
+    production_line_class = None
+    for cls in onto.classes():
+        if cls.name == "ProductionLine":
+            production_line_class = cls
+            break
+    
+    if not production_line_class:
+        analysis_logger.warning("ProductionLine class not found in ontology - trying to find lines by lineId property")
+        # Fallback to property-based detection with warnings about duplicates
+        line_ids_seen = set()
+        for ind in onto.individuals():
+            if hasattr(ind, "lineId"):
+                line_id = getattr(ind, "lineId")
+                if line_id in line_ids_seen:
+                    analysis_logger.warning(f"Duplicate lineId found: {line_id} - possible data quality issue")
+                else:
+                    line_ids_seen.add(line_id)
+                    lines.append(ind)
+    else:
+        # Use proper class-based detection
+        for ind in onto.individuals():
+            if isinstance(ind, production_line_class):
+                lines.append(ind)
     
     if not lines:
         analysis_logger.warning("No production lines found in ontology")
@@ -120,13 +164,23 @@ def generate_equipment_sequence_report(onto: Ontology) -> str:
     
     analysis_logger.info(f"Found {len(lines)} production lines")
     
+    # Log some line IDs for verification
+    sample_size = min(5, len(lines))
+    sample_lines = lines[:sample_size]
+    sample_ids = [getattr(line, "lineId", line.name) for line in sample_lines]
+    analysis_logger.info(f"Sample line IDs: {', '.join(map(str, sample_ids))}")
+    
     report_lines = []
     report_lines.append("\n=== EQUIPMENT SEQUENCE REPORT ===")
     
-    # Sort lines by lineId for consistent output
-    lines.sort(key=lambda l: getattr(l, "lineId", l.name))
+    # Use safe sort for lines to avoid None comparison errors
+    try:
+        sorted_lines = _safe_sort_by_attribute(lines, "lineId")
+    except Exception as e:
+        analysis_logger.error(f"Error sorting lines: {e} - using unsorted lines")
+        sorted_lines = lines
     
-    for line in lines:
+    for line in sorted_lines:
         line_id = getattr(line, "lineId", line.name)
         report_lines.append(f"\nLine: {line_id}")
         
@@ -166,11 +220,26 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
     """
     analysis_logger.info("Analyzing equipment sequences in ontology")
     
-    # Find all production lines
+    # Find all production lines using class-based detection
     lines = []
-    for ind in onto.individuals():
-        if hasattr(ind, "lineId"):
-            lines.append(ind)
+    
+    # Get the ProductionLine class
+    production_line_class = None
+    for cls in onto.classes():
+        if cls.name == "ProductionLine":
+            production_line_class = cls
+            break
+    
+    if production_line_class:
+        for ind in onto.individuals():
+            if isinstance(ind, production_line_class):
+                lines.append(ind)
+    else:
+        # Fallback to property-based detection
+        analysis_logger.warning("ProductionLine class not found in ontology - using lineId property")
+        for ind in onto.individuals():
+            if hasattr(ind, "lineId"):
+                lines.append(ind)
     
     if not lines:
         analysis_logger.warning("No production lines found in ontology")
@@ -180,7 +249,14 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
     sequences = {}
     stats = {"total_lines": len(lines), "lines_with_sequence": 0, "total_equipment": 0, "class_counts": {}}
     
-    for line in lines:
+    # Use safe sort
+    try:
+        sorted_lines = _safe_sort_by_attribute(lines, "lineId")
+    except Exception as e:
+        analysis_logger.error(f"Error sorting lines: {e} - using unsorted lines")
+        sorted_lines = lines
+    
+    for line in sorted_lines:
         line_id = getattr(line, "lineId", line.name)
         sequence = get_equipment_sequence_for_line(onto, line)
         

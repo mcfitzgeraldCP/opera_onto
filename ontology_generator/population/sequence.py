@@ -3,12 +3,32 @@ Sequence relationship module for the ontology generator.
 
 This module provides functions for setting up equipment sequence relationships.
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.population.core import PopulationContext, _set_property_value
+
+def _safe_sort_by_position(items, default_position=999999):
+    """
+    Safely sorts items by position value, handling None values gracefully.
+    
+    Args:
+        items: Dictionary items (key, value) where value might be None
+        default_position: Default value to use for None positions
+        
+    Returns:
+        Sorted list of (key, value) tuples
+    """
+    def get_safe_position(item):
+        key, position = item
+        if position is None:
+            pop_logger.warning(f"Found None position for {key}, using default position {default_position} for sorting")
+            return default_position
+        return position
+        
+    return sorted(items, key=get_safe_position)
 
 def setup_equipment_sequence_relationships(onto: Ontology,
                                           equipment_class_positions: Dict[str, int],
@@ -59,8 +79,13 @@ def setup_equipment_sequence_relationships(onto: Ontology,
         pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish class relationships.")
         return
 
-    # Sort classes by their position number
-    sorted_classes = sorted(equipment_class_positions.items(), key=lambda item: item[1])
+    # Sort classes by their position number (safely handling None values)
+    sorted_classes = _safe_sort_by_position(equipment_class_positions.items())
+    
+    # Log position information for debugging
+    pop_logger.debug("Equipment class positions for sequence setup:")
+    for cls_name, pos in sorted_classes:
+        pop_logger.debug(f"  Class: {cls_name}, Position: {pos}")
 
     if len(sorted_classes) < 2:
         pop_logger.warning("Not enough equipment classes with sequence positions (< 2) to establish relationships.")
@@ -172,8 +197,9 @@ def setup_equipment_instance_relationships(onto: Ontology,
         pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish instance relationships.")
         return
 
-    # Sort class names by position
-    sorted_class_names_by_pos = [item[0] for item in sorted(equipment_class_positions.items(), key=lambda item: item[1])]
+    # Sort class names by position (safely handling None values)
+    sorted_classes = _safe_sort_by_position(equipment_class_positions.items())
+    sorted_class_names_by_pos = [item[0] for item in sorted_classes]
 
     if len(sorted_class_names_by_pos) < 1:  # Changed from 2 to 1 since we now chain within classes too
         pop_logger.warning("No equipment classes with sequence positions found. Cannot establish instance relationships.")
