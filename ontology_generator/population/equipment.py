@@ -259,6 +259,7 @@ def process_equipment_and_class(
             if eq_class_pos is None:
                 from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
                 
+                # Try exact match first
                 if eq_class_base_name in DEFAULT_EQUIPMENT_SEQUENCE:
                     default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
                     pop_logger.info(f"Using default sequence position {default_pos} for equipment class '{eq_class_base_name}' from config.DEFAULT_EQUIPMENT_SEQUENCE")
@@ -267,8 +268,34 @@ def process_equipment_and_class(
                         context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
                     eq_class_pos = default_pos
                 else:
-                    pop_logger.warning(f"No sequence position available for equipment class '{eq_class_base_name}' - not in mapped column or config defaults")
-                    pop_logger.warning(f"Add '{eq_class_base_name}' to DEFAULT_EQUIPMENT_SEQUENCE in config.py with an appropriate position value")
+                    # Try to extract generic class (e.g., "Filler" from "FIPCO009_Filler")
+                    generic_class = None
+                    
+                    # Extract from name with underscore (FIPCO009_Filler)
+                    if '_' in eq_class_base_name:
+                        parts = eq_class_base_name.split('_')
+                        class_part = parts[-1]
+                        # Remove trailing digits
+                        generic_class = re.sub(r'\d+$', '', class_part)
+                    
+                    # If no generic class yet, try matching against known class types
+                    if not generic_class or generic_class not in DEFAULT_EQUIPMENT_SEQUENCE:
+                        for known_class in DEFAULT_EQUIPMENT_SEQUENCE.keys():
+                            if known_class in eq_class_base_name:
+                                generic_class = known_class
+                                break
+                    
+                    # Check if we found a generic class in DEFAULT_EQUIPMENT_SEQUENCE
+                    if generic_class and generic_class in DEFAULT_EQUIPMENT_SEQUENCE:
+                        default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(generic_class)
+                        pop_logger.info(f"Using default sequence position {default_pos} for generic class '{generic_class}' extracted from '{eq_class_base_name}'")
+                        # Set the position in the individual
+                        if prop_defaultSequencePosition:
+                            context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
+                        eq_class_pos = default_pos
+                    else:
+                        pop_logger.warning(f"No sequence position available for equipment class '{eq_class_base_name}' - not in mapped column or config defaults")
+                        pop_logger.warning(f"Add '{eq_class_base_name}' to DEFAULT_EQUIPMENT_SEQUENCE in config.py with an appropriate position value")
         
         # Prepare info for tracking
         eq_class_info_out = (eq_class_base_name, eq_class_ind, eq_class_pos)
