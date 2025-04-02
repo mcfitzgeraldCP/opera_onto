@@ -11,6 +11,21 @@ DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 SPEC_PARENT_CLASS_COLUMN = 'Parent Class'  # Assumed column name for hierarchy
 
+# --- Warnings Suppression Configuration ---
+# List of warning message substrings that should be suppressed in logs
+SUPPRESSED_WARNINGS = [
+    # "Equipment.actualSequencePosition is missing 'column'",
+    # "EquipmentClass.defaultSequencePosition is missing 'column'",
+    # "No equipment instance relationships were created or verified",
+    # "Context entity 'EquipmentCapability' required for Equipment.hasCapability",
+    # "Context entity 'EventRecord' required for Material.materialUsedIn",
+    # "Context entity 'EventRecord' required for OperationalReason.reasonForEvent",
+    # "Context entity 'EventRecord' required for OperationalState.stateOfEvent",
+    # "Context entity 'EventRecord' required for ProductionRequest.hasAssociatedEvent",
+    # "Context entity 'EventRecord' required for Shift.includesEvent",
+    # "Context entity 'Person' required for EventRecord.performedBy"
+]
+
 # --- Language Mapping for Alternative Reason Descriptions ---
 # Mapping from country descriptions to BCP 47 language tags
 COUNTRY_TO_LANGUAGE: Dict[str, str] = {

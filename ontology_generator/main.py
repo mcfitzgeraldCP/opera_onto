@@ -18,7 +18,7 @@ from owlready2 import (
     ThingClass, FunctionalProperty, InverseFunctionalProperty, TransitiveProperty, SymmetricProperty, AsymmetricProperty, ReflexiveProperty, IrreflexiveProperty, Nothing
 )
 
-from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map
+from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map, DEFAULT_EQUIPMENT_SEQUENCE
 from ontology_generator.utils.logging import (
     main_logger, configure_logging, analysis_logger
 )
@@ -158,6 +158,11 @@ def populate_ontology_from_data(onto: Ontology,
         main_logger.info(f"Total unique equipment classes: {len(sorted_class_names)}")
         for class_name in sorted_class_names:
             main_logger.info(f"  • {class_name} (Position: {equipment_class_positions.get(class_name, 'Not Set')})")
+        
+        # Log information about default sequence positions from config
+        defaults_used = [name for name in sorted_class_names if name in DEFAULT_EQUIPMENT_SEQUENCE]
+        if defaults_used:
+            main_logger.info(f"Using default sequence positions from config for {len(defaults_used)} equipment classes: {', '.join(defaults_used)}")
     else:
         main_logger.warning("No EquipmentClass individuals were created or tracked during population!")
 

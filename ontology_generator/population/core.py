@@ -4,8 +4,9 @@ Core population module for the ontology generator.
 This module provides the base functionality for ontology population, including the
 PopulationContext class and property application functions.
 """
-from typing import Dict, Any, Optional, List, Set, Tuple, Union
+from typing import Dict, Any, Optional, List, Set, Tuple, Union, Callable
 import logging
+import pandas as pd
 
 from owlready2 import (
     Ontology, Thing, ThingClass, PropertyClass,
@@ -160,49 +161,44 @@ def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_f
         pop_logger.error(f"Error setting property '{prop.name}' on individual '{individual.name}' with value '{repr(value)}': {e}", exc_info=False)
 
 
-def set_prop_if_col_exists(context: PopulationContext, 
-                             individual: Thing, 
-                             prop_name: str, 
-                             col_name: str, 
-                             row: Dict[str, Any], 
-                             cast_func: callable, 
-                             target_type: type, 
-                             logger, 
-                             default: Optional[Any] = None) -> None:
-    """
-    Safely sets a property value using the context, but only if the 
-    corresponding column exists in the data row, logging an error otherwise.
-    
-    Args:
-        context: The population context
-        individual: The individual to set the property on
-        prop_name: The name of the property to set
-        col_name: The name of the column in the data row
-        row: The data row dictionary
-        cast_func: The casting function (e.g., safe_cast)
-        target_type: The target type for casting
-        logger: Logger object for logging errors
-        default: Optional default value to pass to cast_func
-    """
-    if col_name not in row or row[col_name] is None or str(row[col_name]).strip() == '':
-        logger.error(f"Missing required column '{col_name}' for property '{prop_name}' on individual '{individual.name}' in row: {context.row_to_string(row) if hasattr(context, 'row_to_string') else 'Row details unavailable'}")
-        return
-        
-    try:
-        # Prepare arguments for cast_func
-        cast_args = [row.get(col_name), target_type]
-        if default is not None:
-            cast_args.append(default) # Append default only if provided
-            
-        value = cast_func(*cast_args)
-        
-        if value is not None:  # Don't set if casting resulted in None (unless default=None was intended)
-            context.set_prop(individual, prop_name, value)
-        elif default is not None and value is None: # Log if default was used but result is still None (unexpected from safe_cast typically)
-             logger.debug(f"Casting column '{col_name}' for '{prop_name}' resulted in None even with default={default}")
+def set_prop_if_col_exists(
+    context: PopulationContext,
+    individual: Thing,
+    prop_name: str,
+    col_name: str,
+    row: Dict[str, Any],
+    cast_func: Callable,
+    target_type: type,
+    logger
+) -> bool:
+    """Helper function to check if column exists, cast value, and set property if value exists."""
+    # Check if column exists in the row
+    if col_name not in row:
+        logger.error(f"Missing required column '{col_name}' for property '{prop_name}' on individual '{individual.name}' in row: {truncate_row_repr(row)}")
+        return False
 
-    except Exception as e:
-        logger.error(f"Error casting or setting property '{prop_name}' from column '{col_name}' on individual '{individual.name}': {e}")
+    # Column exists but might be empty/None/NaN
+    raw_value = row.get(col_name)
+    if pd.isna(raw_value) or raw_value == '' or raw_value is None:
+        logger.debug(f"Column '{col_name}' exists but has null/empty value for property '{prop_name}' on individual '{individual.name}'")
+        return False
+
+    # Cast value to target type
+    value = cast_func(raw_value, target_type)
+    if value is None:  # Cast failed
+        logger.warning(f"Failed to cast value '{raw_value}' from column '{col_name}' to type {target_type.__name__} for property '{prop_name}' on individual '{individual.name}'")
+        return False
+
+    # Set the property
+    context.set_prop(individual, prop_name, value)
+    return True
+
+def truncate_row_repr(row: Dict[str, Any], max_length: int = 100) -> str:
+    """Create a truncated string representation of a row for logging."""
+    row_str = str(row)
+    if len(row_str) > max_length:
+        return row_str[:max_length] + "..."
+    return row_str
 
 
 def get_or_create_individual(
@@ -342,6 +338,9 @@ def apply_object_property_mappings(
 
     obj_prop_mappings = mappings.get('object_properties', {})
     links_applied_count = 0
+    
+    # Track missing entities per row to log only once
+    missing_context_entities = set()
 
     for prop_name, details in obj_prop_mappings.items():
         target_class_name = details.get('target_class')
@@ -357,16 +356,16 @@ def apply_object_property_mappings(
             logger.warning(f"Object property '{prop_name}' not found or not an ObjectProperty. Skipping link for {entity_name} {individual.name}.")
             continue
 
-        # Find the target individual
-        target_individual: Optional[Thing] = None
-        lookup_method = "None"
-
         # Add debug for EventRecord.involvesResource specifically
         if entity_name == "EventRecord" and prop_name == "involvesResource":
             if hasattr(individual, "involvesResource") and individual.involvesResource:
                 logger.debug(f"EventRecord {individual.name} already has involvesResource set to {individual.involvesResource.name if hasattr(individual.involvesResource, 'name') else individual.involvesResource}")
                 # Skip this property if already set
                 continue
+
+        # Find the target individual
+        target_individual: Optional[Thing] = None
+        lookup_method = "None"
 
         if col_name:
             # --- Link via Column Lookup (using GLOBAL registry) ---
@@ -395,8 +394,11 @@ def apply_object_property_mappings(
 
              target_individual = individuals_in_row.get(link_context_key)
              if not target_individual:
-                 # This was the source of the original warnings
-                 logger.warning(f"Context entity '{link_context_key}' required for {entity_name}.{prop_name} not found in individuals_in_row dictionary for row {row.get('row_num', 'N/A')}. Skipping link.")
+                 # Track missing context entity to log only once
+                 missing_key = f"{link_context_key} for {entity_name}.{prop_name}"
+                 if missing_key not in missing_context_entities:
+                     missing_context_entities.add(missing_key)
+                     logger.warning(f"Context entity '{link_context_key}' required for {entity_name}.{prop_name} not found in individuals_in_row dictionary for row {row.get('row_num', 'N/A')}. Skipping link.")
                  continue
              else:
                  logger.debug(f"Found link target {target_individual.name} for {entity_name}.{prop_name} via row context key '{link_context_key}'.")

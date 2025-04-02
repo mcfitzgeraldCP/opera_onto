@@ -14,6 +14,7 @@ from ontology_generator.population.core import (
     PopulationContext, get_or_create_individual, 
     apply_data_property_mappings, apply_object_property_mappings
 )
+from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
 
 def parse_equipment_class(equipment_name: Optional[str]) -> Optional[str]:
     """
@@ -204,6 +205,16 @@ def process_equipment_and_class(
                 # getattr might return None or the value
                 raw_pos = getattr(eq_class_ind, pos_prop_name, None)
                 eq_class_pos = safe_cast(raw_pos, int) if raw_pos is not None else None
+                
+                # If no position set, try using the default from config
+                if eq_class_pos is None and eq_class_base_name in DEFAULT_EQUIPMENT_SEQUENCE:
+                    default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
+                    pop_logger.info(f"Using default sequence position {default_pos} for equipment class '{eq_class_base_name}' from config.DEFAULT_EQUIPMENT_SEQUENCE")
+                    # Set the position in the individual
+                    context.set_prop(eq_class_ind, pos_prop_name, default_pos)
+                    eq_class_pos = default_pos
+                elif eq_class_pos is None:
+                    pop_logger.debug(f"No sequence position available for equipment class '{eq_class_base_name}' (not in config defaults)")
             except Exception as e:
                  pop_logger.warning(f"Could not read or cast {pos_prop_name} for {eq_class_ind.name}: {e}")
         # Prepare info for tracking
