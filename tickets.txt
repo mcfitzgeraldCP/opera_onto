@@ -1,0 +1,68 @@
+Okay, here is a prioritized list of suggested tickets based on the code review. Larger tasks are broken down.
+
+**High Priority**
+
+1.  **Ticket Type:** Bug
+    *   **Title:** Broad Exception Handling in Row Processing Loop
+    *   **Description:** The main population loop in `main.py:populate_ontology_from_data` uses a generic `except Exception`. This can hide specific errors and make debugging difficult.
+    *   **Task:** Refine exception handling within the loop to catch and log more specific exceptions (e.g., `KeyError`, `ValueError`, `TypeError`, `AttributeError`) where appropriate to improve error diagnostics.
+
+2.  **Ticket Type:** Refactor
+    *   **Title:** Reduce Complexity in `main.py` Functions
+    *   **Description:** The functions `main_ontology_generation` and `populate_ontology_from_data` in `main.py` are overly long and handle too many distinct steps, reducing readability and maintainability.
+    *   **Subtask 2.1:** Move the core row-processing logic currently inside `populate_ontology_from_data` into a new, dedicated function or module within the `ontology_generator.population` package. `populate_ontology_from_data` in `main.py` should primarily set up the context and call this new function.
+    *   **Subtask 2.2:** Refactor `main_ontology_generation` by extracting distinct phases (e.g., parsing, world setup, TBox definition, ABox population call, analysis phase, sequencing phase, linking phase, reasoning phase, saving) into separate, clearly named helper functions within `main.py`.
+
+3.  **Ticket Type:** Refactor / Bug
+    *   **Title:** Clarify and Standardize Use of Property Mappings vs. Hardcoded Logic
+    *   **Description:** Population modules (`asset.py`, `equipment.py`, `events.py`) inconsistently use both the dynamic `apply_property_mappings` (driven by the spec CSV) and hardcoded fallback logic (using specific column names directly in the code) to set properties and links. This makes the intended source of truth unclear and potentially leads to inconsistencies.
+    *   **Subtask 3.1 (Investigation):** Analyze the specification CSV format, `definition/parser.py`, and the `population` modules. Determine which properties and relationships are *intended* to be fully defined by the specification CSV and which are meant to be handled programmatically (e.g., structural links like `locatedInPlant`, `memberOfClass`, calculated values, default sequence). Document these findings clearly.
+    *   **Subtask 3.2 (Refactor/Fix):** Based on the investigation findings, implement *one* of the following:
+        *   *Option A (Spec-Driven):* If the goal is maximum configurability via the spec: Modify the expected spec CSV format and `definition/parser.parse_property_mappings` to capture *all* necessary property details (including structural object property links if feasible). Remove the hardcoded fallback logic from the `population` modules, relying solely on `apply_property_mappings` or specific lookups within the `property_mappings` dictionary.
+        *   *Option B (Hybrid):* If a hybrid approach is intended: Refactor the `population` functions to clearly separate properties set via `apply_property_mappings` from those set programmatically. Remove redundant checks/fallbacks where mappings are never expected. Ensure documentation explicitly states which properties are code-driven versus spec-driven.
+    *   **Subtask 3.3 (Spec Modification - Required for Option A):** Modify the ontology specification CSV (`Ontology_specifications/OPERA_ISA95_OWL_ONT_V14.csv`):
+        *   Add a new column named `Target Link Context`.
+        *   For `ObjectProperty` rows where `Raw Data Column Name` is `N/A` (representing structural links determined by context, not direct lookup), populate `Target Link Context` with the *Entity Name* of the target individual (e.g., for `Area.locatedInPlant`, the context is `Plant`; for `Equipment.isPartOfProductionLine`, the context is `ProductionLine`).
+        *   Ensure `EquipmentClass.defaultSequencePosition` has the correct `Raw Data Column Name` if needed, or adjust parser/population logic to handle its calculation/lookup via mappings rather than config. (Verify spec details for this property).
+
+**Medium Priority**
+
+4.  **Ticket Type:** Bug / Robustness
+    *   **Title:** Fragile Equipment Class Parsing Logic
+    *   **Description:** `population.equipment.parse_equipment_class` relies on specific string manipulation (underscores, trailing digits) on `EQUIPMENT_NAME`. This is brittle if naming conventions change or are inconsistent.
+    *   **Task:** Improve the robustness of `parse_equipment_class`. Consider alternatives like requiring a dedicated `EquipmentClassName` column in the input data, using more flexible regex, or adding configuration options. Add unit tests covering various `EQUIPMENT_NAME` formats (valid, invalid, edge cases).
+
+5.  **Ticket Type:** Bug / Robustness
+    *   **Title:** Assumption on `equipmentId` for Instance Sequencing
+    *   **Description:** `population.sequence.setup_equipment_instance_relationships` sorts equipment instances within the same class based on `equipmentId`, assuming this reflects the physical sequence. This assumption may not hold true.
+    *   **Task:** Investigate if `equipmentId` reliably indicates sequence order. If not, identify a correct column or logic for sorting instances (e.g., a dedicated sequence number column in the data). Update `setup_equipment_instance_relationships` accordingly. Add a configuration option or clear documentation if `equipmentId` remains the default but might be inaccurate.
+
+6.  **Ticket Type:** Bug / Robustness
+    *   **Title:** Potential Ambiguity in Event Linking Temporal Logic
+    *   **Description:** The relaxed temporal logic in `population.linking.link_equipment_events_to_line_events` might allow an equipment event to match multiple line events. The current code links to the first match found, which might not be correct.
+    *   **Task:** Review the temporal linking requirements. Decide on the desired behavior for ambiguous overlaps (e.g., link to best fit based on duration/proximity, link to all, raise a warning/error). Implement the chosen strategy in `link_equipment_events_to_line_events`.
+
+7.  **Ticket Type:** Refactor
+    *   **Title:** Replace Magic Strings with Constants
+    *   **Description:** Code uses hardcoded strings like `'Line'`, `'Equipment'`, `'DatatypeProperty'`, etc., directly in comparisons or logic.
+    *   **Task:** Define constants for these recurring string literals (e.g., in `config.py` or at the top of relevant modules) and replace the magic strings throughout the codebase (`main.py`, `definition`, `population` modules).
+
+8.  **Ticket Type:** Testing
+    *   **Title:** Implement Unit and Integration Test Suite
+    *   **Description:** The codebase lacks an automated test suite, making refactoring risky and hindering verification.
+    *   **Subtask 8.1:** Set up a testing framework (e.g., `pytest`).
+    *   **Subtask 8.2:** Add unit tests for critical parsing logic (`definition/parser.py`, `population/equipment.parse_equipment_class`).
+    *   **Subtask 8.3:** Add unit tests for core utilities and helpers (`population/core.py`, `utils.types`).
+    *   **Subtask 8.4:** Add basic integration tests covering the main workflow with simple spec/data files to verify class/individual creation, sequencing, and linking steps.
+
+**Low Priority**
+
+9.  **Ticket Type:** Clarification / Refactor
+    *   **Title:** Clarify Interaction Between Selective and Full Class Creation
+    *   **Description:** `main.py` has logic to potentially call both `definition.structure.create_selective_classes` and `definition.structure.define_ontology_structure`. The exact interaction and whether classes might be redefined needs clarification.
+    *   **Task:** Review the logic in `main_ontology_generation`. Ensure the intended behavior is correctly implemented (e.g., `define_ontology_structure` should likely only define properties if `create_selective_classes` was already run). Add comments or minor refactoring to make the flow explicit.
+
+10. **Ticket Type:** Robustness
+    *   **Title:** Add Validation for Specification CSV Headers
+    *   **Description:** `definition.parser.parse_specification` doesn't currently validate if the required column headers are present in the spec CSV.
+    *   **Task:** Implement the header check (similar to the commented-out code) in `parse_specification`

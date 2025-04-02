@@ -11,371 +11,375 @@ from owlready2 import Thing, locstr
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.utils.types import safe_cast
 from ontology_generator.population.core import (
-    PopulationContext, get_or_create_individual, apply_property_mappings,
-    set_prop_if_col_exists
+    PopulationContext, get_or_create_individual, apply_data_property_mappings
 )
 from ontology_generator.config import COUNTRY_TO_LANGUAGE, DEFAULT_LANGUAGE
 
-def process_shift(row: Dict[str, Any], 
-                 context: PopulationContext, 
-                 property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
-                ) -> Optional[Thing]:
+# Type Alias for registry
+IndividualRegistry = Dict[Tuple[str, str], Thing] # Key: (entity_type_str, unique_id_str), Value: Individual Object
+RowIndividuals = Dict[str, Thing] # Key: entity_type_str, Value: Individual Object for this row
+
+def process_shift(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    all_created_individuals_by_uid: IndividualRegistry = None,
+    pass_num: int = 1
+) -> Optional[Thing]:
     """
-    Processes Shift from a row.
-    
-    Args:
-        row: The data row
-        context: The population context
-        property_mappings: Optional property mappings dictionary
-        
-    Returns:
-        The Shift individual or None
+    Processes Shift from a row (Pass 1: Create/Data Props).
+    Requires shiftId, startTime, endTime mappings.
     """
+    if not property_mappings or "Shift" not in property_mappings:
+        pop_logger.debug("Property mappings for 'Shift' not provided. Skipping shift processing.")
+        return None
+    if all_created_individuals_by_uid is None: return None # Error logged upstream
+
     cls_Shift = context.get_class("Shift")
-    if not cls_Shift: 
+    if not cls_Shift: return None
+
+    shift_id_map = property_mappings['Shift'].get('data_properties', {}).get('shiftId')
+    start_time_map = property_mappings['Shift'].get('data_properties', {}).get('shiftStartTime')
+    end_time_map = property_mappings['Shift'].get('data_properties', {}).get('shiftEndTime')
+
+    if not shift_id_map or not shift_id_map.get('column'):
+        pop_logger.warning("Mapping for Shift.shiftId column not found. Skipping shift.")
+        return None
+    # Start/end times are crucial for identification/labeling if ID isn't unique
+    if not start_time_map or not start_time_map.get('column') or not end_time_map or not end_time_map.get('column'):
+         pop_logger.warning("Mapping for Shift start/end time columns not found. Skipping shift.")
+         return None
+
+    shift_id_col = shift_id_map['column']
+    shift_id = safe_cast(row.get(shift_id_col), str)
+    start_time_str = safe_cast(row.get(start_time_map['column']), str)
+    end_time_str = safe_cast(row.get(end_time_map['column']), str)
+
+    if not shift_id or not start_time_str:
+        pop_logger.debug(f"Missing shift ID ('{shift_id_col}') or start time ('{start_time_map['column']}') in row. Skipping shift.")
         return None
 
-    shift_name = safe_cast(row.get('SHIFT_NAME'), str)
-    if not shift_name:
-        pop_logger.debug("No SHIFT_NAME in row, skipping shift creation.")
-        return None
+    # Create a unique base name, e.g., ShiftID_StartTime
+    shift_unique_base = f"{shift_id}_{start_time_str}"
+    shift_labels = [shift_id, f"{start_time_str} to {end_time_str or '?'}"]
 
-    shift_labels = [shift_name]
-    shift_ind = get_or_create_individual(cls_Shift, shift_name, context.onto, add_labels=shift_labels)
-    if not shift_ind: 
-        return None
+    shift_ind = get_or_create_individual(cls_Shift, shift_unique_base, context.onto, all_created_individuals_by_uid, add_labels=shift_labels)
 
-    # Check if we can use dynamic property mappings
-    if property_mappings and "Shift" in property_mappings:
-        shift_mappings = property_mappings["Shift"]
-        
-        # Process data properties from mappings
-        populated_props = 0
-        for prop_name, prop_info in shift_mappings.get("data_properties", {}).items():
-            col_name = prop_info.get("column")
-            data_type = prop_info.get("data_type")
-            
-            if col_name and data_type:
-                # Special check for shiftId to avoid overwriting
-                if prop_name == "shiftId" and getattr(shift_ind, "shiftId", None) == shift_name:
-                    pop_logger.debug(f"Shift.shiftId already set to {shift_name}, skipping")
-                    continue
-                    
-                # For other properties, check if they're already set
-                if prop_name != "shiftId" and getattr(shift_ind, prop_name, None) is not None:
-                    pop_logger.debug(f"Shift.{prop_name} already set, skipping")
-                    continue
-                    
-                # Apply the property mapping
-                apply_property_mappings(shift_ind, {"data_properties": {prop_name: prop_info}}, row, context, "Shift", pop_logger)
-                populated_props += 1
-        
-        pop_logger.debug(f"Populated {populated_props} properties for Shift from dynamic mappings")
-    else:
-        # Fallback to hardcoded property assignments
-        pop_logger.debug("Using hardcoded property assignments for Shift (no dynamic mappings available)")
-        # Populate shift details (Functional properties, assign only if needed/missing)
-        # Check before setting to avoid redundant operations if individual already exists
-        if getattr(shift_ind, "shiftId", None) != shift_name:
-            context.set_prop_if_col_exists(shift_ind, "shiftId", 'SHIFT_NAME', row, safe_cast, str, pop_logger)
-        if getattr(shift_ind, "shiftStartTime", None) is None:
-            context.set_prop_if_col_exists(shift_ind, "shiftStartTime", 'SHIFT_START_DATE_LOC', row, safe_cast, datetime, pop_logger)
-        if getattr(shift_ind, "shiftEndTime", None) is None:
-            context.set_prop_if_col_exists(shift_ind, "shiftEndTime", 'SHIFT_END_DATE_LOC', row, safe_cast, datetime, pop_logger)
-        if getattr(shift_ind, "shiftDurationMinutes", None) is None:
-            context.set_prop_if_col_exists(shift_ind, "shiftDurationMinutes", 'SHIFT_DURATION_MIN', row, safe_cast, float, pop_logger)
+    if shift_ind and pass_num == 1:
+        apply_data_property_mappings(shift_ind, property_mappings["Shift"], row, context, "Shift", pop_logger)
+        # Potential: Calculate duration if mapping exists? Or leave to reasoner/post-processing?
+        # duration_map = property_mappings['Shift'].get('data_properties', {}).get('shiftDurationMinutes')
+        # if duration_map ... calculate ... context.set_prop(...)
 
     return shift_ind
 
+def process_state(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    all_created_individuals_by_uid: IndividualRegistry = None,
+    pass_num: int = 1
+) -> Optional[Thing]:
+    """
+    Processes OperationalState from a row (Pass 1: Create/Data Props).
+    Requires stateDescription mapping.
+    """
+    if not property_mappings or "OperationalState" not in property_mappings:
+        pop_logger.debug("Property mappings for 'OperationalState' not provided. Skipping state processing.")
+        return None
+    if all_created_individuals_by_uid is None: return None
 
-def process_state_reason(row: Dict[str, Any], 
-                         context: PopulationContext, 
-                         property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
-                        ) -> Tuple[Optional[Thing], Optional[Thing]]:
+    cls_State = context.get_class("OperationalState")
+    if not cls_State: return None
+
+    state_desc_map = property_mappings['OperationalState'].get('data_properties', {}).get('stateDescription')
+    if not state_desc_map or not state_desc_map.get('column'):
+        pop_logger.warning("Mapping for OperationalState.stateDescription column not found. Skipping state.")
+        return None
+
+    state_desc_col = state_desc_map['column']
+    state_desc = safe_cast(row.get(state_desc_col), str)
+    if not state_desc:
+        pop_logger.debug(f"No State Description found in column '{state_desc_col}'. Skipping state.")
+        return None
+
+    # Use description as the base name (assuming descriptions are reasonably unique states)
+    state_unique_base = state_desc
+    state_labels = [state_desc]
+
+    state_ind = get_or_create_individual(cls_State, state_unique_base, context.onto, all_created_individuals_by_uid, add_labels=state_labels)
+
+    if state_ind and pass_num == 1:
+        apply_data_property_mappings(state_ind, property_mappings["OperationalState"], row, context, "OperationalState", pop_logger)
+
+    return state_ind
+
+def process_reason(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    all_created_individuals_by_uid: IndividualRegistry = None,
+    pass_num: int = 1
+) -> Optional[Thing]:
     """
-    Processes OperationalState and OperationalReason from a row.
-    
-    Args:
-        row: The data row
-        context: The population context
-        property_mappings: Optional property mappings dictionary
-        
+    Processes OperationalReason from a row (Pass 1: Create/Data Props).
+    Requires reasonDescription or altReasonDescription mapping.
+    """
+    if not property_mappings or "OperationalReason" not in property_mappings:
+        pop_logger.debug("Property mappings for 'OperationalReason' not provided. Skipping reason processing.")
+        return None
+    if all_created_individuals_by_uid is None: return None
+
+    cls_Reason = context.get_class("OperationalReason")
+    if not cls_Reason: return None
+
+    reason_desc_map = property_mappings['OperationalReason'].get('data_properties', {}).get('reasonDescription')
+    alt_reason_desc_map = property_mappings['OperationalReason'].get('data_properties', {}).get('altReasonDescription')
+
+    reason_desc_col = None
+    reason_desc = None
+
+    if reason_desc_map and reason_desc_map.get('column'):
+        reason_desc_col = reason_desc_map['column']
+        reason_desc = safe_cast(row.get(reason_desc_col), str)
+    elif alt_reason_desc_map and alt_reason_desc_map.get('column'):
+        reason_desc_col = alt_reason_desc_map['column']
+        reason_desc = safe_cast(row.get(reason_desc_col), str)
+        pop_logger.debug(f"Using altReasonDescription column '{reason_desc_col}' for reason.")
+    else:
+        pop_logger.warning("Mapping for OperationalReason description column (reasonDescription or altReasonDescription) not found. Skipping reason.")
+        return None
+
+    if not reason_desc:
+        pop_logger.debug(f"No Reason Description found in column '{reason_desc_col}'. Skipping reason.")
+        return None
+
+    # Use description as the base name
+    reason_unique_base = reason_desc
+    reason_labels = [reason_desc]
+
+    reason_ind = get_or_create_individual(cls_Reason, reason_unique_base, context.onto, all_created_individuals_by_uid, add_labels=reason_labels)
+
+    if reason_ind and pass_num == 1:
+        apply_data_property_mappings(reason_ind, property_mappings["OperationalReason"], row, context, "OperationalReason", pop_logger)
+
+    return reason_ind
+
+def process_time_interval(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    all_created_individuals_by_uid: IndividualRegistry = None,
+    pass_num: int = 1
+) -> Optional[Thing]:
+    """
+    Processes TimeInterval from a row (Pass 1: Create/Data Props).
+    Requires startTime and endTime mappings.
+    """
+    if not property_mappings or "TimeInterval" not in property_mappings:
+        pop_logger.debug("Property mappings for 'TimeInterval' not provided. Skipping interval processing.")
+        return None
+    if all_created_individuals_by_uid is None: return None
+
+    cls_Interval = context.get_class("TimeInterval")
+    if not cls_Interval: return None
+
+    start_map = property_mappings['TimeInterval'].get('data_properties', {}).get('startTime')
+    end_map = property_mappings['TimeInterval'].get('data_properties', {}).get('endTime')
+
+    if not start_map or not start_map.get('column') or not end_map or not end_map.get('column'):
+        pop_logger.warning("Mapping for TimeInterval start/end time columns not found. Skipping interval.")
+        return None
+
+    start_col = start_map['column']
+    end_col = end_map['column']
+    start_time_str = safe_cast(row.get(start_col), str)
+    end_time_str = safe_cast(row.get(end_col), str)
+
+    if not start_time_str or not end_time_str:
+        pop_logger.debug(f"Missing start ('{start_col}') or end ('{end_col}') time in row. Skipping interval.")
+        return None
+
+    # Create unique base name, e.g., StartTime_EndTime
+    interval_unique_base = f"{start_time_str}_{end_time_str}"
+    interval_labels = [f"{start_time_str} to {end_time_str}"]
+
+    interval_ind = get_or_create_individual(cls_Interval, interval_unique_base, context.onto, all_created_individuals_by_uid, add_labels=interval_labels)
+
+    if interval_ind and pass_num == 1:
+        apply_data_property_mappings(interval_ind, property_mappings["TimeInterval"], row, context, "TimeInterval", pop_logger)
+        # Maybe calculate duration?
+
+    return interval_ind
+
+def process_event_record(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    all_created_individuals_by_uid: IndividualRegistry = None,
+    # Pass individuals created earlier in the row processing for context if needed
+    time_interval_ind: Optional[Thing] = None,
+    shift_ind: Optional[Thing] = None,
+    state_ind: Optional[Thing] = None,
+    reason_ind: Optional[Thing] = None,
+    equipment_ind: Optional[Thing] = None, # The primary resource involved
+    line_ind: Optional[Thing] = None, # The line context
+    material_ind: Optional[Thing] = None, # Optional context
+    request_ind: Optional[Thing] = None, # Optional context
+    pass_num: int = 1
+) -> Tuple[Optional[Thing], Optional[Tuple]]:
+    """
+    Processes EventRecord from a row (Pass 1: Create/Data Props).
+    Links to other entities (State, Reason, Shift, Resource, etc.) are deferred to Pass 2.
+
+    Requires mappings for startTime, endTime (to identify interval) and involvedResource (Equipment ID).
+
     Returns:
-        A tuple of (state_individual, reason_individual)
+        Tuple: (event_individual, event_context_for_linking)
+               event_context_for_linking: (event_ind, resource_ind, time_interval_ind, line_ind)
     """
-    cls_OperationalState = context.get_class("OperationalState")
-    cls_OperationalReason = context.get_class("OperationalReason")
-    if not cls_OperationalState or not cls_OperationalReason: 
+    if not property_mappings or "EventRecord" not in property_mappings:
+        pop_logger.debug("Property mappings for 'EventRecord' not provided. Skipping event record processing.")
+        return None, None
+    if all_created_individuals_by_uid is None: return None, None
+
+    cls_Event = context.get_class("EventRecord")
+    if not cls_Event: return None, None
+
+    # Essential info for unique ID: Resource (Equipment) ID and Start Time
+    # We use the equipment *individual* passed in, assuming it was processed first.
+    # Get start time from the TimeInterval individual, assuming it was processed first.
+    if not equipment_ind:
+        pop_logger.warning("Equipment individual not provided for event record. Cannot create unique event ID. Skipping event.")
+        return None, None
+    if not time_interval_ind:
+         pop_logger.warning("TimeInterval individual not provided for event record. Cannot create unique event ID. Skipping event.")
+         return None, None
+
+    # Extract equipment ID and start time for the unique name
+    equip_id = None
+    if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId:
+        equip_id = equipment_ind.equipmentId[0] # Assumes functional
+    else:
+        # Fallback: try to parse from name? Risky.
+        pop_logger.warning(f"Cannot find equipmentId on provided Equipment individual {equipment_ind.name}. Attempting to use name as fallback ID.")
+        equip_id = equipment_ind.name # Use individual name as last resort
+
+    start_time_str = None
+    if hasattr(time_interval_ind, 'startTime') and time_interval_ind.startTime:
+        start_time_str = time_interval_ind.startTime[0] # Assumes functional
+    else:
+        pop_logger.warning(f"Cannot find startTime on provided TimeInterval individual {time_interval_ind.name}. Cannot create unique event ID. Skipping event.")
         return None, None
 
-    # OperationalState
-    state_desc = safe_cast(row.get('UTIL_STATE_DESCRIPTION'), str)
-    state_ind: Optional[Thing] = None
-    if state_desc:
-        state_labels = [state_desc]
-        state_ind = get_or_create_individual(cls_OperationalState, state_desc, context.onto, add_labels=state_labels)
-        if state_ind:
-            # Check if we can use dynamic property mappings for state
-            if property_mappings and "OperationalState" in property_mappings:
-                state_mappings = property_mappings["OperationalState"]
-                apply_property_mappings(state_ind, state_mappings, row, context, "OperationalState", pop_logger)
-            else:
-                # Fallback to hardcoded property assignments
-                # Set description (Non-functional)
-                context.set_prop_if_col_exists(state_ind, "stateDescription", 'UTIL_STATE_DESCRIPTION', row, safe_cast, str, pop_logger)
-    else:
-        pop_logger.debug("No UTIL_STATE_DESCRIPTION in row.")
+    if not equip_id or not start_time_str:
+         pop_logger.error(f"Could not determine Equipment ID or Start Time for event involving {equipment_ind.name}. Skipping event.")
+         return None, None
 
-    # OperationalReason
-    reason_desc = safe_cast(row.get('UTIL_REASON_DESCRIPTION'), str)
-    reason_ind: Optional[Thing] = None
-    if reason_desc:
-        reason_labels = [reason_desc]
-        reason_ind = get_or_create_individual(cls_OperationalReason, reason_desc, context.onto, add_labels=reason_labels)
-        if reason_ind:
-            # Check if we can use dynamic property mappings for reason
-            if property_mappings and "OperationalReason" in property_mappings:
-                reason_mappings = property_mappings["OperationalReason"]
-                
-                # Process data properties from mappings
-                for prop_name, prop_info in reason_mappings.get("data_properties", {}).items():
-                    col_name = prop_info.get("column")
-                    data_type = prop_info.get("data_type")
-                    
-                    if col_name and data_type:
-                        # Special handling for alt reason description with language tag
-                        if prop_name == "altReasonDescription" and data_type == "xsd:string (with lang tag)":
-                            alt_reason = safe_cast(row.get(col_name), str)
-                            if alt_reason:
-                                plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
-                                lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE) if plant_country else DEFAULT_LANGUAGE
-                                try:
-                                    alt_reason_locstr = locstr(alt_reason, lang=lang_tag)
-                                    context.set_prop(reason_ind, prop_name, alt_reason_locstr)
-                                    pop_logger.debug(f"Set OperationalReason.{prop_name} with localized string '{alt_reason}'@{lang_tag}")
-                                    continue
-                                except Exception as e_loc:
-                                    pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e_loc}. Storing as plain string.")
-                                    # Continue to regular processing as fallback
-                        
-                        # For all other properties, use standard property mapping
-                        apply_property_mappings(reason_ind, {"data_properties": {prop_name: prop_info}}, row, context, "OperationalReason", pop_logger)
-                
-                # Also process object properties
-                if reason_mappings.get("object_properties"):
-                    apply_property_mappings(reason_ind, {"object_properties": reason_mappings["object_properties"]}, row, context, "OperationalReason", pop_logger)
-                    
-                pop_logger.debug(f"Applied mappings for OperationalReason")
-            else:
-                # Fallback to hardcoded property assignments
-                # Set description (Non-functional)
-                context.set_prop_if_col_exists(reason_ind, "reasonDescription", 'UTIL_REASON_DESCRIPTION', row, safe_cast, str, pop_logger)
+    event_unique_base = f"Event_{equip_id}_{start_time_str}"
+    event_labels = [f"Event for {equip_id} at {start_time_str}"]
+    # Add state/reason descriptions to label if available?
+    if state_ind and hasattr(state_ind, 'stateDescription') and state_ind.stateDescription:
+        event_labels.append(f"State: {state_ind.stateDescription[0]}")
+    if reason_ind and hasattr(reason_ind, 'reasonDescription') and reason_ind.reasonDescription:
+        event_labels.append(f"Reason: {reason_ind.reasonDescription[0]}")
 
-                # Handle AltReasonDescription with language tag (Non-functional)
-                alt_reason = safe_cast(row.get('UTIL_ALT_LANGUAGE_REASON'), str)
-                if alt_reason:
-                    plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
-                    lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE) if plant_country else DEFAULT_LANGUAGE
-                    try:
-                        alt_reason_locstr = locstr(alt_reason, lang=lang_tag)
-                        context.set_prop(reason_ind, "altReasonDescription", alt_reason_locstr)
-                        pop_logger.debug(f"Added localized reason '{alt_reason}'@{lang_tag} to {reason_ind.name}")
-                    except Exception as e_loc:
-                        pop_logger.warning(f"Failed to create locstr for alt reason '{alt_reason}': {e_loc}. Storing as plain string.")
-                        # Fallback to plain string if locstr fails or lang_tag is missing
-                        context.set_prop(reason_ind, "altReasonDescription", alt_reason)
+    event_ind = get_or_create_individual(cls_Event, event_unique_base, context.onto, all_created_individuals_by_uid, add_labels=event_labels)
 
-                # Other reason properties (Non-functional)
-                context.set_prop_if_col_exists(reason_ind, "downtimeDriver", 'DOWNTIME_DRIVER', row, safe_cast, str, pop_logger)
-                co_type = safe_cast(row.get('CO_TYPE'), str)
-                context.set_prop_if_col_exists(reason_ind, "changeoverType", 'CO_TYPE', row, safe_cast, str, pop_logger)
-    else:
-        pop_logger.debug("No UTIL_REASON_DESCRIPTION in row.")
+    event_context_out = None
+    if event_ind and pass_num == 1:
+        # Apply data properties
+        apply_data_property_mappings(event_ind, property_mappings["EventRecord"], row, context, "EventRecord", pop_logger)
 
-    return state_ind, reason_ind
+        # DEFER ALL OBJECT PROPERTY LINKS to Pass 2:
+        # - occursDuring -> time_interval_ind
+        # - duringShift -> shift_ind
+        # - eventHasState -> state_ind
+        # - eventHasReason -> reason_ind
+        # - involvesResource -> equipment_ind
+        # - usesMaterial -> material_ind (if mapping exists)
+        # - associatedWithProductionRequest -> request_ind (if mapping exists)
+        # - isPartOfLineEvent (Handled later by _link_equipment_events)
+        # - hasDetailedEquipmentEvent (Handled later?)
+        # - performedBy (Person) (Handled later?)
+
+        # Prepare context for later linking steps if needed
+        event_context_out = (event_ind, equipment_ind, time_interval_ind, line_ind)
+
+    return event_ind, event_context_out
 
 
-def process_time_interval(row: Dict[str, Any], 
-                          context: PopulationContext, 
-                          resource_base_id: str, 
-                          row_num: int,
-                          property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
-                         ) -> Optional[Thing]:
+def process_event_related(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    all_created_individuals_by_uid: IndividualRegistry = None,
+    # Pass required context individuals identified earlier in the row
+    equipment_ind: Optional[Thing] = None,
+    line_ind: Optional[Thing] = None,
+    material_ind: Optional[Thing] = None,
+    request_ind: Optional[Thing] = None,
+    pass_num: int = 1
+) -> Tuple[RowIndividuals, Optional[Tuple]]:
     """
-    Processes TimeInterval from a row.
-    
+    Orchestrates the processing of all event-related individuals for a row in a given pass.
+
+    Pass 1: Creates Shift, TimeInterval, State, Reason, EventRecord. Applies data props.
+            Returns created individuals and event context tuple.
+    Pass 2: (No actions needed here - linking done externally via apply_object_property_mappings)
+
     Args:
-        row: The data row
-        context: The population context
-        resource_base_id: The base ID of the associated resource
-        row_num: The row number
-        property_mappings: Optional property mappings dictionary
-        
+        row: Data row.
+        context: Population context.
+        property_mappings: Property mappings.
+        all_created_individuals_by_uid: Central individual registry.
+        equipment_ind: Equipment individual for this event context.
+        line_ind: Line individual for this event context.
+        material_ind: Optional material individual for context.
+        request_ind: Optional production request for context.
+        pass_num: Current population pass.
+
     Returns:
-        The TimeInterval individual or None
+        Tuple: (created_individuals_dict, event_context_tuple)
+                - created_individuals_dict: Dict of event-related individuals created/found.
+                - event_context_tuple: Context for later linking steps (from process_event_record).
     """
-    cls_TimeInterval = context.get_class("TimeInterval")
-    if not cls_TimeInterval: 
-        return None
+    created_inds: RowIndividuals = {}
+    event_context_out = None
 
-    start_time = safe_cast(row.get('JOB_START_TIME_LOC'), datetime)
-    end_time = safe_cast(row.get('JOB_END_TIME_LOC'), datetime)
+    if all_created_individuals_by_uid is None:
+        pop_logger.error("Individual registry not provided to process_event_related. Skipping.")
+        return {}, None
 
-    if not start_time:
-        pop_logger.warning(f"Row {row_num}: Missing JOB_START_TIME_LOC. Cannot create a unique TimeInterval based on start time. Attempting fallback naming.")
-        # Fallback naming strategy - less ideal, relies on uniqueness of other fields for the row
-        interval_base = f"Interval_{resource_base_id}_Row{row_num}"
-        interval_labels = [f"Interval for {resource_base_id} (Row {row_num})"]
-        # Proceed even without start time if necessary for the EventRecord
-    else:
-        # Create a unique TimeInterval using resource, start time, and row number
-        start_time_str = start_time.strftime('%Y%m%dT%H%M%S%f')[:-3]  # Milliseconds precision
-        interval_base = f"Interval_{resource_base_id}_{start_time_str}_{row_num}"
-        interval_labels = [f"Interval for {resource_base_id} starting {start_time}"]
+    # Process in dependency order (roughly)
+    shift_ind = process_shift(row, context, property_mappings, all_created_individuals_by_uid, pass_num)
+    if shift_ind: created_inds["Shift"] = shift_ind
 
-    time_interval_ind = get_or_create_individual(cls_TimeInterval, interval_base, context.onto, add_labels=interval_labels)
-    if not time_interval_ind:
-        pop_logger.error(f"Row {row_num}: Failed to create TimeInterval individual '{interval_base}'.")
-        return None
+    time_interval_ind = process_time_interval(row, context, property_mappings, all_created_individuals_by_uid, pass_num)
+    if time_interval_ind: created_inds["TimeInterval"] = time_interval_ind
 
-    # Set TimeInterval properties (Functional)
-    if start_time: 
-        context.set_prop_if_col_exists(time_interval_ind, "startTime", 'JOB_START_TIME_LOC', row, safe_cast, datetime, pop_logger)
-    if end_time: 
-        context.set_prop_if_col_exists(time_interval_ind, "endTime", 'JOB_END_TIME_LOC', row, safe_cast, datetime, pop_logger)
+    state_ind = process_state(row, context, property_mappings, all_created_individuals_by_uid, pass_num)
+    if state_ind: created_inds["OperationalState"] = state_ind
 
-    return time_interval_ind
+    reason_ind = process_reason(row, context, property_mappings, all_created_individuals_by_uid, pass_num)
+    if reason_ind: created_inds["OperationalReason"] = reason_ind
 
+    # Process the main EventRecord, passing the individuals created above
+    event_ind, event_context_tuple = process_event_record(
+        row, context, property_mappings, all_created_individuals_by_uid,
+        time_interval_ind=time_interval_ind,
+        shift_ind=shift_ind,
+        state_ind=state_ind,
+        reason_ind=reason_ind,
+        equipment_ind=equipment_ind,
+        line_ind=line_ind,
+        material_ind=material_ind,
+        request_ind=request_ind,
+        pass_num=pass_num
+    )
+    if event_ind: 
+        created_inds["EventRecord"] = event_ind
+        event_context_out = event_context_tuple # Capture context from successful event creation
 
-def process_event_record(row: Dict[str, Any], 
-                         context: PopulationContext,
-                         resource_individual: Thing, 
-                         resource_base_id: str, 
-                         row_num: int,
-                         request_ind: Optional[Thing], 
-                         material_ind: Optional[Thing],
-                         time_interval_ind: Optional[Thing], 
-                         shift_ind: Optional[Thing],
-                         state_ind: Optional[Thing], 
-                         reason_ind: Optional[Thing],
-                         property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
-                        ) -> Optional[Thing]:
-    """
-    Processes EventRecord and its links from a row.
-    
-    Args:
-        row: The data row
-        context: The population context
-        resource_individual: The resource individual
-        resource_base_id: The base ID of the resource
-        row_num: The row number
-        request_ind: The production request individual
-        material_ind: The material individual
-        time_interval_ind: The time interval individual
-        shift_ind: The shift individual
-        state_ind: The operational state individual
-        reason_ind: The operational reason individual
-        property_mappings: Optional property mappings dictionary
-        
-    Returns:
-        The EventRecord individual or None
-    """
-    cls_EventRecord = context.get_class("EventRecord")
-    if not cls_EventRecord: 
-        return None
-
-    start_time_for_label = getattr(time_interval_ind, "startTime", None) if time_interval_ind else "unknown_time"
-    # Use interval base name if available, otherwise construct fallback
-    interval_base_name = time_interval_ind.name if time_interval_ind else f"Interval_Row{row_num}_{resource_base_id}"
-    event_record_base = f"Event_{interval_base_name}"
-    event_labels = [f"Event for {resource_base_id} at {start_time_for_label}"]
-
-    event_ind = get_or_create_individual(cls_EventRecord, event_record_base, context.onto, add_labels=event_labels)
-    if not event_ind:
-        pop_logger.error(f"Row {row_num}: Failed to create EventRecord individual '{event_record_base}'.")
-        return None
-
-    # --- Populate EventRecord Data Properties ---
-    # Check if we can use dynamic property mappings
-    if property_mappings and "EventRecord" in property_mappings:
-        event_mappings = property_mappings["EventRecord"]
-        apply_property_mappings(event_ind, event_mappings, row, context, "EventRecord", pop_logger)
-    else:
-        # --- Fallback to hardcoded property assignments if no mappings available ---
-        pop_logger.debug("Using hardcoded property assignments (no dynamic mappings available)")
-        context.set_prop_if_col_exists(event_ind, "operationType", 'OPERA_TYPE', row, safe_cast, str, pop_logger)
-        context.set_prop_if_col_exists(event_ind, "rampUpFlag", 'RAMPUP_FLAG', row, safe_cast, bool, pop_logger, default=False)
-        context.set_prop_if_col_exists(event_ind, "reportedDurationMinutes", 'TOTAL_TIME', row, safe_cast, float, pop_logger)
-
-        # Time Metrics (Functional)
-        time_metric_cols = {
-            "businessExternalTimeMinutes": "BUSINESS_EXTERNAL_TIME",
-            "plantAvailableTimeMinutes": "PLANT_AVAILABLE_TIME",
-            "effectiveRuntimeMinutes": "EFFECTIVE_RUNTIME",
-            "plantDecisionTimeMinutes": "PLANT_DECISION_TIME",
-            "productionAvailableTimeMinutes": "PRODUCTION_AVAILABLE_TIME"
-        }
-        for prop_name, col_name in time_metric_cols.items():
-            val = safe_cast(row.get(col_name), float)
-            if val is not None:  # Only set if value is valid
-                context.set_prop_if_col_exists(event_ind, prop_name, col_name, row, safe_cast, float, pop_logger)
-
-        # --- Additional Performance Metrics from Spec ---
-        # Time Metrics (Functional)
-        additional_time_metrics = {
-            "downtimeMinutes": "DOWNTIME",
-            "runTimeMinutes": "RUN_TIME",
-            "notEnteredTimeMinutes": "NOT_ENTERED",
-            "waitingTimeMinutes": "WAITING_TIME",
-            "plantExperimentationTimeMinutes": "PLANT_EXPERIMENTATION",
-            "allMaintenanceTimeMinutes": "ALL_MAINTENANCE",
-            "autonomousMaintenanceTimeMinutes": "AUTONOMOUS_MAINTENANCE",
-            "plannedMaintenanceTimeMinutes": "PLANNED_MAINTENANCE"
-        }
-        for prop_name, col_name in additional_time_metrics.items():
-            val = safe_cast(row.get(col_name), float)
-            if val is not None:  # Only set if value is valid
-                context.set_prop_if_col_exists(event_ind, prop_name, col_name, row, safe_cast, float, pop_logger)
-        
-        # Production Quantity Metrics (Functional)
-        quantity_metrics = {
-            "goodProductionQuantity": "GOOD_PRODUCTION_QTY",
-            "rejectProductionQuantity": "REJECT_PRODUCTION_QTY"
-        }
-        for prop_name, col_name in quantity_metrics.items():
-            val = safe_cast(row.get(col_name), int)
-            if val is not None:  # Only set if value is valid
-                context.set_prop_if_col_exists(event_ind, prop_name, col_name, row, safe_cast, int, pop_logger)
-                
-        # Additional Event Categorization Metrics
-        context.set_prop_if_col_exists(event_ind, "aeModelCategory", 'AE_MODEL_CATEGORY', row, safe_cast, str, pop_logger)
-
-    # --- Link EventRecord to other Individuals (Object Properties) ---
-    # Link to resource (Line or Equipment) - involvesResource (Non-functional per spec, but logic likely implies 1:1)
-    context.set_prop(event_ind, "involvesResource", resource_individual)
-
-    # Link to ProductionRequest (Non-functional)
-    if request_ind: 
-        context.set_prop(event_ind, "associatedWithProductionRequest", request_ind)
-
-    # Link to Material (Non-functional)
-    if material_ind: 
-        context.set_prop(event_ind, "usesMaterial", material_ind)
-
-    # Link to TimeInterval (Functional)
-    if time_interval_ind: 
-        context.set_prop(event_ind, "occursDuring", time_interval_ind)
-
-    # Link to Shift (Functional)
-    if shift_ind: 
-        context.set_prop(event_ind, "duringShift", shift_ind)
-
-    # Link to OperationalState (Functional)
-    if state_ind: 
-        context.set_prop(event_ind, "eventHasState", state_ind)
-
-    # Link to OperationalReason (Functional)
-    if reason_ind: 
-        context.set_prop(event_ind, "eventHasReason", reason_ind)
-
-    return event_ind
+    # Only return individuals created/found in this scope
+    return created_inds, event_context_out

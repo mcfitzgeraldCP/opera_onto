@@ -11,10 +11,9 @@ from owlready2 import Thing
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.utils.types import safe_cast
 from ontology_generator.population.core import (
-    PopulationContext, get_or_create_individual, apply_property_mappings, 
-    set_prop_if_col_exists
+    PopulationContext, get_or_create_individual, apply_property_mappings,
+    apply_data_property_mappings, apply_object_property_mappings
 )
-from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
 
 def parse_equipment_class(equipment_name: Optional[str]) -> Optional[str]:
     """
@@ -81,109 +80,166 @@ def parse_equipment_class(equipment_name: Optional[str]) -> Optional[str]:
         pop_logger.warning(f"Equipment name '{equipment_name}' contains no letters. Using as is.")
         return equipment_name
 
-def process_equipment(row: Dict[str, Any], 
-                      context: PopulationContext, 
-                      line_ind: Optional[Thing], 
-                      property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
-                     ) -> Tuple[Optional[Thing], Optional[Thing], Optional[str]]:
+def process_equipment_and_class(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+    all_created_individuals_by_uid: Dict[Tuple[str, str], Thing] = None,
+    line_ind: Optional[Thing] = None,
+    pass_num: int = 1
+) -> Tuple[Optional[Thing], Optional[Thing], Optional[Tuple]]:
     """
     Processes Equipment and its associated EquipmentClass from a row.
-    
+
+    Pass 1: Creates individuals, applies data properties, adds to registry, collects class info.
+    Pass 2: (Currently not handled here, linking done by apply_object_property_mappings)
+
+    Relies on property_mappings for Equipment and EquipmentClass.
+    Assumes IDs for Equipment and EquipmentClass can be found via mappings.
+
     Args:
-        row: The data row
-        context: The population context
-        line_ind: The associated production line individual
-        property_mappings: Optional property mappings dictionary
-        
+        row: The data row.
+        context: Population context.
+        property_mappings: Property mappings dictionary.
+        all_created_individuals_by_uid: Central individual registry.
+        line_ind: The ProductionLine individual associated with this row (for context).
+        pass_num: The current population pass (1 or 2).
+
     Returns:
-        A tuple of (equipment_individual, equipment_class_individual, equipment_class_name)
+        Tuple: (equipment_individual, equipment_class_individual, equipment_class_info)
+               - equipment_individual: The created/retrieved Equipment individual.
+               - equipment_class_individual: The created/retrieved EquipmentClass individual.
+               - equipment_class_info: Tuple (class_name, class_ind, position) for tracking.
     """
+    if not property_mappings:
+        pop_logger.warning("Property mappings not provided to process_equipment_and_class. Skipping.")
+        return None, None, None
+    if all_created_individuals_by_uid is None:
+         pop_logger.error("Individual registry not provided to process_equipment_and_class. Skipping.")
+         return None, None, None
+
+    # Get classes
     cls_Equipment = context.get_class("Equipment")
     cls_EquipmentClass = context.get_class("EquipmentClass")
-    if not cls_Equipment or not cls_EquipmentClass: 
+    if not cls_Equipment or not cls_EquipmentClass:
+        pop_logger.error("Essential classes 'Equipment' or 'EquipmentClass' not found. Cannot process equipment.")
         return None, None, None
 
-    eq_id_str = safe_cast(row.get('EQUIPMENT_ID'), str)
-    if not eq_id_str:
-        pop_logger.debug("No EQUIPMENT_ID in row, skipping equipment creation.")
-        return None, None, None
-
-    eq_name = safe_cast(row.get('EQUIPMENT_NAME'), str)
-    eq_unique_base = eq_id_str  # Assume equipment ID is unique enough
-    eq_labels = [f"ID:{eq_id_str}"]
-    if eq_name: 
-        eq_labels.insert(0, eq_name)
-
-    equipment_ind = get_or_create_individual(cls_Equipment, eq_unique_base, context.onto, add_labels=eq_labels)
-    if not equipment_ind:
-        pop_logger.error(f"Failed to create Equipment individual for ID '{eq_id_str}'.")
-        return None, None, None  # Cannot proceed without equipment individual
-
-    # Check if we can use dynamic property mappings for Equipment
-    if property_mappings and "Equipment" in property_mappings:
-        equipment_mappings = property_mappings["Equipment"]
-        apply_property_mappings(equipment_ind, equipment_mappings, row, context, "Equipment", pop_logger)
-        # Link Equipment to ProductionLine (not in mappings)
-        if line_ind:
-            context.set_prop(equipment_ind, "isPartOfProductionLine", line_ind)
-    else:
-        # Fallback to hardcoded property assignments
-        pop_logger.debug("Using hardcoded property assignments for Equipment (no dynamic mappings available)")
-        # --- Set Equipment Properties (Checking Column Existence) ---
-        context.set_prop_if_col_exists(equipment_ind, "equipmentId", 'EQUIPMENT_ID', row, safe_cast, str, pop_logger)
-        context.set_prop_if_col_exists(equipment_ind, "equipmentName", 'EQUIPMENT_NAME', row, safe_cast, str, pop_logger)
-        context.set_prop_if_col_exists(equipment_ind, "equipmentModel", 'EQUIPMENT_MODEL', row, safe_cast, str, pop_logger)
-        context.set_prop_if_col_exists(equipment_ind, "complexity", 'COMPLEXITY', row, safe_cast, str, pop_logger)
-        context.set_prop_if_col_exists(equipment_ind, "alternativeModel", 'MODEL', row, safe_cast, str, pop_logger)
-
-        # Link Equipment to ProductionLine
-        if line_ind:
-            context.set_prop(equipment_ind, "isPartOfProductionLine", line_ind)
-        else:
-            pop_logger.warning(f"Equipment {equipment_ind.name} cannot be linked to line: ProductionLine individual missing.")
-
-
-    # --- Process and Link EquipmentClass ---
-    eq_class_name = parse_equipment_class(eq_name)
+    equipment_ind: Optional[Thing] = None
     eq_class_ind: Optional[Thing] = None
-    if eq_class_name:
-        pop_logger.debug(f"Attempting to get/create EquipmentClass: {eq_class_name}")
-        eq_class_labels = [eq_class_name]
-        eq_class_ind = get_or_create_individual(cls_EquipmentClass, eq_class_name, context.onto, add_labels=eq_class_labels)
+    eq_class_info_out: Optional[Tuple] = None
 
-        if eq_class_ind:
-            pop_logger.debug(f"Successfully got/created EquipmentClass individual: {eq_class_ind.name}")
-            
-            # Check if we can use dynamic property mappings for EquipmentClass
-            if property_mappings and "EquipmentClass" in property_mappings:
-                eqclass_mappings = property_mappings["EquipmentClass"]
-                apply_property_mappings(eq_class_ind, eqclass_mappings, row, context, "EquipmentClass", pop_logger)
-                # Also set equipment class ID if not set by mappings
-                if not getattr(eq_class_ind, "equipmentClassId", None):
-                    context.set_prop_if_col_exists(eq_class_ind, "equipmentClassId", 'EQUIPMENT_NAME', row, lambda r, c: parse_equipment_class(safe_cast(r.get(c), str)), None, pop_logger)
-            else:
-                # Assign equipmentClassId (Functional)
-                context.set_prop_if_col_exists(eq_class_ind, "equipmentClassId", 'EQUIPMENT_NAME', row, lambda r, c: parse_equipment_class(safe_cast(r.get(c), str)), None, pop_logger)
+    # --- 1. Process Equipment Class ---
+    # Equipment Class is often needed before Equipment (for linking memberOfClass)
+    # We need a unique identifier for the class. Often the name itself, or a dedicated ID column.
 
-            # Link Equipment to EquipmentClass (Functional)
-            context.set_prop(equipment_ind, "memberOfClass", eq_class_ind)
+    # Attempt 1: Use equipmentClassId property mapping
+    eq_class_id_map = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('equipmentClassId')
+    eq_class_name_map = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('equipmentClassName') # Optional name
+    eq_class_col = None
+    eq_class_id_from_map = None
 
-            # Set default sequence position on the class individual (Functional)
-            default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_name)
-            if default_pos is not None:
-                 # Only set if not already set or different
-                 existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-                 if existing_pos != default_pos: # Check actual value, not just existence
-                     # Ensure we don't overwrite a potential mapping-based value if using defaults
-                     # (Assume set_prop handles functional check correctly) 
-                     context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
-            else:
-                 # If no default, ensure any existing position is captured for later use
-                 existing_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-
-        else:
-            pop_logger.error(f"Failed to get/create EquipmentClass '{eq_class_name}' for Equipment '{equipment_ind.name}'.")
+    if eq_class_id_map and eq_class_id_map.get('column'):
+        eq_class_col = eq_class_id_map['column']
+        eq_class_id_from_map = safe_cast(row.get(eq_class_col), str)
+        pop_logger.debug(f"Using EquipmentClass.equipmentClassId mapping (column '{eq_class_col}') for class ID.")
     else:
-        pop_logger.warning(f"Could not parse EquipmentClass name from EQUIPMENT_NAME '{eq_name}' for Equipment '{equipment_ind.name}'.")
+        # Attempt 2: Fallback to using equipmentClassName property mapping as the ID source
+        if eq_class_name_map and eq_class_name_map.get('column'):
+            eq_class_col = eq_class_name_map['column']
+            eq_class_id_from_map = safe_cast(row.get(eq_class_col), str)
+            pop_logger.debug(f"Falling back to EquipmentClass.equipmentClassName mapping (column '{eq_class_col}') for class ID.")
+        else:
+            pop_logger.warning("Cannot determine column for EquipmentClass ID (tried equipmentClassId, equipmentClassName). Skipping EquipmentClass processing.")
+            # Cannot proceed without class ID
+            return None, None, None
 
-    return equipment_ind, eq_class_ind, eq_class_name
+    if not eq_class_id_from_map:
+        pop_logger.warning(f"Missing or invalid EquipmentClass ID/Name in column '{eq_class_col}'. Skipping EquipmentClass processing.")
+        return None, None, None
+
+    # Use the found ID/Name as the base for the individual name and registry key
+    eq_class_base_name = eq_class_id_from_map
+    eq_class_labels = [eq_class_base_name]
+    # Optionally add name from name column if different from ID column
+    if eq_class_name_map and eq_class_name_map.get('column') != eq_class_col:
+        class_name_val = safe_cast(row.get(eq_class_name_map['column']), str)
+        if class_name_val and class_name_val not in eq_class_labels:
+             eq_class_labels.append(class_name_val)
+
+    eq_class_ind = get_or_create_individual(cls_EquipmentClass, eq_class_base_name, context.onto, all_created_individuals_by_uid, add_labels=eq_class_labels)
+
+    eq_class_pos = None
+    if eq_class_ind and pass_num == 1 and "EquipmentClass" in property_mappings:
+        apply_data_property_mappings(eq_class_ind, property_mappings["EquipmentClass"], row, context, "EquipmentClass", pop_logger)
+        # Extract sequence position after applying data properties
+        pos_prop_name = "defaultSequencePosition"
+        if context.get_prop(pos_prop_name):
+            try:
+                # Use safe_cast directly on the potential attribute value
+                # getattr might return None or the value
+                raw_pos = getattr(eq_class_ind, pos_prop_name, None)
+                eq_class_pos = safe_cast(raw_pos, int) if raw_pos is not None else None
+            except Exception as e:
+                 pop_logger.warning(f"Could not read or cast {pos_prop_name} for {eq_class_ind.name}: {e}")
+        # Prepare info for tracking
+        eq_class_info_out = (eq_class_base_name, eq_class_ind, eq_class_pos)
+
+    elif not eq_class_ind:
+        pop_logger.warning(f"Failed to create/retrieve EquipmentClass individual for base '{eq_class_base_name}'. Equipment processing might be incomplete.")
+        # Continue to process Equipment if possible, but linking to class will fail later
+
+    # --- 2. Process Equipment --- 
+    # Equipment needs an ID
+    equip_id_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentId')
+    if not equip_id_map or not equip_id_map.get('column'):
+        pop_logger.warning("Cannot determine the column for Equipment.equipmentId from property mappings. Skipping Equipment creation.")
+        return None, eq_class_ind, eq_class_info_out # Return class if created
+    equip_id_col = equip_id_map['column']
+    equip_id = safe_cast(row.get(equip_id_col), str)
+    if not equip_id:
+        pop_logger.warning(f"Missing or invalid Equipment ID in column '{equip_id_col}'. Skipping Equipment creation.")
+        return None, eq_class_ind, eq_class_info_out # Return class if created
+
+    # Equipment name needs context (line) for uniqueness if ID is not globally unique
+    # Using LineID_EquipmentID as base name
+    line_id_str = line_ind.lineId[0] if line_ind and hasattr(line_ind, 'lineId') and line_ind.lineId else "UnknownLine"
+    equip_unique_base = f"{line_id_str}_{equip_id}"
+    
+    # Try to get name for label
+    equip_name_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentName')
+    equip_name = None
+    if equip_name_map and equip_name_map.get('column'):
+         equip_name = safe_cast(row.get(equip_name_map['column']), str)
+         
+    equip_labels = [equip_id]
+    if equip_name:
+        equip_labels.append(equip_name)
+    else: # Use unique base if name missing
+        equip_labels.append(equip_unique_base) 
+        
+    equipment_ind = get_or_create_individual(cls_Equipment, equip_unique_base, context.onto, all_created_individuals_by_uid, add_labels=equip_labels)
+
+    if equipment_ind and pass_num == 1 and "Equipment" in property_mappings:
+        # Linking (isPartOfProductionLine, memberOfClass, isUpstreamOf etc.) happens in Pass 2
+        apply_data_property_mappings(equipment_ind, property_mappings["Equipment"], row, context, "Equipment", pop_logger)
+
+        # --- Special Handling for memberOfClass in Pass 1? ---
+        # While full linking is in Pass 2, memberOfClass is crucial and links to the class *we just processed*.
+        # It might be beneficial to set this single object property here if the class exists.
+        # However, the generic apply_object_property_mappings in Pass 2 should handle it via the registry.
+        # Let's stick to the strict separation for now.
+        # if eq_class_ind and context.get_prop("memberOfClass"):
+        #     if not getattr(equipment_ind, "memberOfClass", None): # Set only if not already set (e.g., by prior run)
+        #         context.set_prop(equipment_ind, "memberOfClass", eq_class_ind)
+        #         pop_logger.debug(f"Set memberOfClass link for {equipment_ind.name} to {eq_class_ind.name} during Pass 1.")
+        # elif not eq_class_ind:
+        #      pop_logger.warning(f"Cannot set memberOfClass for {equipment_ind.name} in Pass 1: EquipmentClass individual is missing.")
+        pass # Defer memberOfClass linking to Pass 2
+
+    elif not equipment_ind:
+         pop_logger.warning(f"Failed to create/retrieve Equipment individual for base '{equip_unique_base}'.")
+         # Return class if created
+         return None, eq_class_ind, eq_class_info_out
+
+    return equipment_ind, eq_class_ind, eq_class_info_out

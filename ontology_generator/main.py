@@ -22,29 +22,21 @@ from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map
 from ontology_generator.utils.logging import (
     main_logger, configure_logging, analysis_logger
 )
-from ontology_generator.definition.parser import (
-    parse_specification, parse_property_mappings, validate_property_mappings, read_data
+from ontology_generator.definition import (
+    parse_specification, define_ontology_structure, create_selective_classes,
+    parse_property_mappings, validate_property_mappings, read_data
 )
-from ontology_generator.definition.structure import (
-    define_ontology_structure, create_selective_classes
+from ontology_generator.population import (
+    populate_ontology_from_data, # Keep this high-level call
+    setup_equipment_sequence_relationships, # Need these post-population steps
+    setup_equipment_instance_relationships,
+    link_equipment_events_to_line_events
 )
-from ontology_generator.population.core import get_or_create_individual
-from ontology_generator.population.asset import (
-    process_asset_hierarchy, process_material, process_production_request
+from ontology_generator.analysis import (
+    analyze_ontology_population, generate_population_report,
+    generate_optimization_recommendations, generate_reasoning_report
 )
-from ontology_generator.population.equipment import process_equipment
-from ontology_generator.population.events import (
-    process_shift, process_state_reason, process_time_interval, process_event_record
-)
-from ontology_generator.population.sequence import (
-    setup_equipment_sequence_relationships, setup_equipment_instance_relationships
-)
-from ontology_generator.population.linking import link_equipment_events_to_line_events
-from ontology_generator.analysis.population import (
-    analyze_ontology_population, generate_population_report, generate_optimization_recommendations
-)
-from ontology_generator.analysis.reasoning import generate_reasoning_report
-from ontology_generator.population.processing import process_single_data_row
+from ontology_generator.utils.utils import safe_cast # Keep if used elsewhere in main
 
 # Initialize XSD type map and datetime types
 init_xsd_type_map(locstr)
@@ -58,8 +50,10 @@ def populate_ontology_from_data(onto: Ontology,
                                 property_mappings: Dict[str, Dict[str, Dict[str, Any]]] = None
                               ) -> Tuple[int, Dict[str, object], Dict[str, int], List[Tuple[object, object, object, object]]]:
     """
-    Populates the ontology with individuals and relations from data rows.
-    
+    Populates the ontology with individuals and relations from data rows using a two-pass approach.
+    Pass 1: Creates individuals and sets data properties.
+    Pass 2: Creates object property relationships between individuals.
+
     Args:
         onto: The ontology to populate
         data_rows: The data rows from the data CSV file
@@ -72,14 +66,16 @@ def populate_ontology_from_data(onto: Ontology,
     Returns:
         tuple: (failed_rows_count, created_equipment_class_inds, equipment_class_positions, created_events_context)
     """
+    # Ensure imports required *within* this function are present
     from ontology_generator.population.core import PopulationContext
-    
-    main_logger.info(f"Starting ontology population with {len(data_rows)} data rows.")
+    from ontology_generator.population.row_processor import process_single_data_row_pass1, process_single_data_row_pass2 # Import needed here
+
+    main_logger.info(f"Starting ontology population with {len(data_rows)} data rows (Two-Pass Strategy).")
 
     # Create population context
     context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
 
-    # Check essential classes
+    # --- Pre-checks (Essential Classes and Properties) ---
     essential_classes_names = [
         "Plant", "Area", "ProcessCell", "ProductionLine", "Equipment",
         "EquipmentClass", "Material", "ProductionRequest", "EventRecord",
@@ -88,27 +84,17 @@ def populate_ontology_from_data(onto: Ontology,
     missing_classes = [name for name in essential_classes_names if not context.get_class(name)]
     if missing_classes:
         # get_class already logged errors, just return failure
+        main_logger.error(f"Cannot proceed. Missing essential classes definitions: {missing_classes}")
         return len(data_rows), {}, {}, []  # Empty context
 
-    # Check essential properties
-    essential_prop_names = {
+    essential_prop_names = { # Focus on IDs and core structure for initial checks
         "plantId", "areaId", "processCellId", "lineId", "equipmentId", "equipmentName",
-        "locatedInPlant", "partOfArea", "locatedInProcessCell", "isPartOfProductionLine",
-        "memberOfClass", "equipmentClassId", "defaultSequencePosition",
-        "materialId", "materialDescription", "usesMaterial",
-        "requestId", "requestDescription", "associatedWithProductionRequest",
-        "shiftId", "shiftStartTime", "shiftEndTime", "shiftDurationMinutes", "duringShift",
-        "stateDescription", "eventHasState",
-        "reasonDescription", "altReasonDescription", "eventHasReason",
-        "startTime", "endTime", "occursDuring",
-        "involvesResource",  # Core link for EventRecord
-        "classIsUpstreamOf", "classIsDownstreamOf",
-        "equipmentIsUpstreamOf", "equipmentIsDownstreamOf",
-        "isPartOfLineEvent", "startTime", "endTime"
+        "equipmentClassId", "materialId", "requestId", "shiftId", "startTime", "endTime"
+        # Object properties checked implicitly later
     }
     missing_essential_props = [name for name in essential_prop_names if not context.get_prop(name)]
     if missing_essential_props:
-        main_logger.error(f"Cannot reliably proceed. Missing essential properties definitions: {missing_essential_props}")
+        main_logger.error(f"Cannot reliably proceed. Missing essential data properties definitions: {missing_essential_props}")
         return len(data_rows), {}, {}, []  # Empty context
 
     # Warn about other missing properties defined in spec but not found
@@ -117,31 +103,35 @@ def populate_ontology_from_data(onto: Ontology,
         if spec_prop and not context.get_prop(spec_prop):
             main_logger.warning(f"Property '{spec_prop}' (from spec) not found in defined_properties. Population using this property will be skipped.")
 
-    # Track equipment class details across rows for sequencing
+    # --- Pass 1: Create Individuals and Apply Data Properties ---
+    main_logger.info("--- Population Pass 1: Creating Individuals and Data Properties ---")
+    all_created_individuals_by_uid = {} # {(entity_type, unique_id): individual_obj}
+    individuals_by_row = {} # {row_index: {entity_type: individual_obj, ...}}
     created_equipment_class_inds = {}  # {eq_class_name_str: eq_class_ind_obj}
     equipment_class_positions = {}  # {eq_class_name_str: position_int}
+    created_events_context = []  # List to store tuples for later linking: (event_ind, resource_ind, time_interval_ind, line_ind_associated)
+    pass1_successful_rows = 0
+    pass1_failed_rows = 0
 
-    # Initialize storage for event linking context
-    created_events_context = []  # List to store tuples: (event_ind, resource_ind, time_interval_ind, line_ind_associated)
-
-    # Process data rows
-    successful_rows = 0
-    failed_rows = 0
     with onto:  # Use the ontology context for creating individuals
         for i, row in enumerate(data_rows):
             row_num = i + 2  # 1-based index + header row = line number in CSV
-            
-            # Call the dedicated row processing function
-            success, event_context, eq_class_info = process_single_data_row(
-                row, row_num, context, property_mappings
+
+            # Call the dedicated row processing function for Pass 1
+            success, created_inds_in_row, event_context, eq_class_info = process_single_data_row_pass1(
+                row, row_num, context, property_mappings, all_created_individuals_by_uid # Pass registry for get_or_create logic
             )
 
             if success:
-                successful_rows += 1
+                pass1_successful_rows += 1
+                individuals_by_row[i] = created_inds_in_row # Store individuals created from this row
+                # Update the global registry (used by get_or_create and Pass 2 context)
+                # Note: process_single_data_row_pass1 should already populate all_created_individuals_by_uid via get_or_create calls
+                
                 # Store event context if returned
                 if event_context:
                     created_events_context.append(event_context)
-                
+
                 # Process equipment class info if returned
                 if eq_class_info:
                     eq_class_name, eq_class_ind, eq_class_pos = eq_class_info
@@ -152,13 +142,18 @@ def populate_ontology_from_data(onto: Ontology,
                         if eq_class_name in equipment_class_positions and equipment_class_positions[eq_class_name] != eq_class_pos:
                              main_logger.warning(f"Sequence position conflict for class '{eq_class_name}' during population. Existing: {equipment_class_positions[eq_class_name]}, New: {eq_class_pos}. Using new value: {eq_class_pos}")
                         equipment_class_positions[eq_class_name] = eq_class_pos
-                        main_logger.debug(f"Tracked position {eq_class_pos} for class '{eq_class_name}'.")
-            else:
-                failed_rows += 1
-                # Error logging is handled within process_single_data_row
+                        # main_logger.debug(f"Tracked position {eq_class_pos} for class '{eq_class_name}'.") # Can be noisy
 
-    # Log summaries
-    main_logger.info("--- Unique Equipment Classes Found/Created ---")
+            else:
+                pass1_failed_rows += 1
+                individuals_by_row[i] = {} # Ensure entry exists even if row failed
+                # Error logging handled within process_single_data_row_pass1
+
+    main_logger.info(f"Pass 1 Complete. Successful rows: {pass1_successful_rows}, Failed rows: {pass1_failed_rows}.")
+    main_logger.info(f"Total unique individuals created (approx): {len(all_created_individuals_by_uid)}")
+
+    # Log Equipment Class Summary (collected during pass 1)
+    main_logger.info("--- Unique Equipment Classes Found/Created (Pass 1) ---")
     if created_equipment_class_inds:
         sorted_class_names = sorted(created_equipment_class_inds.keys())
         main_logger.info(f"Total unique equipment classes: {len(sorted_class_names)}")
@@ -167,8 +162,58 @@ def populate_ontology_from_data(onto: Ontology,
     else:
         main_logger.warning("No EquipmentClass individuals were created or tracked during population!")
 
-    main_logger.info(f"Ontology population complete. Successfully processed {successful_rows} rows, failed to process {failed_rows} rows.")
-    return failed_rows, created_equipment_class_inds, equipment_class_positions, created_events_context
+    # --- Pass 2: Apply Object Property Mappings ---
+    main_logger.info("--- Population Pass 2: Linking Individuals (Object Properties) ---")
+    pass2_successful_rows = 0
+    pass2_failed_rows = 0
+    # Prepare the full context dictionary for linking (use the values from the UID map)
+    full_context_individuals = {k[0]: v for k, v in all_created_individuals_by_uid.items()} # Simple context {type_name: ind_obj} - May need refinement based on linking needs
+    main_logger.info(f"Prepared context for Pass 2 with {len(full_context_individuals)} potential link targets.")
+
+
+    # Refine context based on actual needs - Needs careful thought on how apply_object_property_mappings uses context_individuals
+    # The warning "Context entity 'Equipment' required for Equipment.isParallelWith not found in provided context_individuals dictionary"
+    # suggests the key should be the *type* ('Equipment') and the value the *target* individual.
+    # However, apply_property_mappings seems to look up `context_individuals[link_context_entity]`.
+    # For linking Equipment to Equipment via 'isParallelWith', link_context_entity would be 'Equipment'.
+    # The current `apply_property_mappings` expects ONE individual for that key. This is flawed for many-to-many or one-to-many via context.
+
+    # Let's assume apply_object_property_mappings will handle lookup within all_created_individuals_by_uid.
+    # We pass the full registry instead of a simplified context.
+    linking_context = all_created_individuals_by_uid
+
+    with onto: # Context manager might not be strictly needed here if only setting properties
+        for i, row in enumerate(data_rows):
+            row_num = i + 2
+            # Skip rows that failed significantly in Pass 1 (e.g., couldn't create core individuals)
+            if i not in individuals_by_row or not individuals_by_row[i]:
+                 main_logger.debug(f"Skipping Pass 2 linking for row {row_num} as no individuals were successfully created in Pass 1.")
+                 pass2_failed_rows += 1 # Count as failed for Pass 2
+                 continue
+
+            created_inds_this_row = individuals_by_row[i]
+
+            # Call the dedicated row processing function for Pass 2
+            success = process_single_data_row_pass2(
+                row, row_num, context, property_mappings, created_inds_this_row, linking_context
+            )
+
+            if success:
+                pass2_successful_rows += 1
+            else:
+                pass2_failed_rows += 1
+                # Logging handled within process_single_data_row_pass2
+
+    main_logger.info(f"Pass 2 Complete. Rows successfully linked: {pass2_successful_rows}, Rows failed/skipped linking: {pass2_failed_rows}.")
+
+    # Determine overall failed count (consider a row failed if it failed either pass?)
+    # For now, return Pass 1 failure count as it indicates primary data issues.
+    # The warnings originally reported were link failures (Pass 2 type issues).
+    final_failed_rows = pass1_failed_rows # Or potentially max(pass1_failed_rows, pass2_failed_rows) or other logic
+
+    main_logger.info(f"Ontology population complete. Final failed row count (based on Pass 1): {final_failed_rows}.")
+    # Return collected contexts from Pass 1
+    return final_failed_rows, created_equipment_class_inds, equipment_class_positions, created_events_context
 
 
 def _log_initial_parameters(args, logger):
@@ -470,7 +515,7 @@ def _save_ontology_file(onto, world, output_owl_path, save_format, world_db_path
     try:
         # Use the world associated with the ontology for saving, especially if persistent
         # If world is None (in-memory case after setup failure?), this will likely fail, which is ok.
-        onto.save(file=final_output_path, format=save_format, world=world)
+        onto.save(file=final_output_path, format=save_format)
         logger.info("Ontology saved successfully.")
     except Exception as save_err:
         logger.error(f"Failed to save ontology to {final_output_path}: {save_err}", exc_info=True)

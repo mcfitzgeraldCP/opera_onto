@@ -70,25 +70,51 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
     logger.info("Parsing property mappings from specification")
     mappings = defaultdict(lambda: {'data_properties': {}, 'object_properties': {}})
     
-    for row in specification:
+    # Get fieldnames to check for the new optional column
+    fieldnames = []
+    try:
+        with open(specification[0]['_source_file_path_'], mode='r', encoding='utf-8-sig') as infile: # Assuming spec is not empty and comes from a file
+             reader = csv.DictReader(infile)
+             fieldnames = reader.fieldnames or []
+    except Exception:
+        # Fallback: Check the first row keys if reading file fails or spec is not from file
+        if specification:
+             fieldnames = list(specification[0].keys())
+             
+    has_target_link_context_col = 'Target Link Context' in fieldnames
+    if not has_target_link_context_col:
+        logger.warning("Specification file does not contain the 'Target Link Context' column. Context-based object property links may not be parsed.")
+
+    for row_num, row in enumerate(specification):
         entity = row.get('Proposed OWL Entity', '').strip()
         property_name = row.get('Proposed OWL Property', '').strip()
         property_type = row.get('OWL Property Type', '').strip()
         raw_data_col = row.get('Raw Data Column Name', '').strip()
         
+        # Add source file path if not already present (useful for validation/debugging)
+        if '_source_file_path_' not in row and hasattr(specification, '_source_file_path_'): 
+             row['_source_file_path_'] = specification._source_file_path_ # Propagate if available
+             
         # Skip if any essential fields are missing
         if not entity or not property_name:
             continue
             
-        # Skip if no raw data column or explicitly N/A (defined in ontology but not mapped to data)
-        if not raw_data_col or raw_data_col.upper() == 'N/A':
+        # Skip if property type is missing or invalid
+        if property_type not in ['DatatypeProperty', 'ObjectProperty']:
+            logger.warning(f"Skipping row {row_num+1}: Invalid or missing OWL Property Type '{property_type}' for {entity}.{property_name}")
             continue
             
+        # Raw data col is optional for object properties if target link context is provided
+        raw_data_col_is_na = not raw_data_col or raw_data_col.upper() == 'N/A'
+        
         # Determine if the property is functional
         is_functional = 'Functional' in row.get('OWL Property Characteristics', '')
         
         # Process data properties
         if property_type == 'DatatypeProperty':
+            if raw_data_col_is_na:
+                logger.warning(f"Skipping row {row_num+1}: DatatypeProperty {entity}.{property_name} must have a 'Raw Data Column Name'.")
+                continue
             data_type = row.get('Target/Range (xsd:) / Target Class', '').strip()
             mappings[entity]['data_properties'][property_name] = {
                 'column': raw_data_col,
@@ -100,14 +126,30 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
         # Process object properties
         elif property_type == 'ObjectProperty':
             target_class = row.get('Target/Range (xsd:) / Target Class', '').strip()
-            # Only map if it's an object property with a raw data column (some might just be relationships)
-            if raw_data_col:
-                mappings[entity]['object_properties'][property_name] = {
-                    'column': raw_data_col,
-                    'target_class': target_class,
-                    'functional': is_functional
-                }
+            target_link_context = row.get('Target Link Context', '').strip() if has_target_link_context_col else ''
+            
+            # We need either a raw data column or a target link context
+            if raw_data_col_is_na and not target_link_context:
+                logger.warning(f"Skipping row {row_num+1}: ObjectProperty {entity}.{property_name} requires either 'Raw Data Column Name' or 'Target Link Context'.")
+                continue
+
+            # If both are provided, prefer Raw Data Column Name but log a warning
+            if not raw_data_col_is_na and target_link_context:
+                 logger.warning(f"Row {row_num+1}: Both 'Raw Data Column Name' ('{raw_data_col}') and 'Target Link Context' ('{target_link_context}') provided for {entity}.{property_name}. Prioritizing column lookup.")
+                 target_link_context = '' # Clear context if column is present
+
+            map_info = {
+                'target_class': target_class,
+                'functional': is_functional
+            }
+            if not raw_data_col_is_na:
+                map_info['column'] = raw_data_col
                 logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) to column '{raw_data_col}', target '{target_class}'")
+            else: # Must have target_link_context here due to earlier check
+                map_info['target_link_context'] = target_link_context
+                logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) via context '{target_link_context}', target '{target_class}'")
+
+            mappings[entity]['object_properties'][property_name] = map_info
     
     # Convert defaultdict to regular dict for return
     return {k: {'data_properties': dict(v['data_properties']), 
@@ -170,15 +212,25 @@ def validate_property_mappings(property_mappings: Dict[str, Dict[str, Dict[str, 
         if object_properties:
             logger.debug(f"  Object Properties for {entity_name}:")
             for prop_name, details in sorted(object_properties.items()):
-                column = details.get('column', 'MISSING_COLUMN')
+                column = details.get('column', None) # Changed default to None
                 target = details.get('target_class', 'MISSING_TARGET')
                 functional = details.get('functional', False)
-                
-                logger.debug(f"    {prop_name}: column='{column}', target='{target}', functional={functional}")
+                link_context = details.get('target_link_context', None) # Added context check
+
+                log_msg = f"    {prop_name}: target='{target}', functional={functional}"
+                if column:
+                     log_msg += f", column='{column}'"
+                if link_context:
+                     log_msg += f", context='{link_context}'"
+                logger.debug(log_msg)
                 
                 # Validate required fields
-                if not column or not target:
-                    logger.warning(f"Missing required field for {entity_name}.{prop_name}: column='{column}', target='{target}'")
+                if not target:
+                    logger.warning(f"Missing required field target_class for {entity_name}.{prop_name}")
+                    validation_passed = False
+                # Must have either column or context
+                if not column and not link_context:
+                    logger.warning(f"Missing required field: Needs 'column' or 'target_link_context' for {entity_name}.{prop_name}")
                     validation_passed = False
     
     # Check for EventRecord specifically

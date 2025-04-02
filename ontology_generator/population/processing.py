@@ -94,7 +94,7 @@ def process_single_data_row(row: Dict[str, Any],
         material_ind = process_material(row, context, property_mappings)
 
         # 4. Process Production Request
-        request_ind = process_production_request(row, context, material_ind, property_mappings)
+        request_ind = process_production_request(row, context, property_mappings)
 
         # 5. Process Shift
         shift_ind = process_shift(row, context, property_mappings)

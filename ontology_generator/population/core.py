@@ -240,78 +240,96 @@ def get_or_create_individual(onto_class: ThingClass, individual_name_base: Any, 
         return None
 
 
-def apply_property_mappings(individual: Thing, 
-                           mappings: Dict[str, Dict[str, Dict[str, Any]]], 
-                           row: Dict[str, Any],
-                           context: PopulationContext, 
-                           entity_name: str,
-                           logger) -> None:
-    """
-    Apply property mappings to an individual based on the mappings dictionary.
-    
-    Args:
-        individual: The individual to apply mappings to
-        mappings: The property mappings dictionary for the entity
-        row: The data row containing values
-        context: The population context
-        entity_name: The name of the entity (for logging)
-        logger: Logger object for logging errors
-    """
-    # Process data properties from mappings
-    for prop_name, prop_info in mappings.get("data_properties", {}).items():
-        col_name = prop_info.get("column")
-        data_type = prop_info.get("data_type")
-        
-        if col_name and data_type:
-            # Special handling for localized strings
-            if data_type == "xsd:string (with lang tag)":
-                from ontology_generator.config import COUNTRY_TO_LANGUAGE, DEFAULT_LANGUAGE
-                
-                value_str = safe_cast(row.get(col_name), str)
-                if value_str:
-                    # Determine language tag
-                    plant_country = safe_cast(row.get('PLANT_COUNTRY_DESCRIPTION'), str)
-                    lang_tag = COUNTRY_TO_LANGUAGE.get(plant_country, DEFAULT_LANGUAGE) if plant_country else DEFAULT_LANGUAGE
-                    
-                    try:
-                        # Create localized string
-                        loc_value = locstr(value_str, lang=lang_tag)
-                        context.set_prop(individual, prop_name, loc_value)
-                    except Exception as e:
-                        logger.warning(f"Failed to create localized string for {entity_name}.{prop_name}: {e}")
-                        # Fallback to regular string
-                        context.set_prop(individual, prop_name, value_str)
+# --- In ontology_generator/population/core.py ---
+
+# ... (keep apply_data_property_mappings and other functions as they are) ...
+
+def apply_object_property_mappings(
+    individual: Thing,
+    mappings: Dict[str, Dict[str, Any]],
+    row: Dict[str, Any],
+    context: PopulationContext,
+    entity_name: str, # Name of the entity type being processed (for logging)
+    logger, # Pass logger explicitly
+    linking_context: IndividualRegistry, # The GLOBAL registry of ALL individuals
+    individuals_in_row: Dict[str, Thing] # Individuals created/found specifically for THIS row in Pass 1
+) -> None:
+    """Applies ONLY object property mappings, using linking_context or individuals_in_row to find targets."""
+    if not mappings or 'object_properties' not in mappings:
+        return
+
+    obj_prop_mappings = mappings.get('object_properties', {})
+    links_applied_count = 0
+
+    for prop_name, details in obj_prop_mappings.items():
+        target_class_name = details.get('target_class')
+        col_name = details.get('column') # For linking via ID lookup in GLOBAL registry
+        link_context_key = details.get('target_link_context') # For linking via key lookup in CURRENT row context
+
+        if not target_class_name:
+            logger.warning(f"Object property mapping for {entity_name}.{prop_name} is missing 'target_class'. Skipping link.")
+            continue
+
+        prop = context.get_prop(prop_name)
+        if not prop or not isinstance(prop, ObjectPropertyClass): # Ensure it's an ObjectProperty
+            logger.warning(f"Object property '{prop_name}' not found or not an ObjectProperty. Skipping link for {entity_name} {individual.name}.")
+            continue
+
+        # Find the target individual
+        target_individual: Optional[Thing] = None
+        lookup_method = "None"
+
+        if col_name:
+            # --- Link via Column Lookup (using GLOBAL registry) ---
+            target_base_id = safe_cast(row.get(col_name), str)
+            lookup_method = f"Column '{col_name}' (Registry Lookup)"
+            if not target_base_id:
+                logger.debug(f"Row {row.get('row_num', 'N/A')} - No target ID found in column '{col_name}' for link {entity_name}.{prop_name}. Skipping link.")
+                continue
+
+            # Find target in the GLOBAL registry
+            registry_key = (target_class_name, target_base_id)
+            target_individual = linking_context.get(registry_key)
+            if not target_individual:
+                 logger.warning(f"Link target {target_class_name} with ID '{target_base_id}' (from {lookup_method}) not found in global registry for relation {entity_name}.{prop_name}. Skipping link for {individual.name}.")
+                 continue
             else:
-                # Convert XSD type to Python type
-                python_type = XSD_TYPE_MAP.get(data_type, str)
-                
-                # Get the value from the row data
-                value = safe_cast(row.get(col_name), python_type)
-                
-                # Set the property if we have a valid value
-                if value is not None:
-                    context.set_prop(individual, prop_name, value)
-    
-    # Process object properties from mappings
-    for prop_name, prop_info in mappings.get("object_properties", {}).items():
-        col_name = prop_info.get("column")
-        target_class = prop_info.get("target_class")
-        
-        if col_name and target_class:
-            # Get target class from population context
-            tgt_class = context.get_class(target_class)
-            if not tgt_class:
-                logger.warning(f"Target class '{target_class}' not found for object property {entity_name}.{prop_name}")
-                continue
-                
-            # Get value from row
-            value_id = safe_cast(row.get(col_name), str)
-            if not value_id:
-                continue
-                
-            # Create or get target individual
-            target_individual = get_or_create_individual(tgt_class, value_id, context.onto, add_labels=[value_id])
-            if target_individual:
-                context.set_prop(individual, prop_name, target_individual)
-                
-    logger.debug(f"Applied mappings for {entity_name}: {len(mappings.get('data_properties', {}))} data properties, {len(mappings.get('object_properties', {}))} object properties")
+                 logger.debug(f"Found link target {target_individual.name} for {entity_name}.{prop_name} via registry key {registry_key}.")
+
+        elif link_context_key:
+             # --- Link via Context Key (using CURRENT row's individuals) ---
+             lookup_method = f"Context Key '{link_context_key}' (Row Lookup)"
+             # Ensure individuals_in_row is provided and is a dictionary
+             if not isinstance(individuals_in_row, dict):
+                 logger.warning(f"Cannot link via context key '{link_context_key}' for {entity_name}.{prop_name}: individuals_in_row dictionary was not provided or invalid for row {row.get('row_num', 'N/A')}. Skipping link.")
+                 continue
+
+             target_individual = individuals_in_row.get(link_context_key)
+             if not target_individual:
+                 # This was the source of the original warnings
+                 logger.warning(f"Context entity '{link_context_key}' required for {entity_name}.{prop_name} not found in individuals_in_row dictionary for row {row.get('row_num', 'N/A')}. Skipping link.")
+                 continue
+             else:
+                 logger.debug(f"Found link target {target_individual.name} for {entity_name}.{prop_name} via row context key '{link_context_key}'.")
+
+        else:
+            # Should not happen if parser validation is correct
+            logger.error(f"Invalid mapping for object property {entity_name}.{prop_name}: Missing both 'column' and 'target_link_context'. Skipping.")
+            continue
+
+        # --- Type Check and Set Property ---
+        if target_individual:
+            target_cls = context.get_class(target_class_name)
+            # Check if the found individual is an instance of the target class (or subclass)
+            if not target_cls or not isinstance(target_individual, target_cls):
+                 logger.error(f"Type mismatch for link {entity_name}.{prop_name}: Expected {target_class_name} but found target '{target_individual.name}' of type {type(target_individual).__name__} via {lookup_method}. Skipping link.")
+                 continue
+
+            # Set the property
+            context.set_prop(individual, prop_name, target_individual)
+            links_applied_count += 1
+
+    # logger.debug(f"Applied {links_applied_count} object property links for {entity_name} individual {individual.name}. Row {row.get('row_num', 'N/A')}.")
+
+
+# --- DEPRECATED - Combined function (keep for reference temporarily?) ---
