@@ -392,6 +392,12 @@ def apply_object_property_mappings(
                  logger.warning(f"Cannot link via context key '{link_context_key}' for {entity_name}.{prop_name}: individuals_in_row dictionary was not provided or invalid for row {row.get('row_num', 'N/A')}. Skipping link.")
                  continue
 
+             # Added for TKT-002: Extra debugging for ProductionLine context lookups
+             if entity_name == "Equipment" and prop_name == "isPartOfProductionLine":
+                 logger.debug(f"Row {row.get('row_num', 'N/A')} - Equipment.isPartOfProductionLine context lookup - Available keys in individuals_in_row: {list(individuals_in_row.keys())}")
+                 if "EQUIPMENT_TYPE" in row:
+                     logger.debug(f"Row {row.get('row_num', 'N/A')} - EQUIPMENT_TYPE value in row: {row.get('EQUIPMENT_TYPE')}")
+
              target_individual = individuals_in_row.get(link_context_key)
              if not target_individual:
                  # Track missing context entity to log only once
@@ -424,6 +430,10 @@ def apply_object_property_mappings(
             if entity_name == "EventRecord":
                 if prop_name == "involvesResource":
                     logger.debug(f"Successfully linked EventRecord {individual.name} to resource {target_individual.name} via {prop_name}")
+            
+            # Added for TKT-002: Track Equipment-Line links specifically
+            if entity_name == "Equipment" and prop_name == "isPartOfProductionLine":
+                logger.info(f"Successfully linking Equipment {individual.name} to Line {target_individual.name} via context key '{link_context_key}'")
 
     # logger.debug(f"Applied {links_applied_count} object property links for {entity_name} individual {individual.name}. Row {row.get('row_num', 'N/A')}.")
 

@@ -216,7 +216,7 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
     Returns:
         Tuple containing:
         - Dictionary mapping line IDs to equipment sequences
-        - Dictionary with sequence statistics
+        - Dictionary with sequence statistics and diagnostics
     """
     analysis_logger.info("Analyzing equipment sequences in ontology")
     
@@ -243,38 +243,188 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
     
     if not lines:
         analysis_logger.warning("No production lines found in ontology")
-        return {}, {}
+        return {}, {"error": "No production lines found"}
     
+    # Get essential ontology elements
+    equipment_class = None
+    for cls in onto.classes():
+        if cls.name == "Equipment":
+            equipment_class = cls
+            break
+            
+    if not equipment_class:
+        analysis_logger.warning("Equipment class not found in ontology")
+        return {}, {"error": "Equipment class not found"}
+        
+    # Get the "equipmentIsUpstreamOf" property
+    equipment_is_upstream_of = None
+    for prop in onto.object_properties():
+        if prop.name == "equipmentIsUpstreamOf":
+            equipment_is_upstream_of = prop
+            break
+            
     # Generate sequences for each line
     sequences = {}
-    stats = {"total_lines": len(lines), "lines_with_sequence": 0, "total_equipment": 0, "class_counts": {}}
+    stats = {
+        "total_lines": len(lines), 
+        "lines_with_sequence": 0,
+        "lines_without_sequence": 0,
+        "total_equipment": 0, 
+        "class_counts": {},
+        "lines_with_equipment_but_no_sequence": [],
+        "classes_without_sequence_position": set(),
+        "equipment_without_sequence_by_line": {}
+    }
     
-    # Use safe sort
-    try:
-        sorted_lines = _safe_sort_by_attribute(lines, "lineId")
-    except Exception as e:
-        analysis_logger.error(f"Error sorting lines: {e} - using unsorted lines")
-        sorted_lines = lines
+    # Get all equipment individuals
+    all_equipment = list(onto.search(type=equipment_class))
+    stats["total_equipment"] = len(all_equipment)
     
-    for line in sorted_lines:
-        line_id = getattr(line, "lineId", line.name)
-        sequence = get_equipment_sequence_for_line(onto, line)
-        
-        if sequence:
-            sequences[line_id] = sequence
-            stats["lines_with_sequence"] += 1
-            stats["total_equipment"] += len(sequence)
+    # Track equipment classes and their sequence positions
+    class_sequence_positions = {}
+    for equip in all_equipment:
+        if hasattr(equip, "memberOfClass") and equip.memberOfClass:
+            class_ind = equip.memberOfClass
+            class_id = getattr(class_ind, "equipmentClassId", class_ind.name)
             
             # Count equipment by class
-            for eq in sequence:
-                eq_class = "Unknown"
-                if hasattr(eq, "memberOfClass") and eq.memberOfClass:
-                    if hasattr(eq.memberOfClass, "equipmentClassId"):
-                        eq_class = eq.memberOfClass.equipmentClassId
-                
-                if eq_class not in stats["class_counts"]:
-                    stats["class_counts"][eq_class] = 0
-                stats["class_counts"][eq_class] += 1
+            if class_id not in stats["class_counts"]:
+                stats["class_counts"][class_id] = 0
+            stats["class_counts"][class_id] += 1
+            
+            # Check sequence position
+            if class_id not in class_sequence_positions:
+                position = getattr(class_ind, "defaultSequencePosition", None)
+                class_sequence_positions[class_id] = position
+                if position is None:
+                    stats["classes_without_sequence_position"].add(class_id)
     
-    analysis_logger.info(f"Analysis complete. Found sequences for {stats['lines_with_sequence']} of {stats['total_lines']} lines")
-    return sequences, stats 
+    # Process each line
+    for line in lines:
+        line_id = getattr(line, "lineId", line.name)
+        line_id_str = str(line_id[0]) if isinstance(line_id, list) and line_id else str(line_id)
+        sequence = get_equipment_sequence_for_line(onto, line)
+        
+        # Map line ID to its equipment sequence
+        sequences[line_id_str] = sequence
+        
+        # Track equipment on this line that don't have a sequence
+        equipment_on_line = []
+        for equip in all_equipment:
+            if hasattr(equip, "isPartOfProductionLine"):
+                lines_list = equip.isPartOfProductionLine
+                if not isinstance(lines_list, list):
+                    lines_list = [lines_list] if lines_list else []
+                    
+                if line in lines_list:
+                    equipment_on_line.append(equip)
+        
+        # Check if this line has equipment but no sequence
+        if equipment_on_line and not sequence:
+            stats["lines_without_sequence"] += 1
+            stats["lines_with_equipment_but_no_sequence"].append(line_id_str)
+            
+            # Track equipment on this line without a sequence link
+            stats["equipment_without_sequence_by_line"][line_id_str] = []
+            for equip in equipment_on_line:
+                # Get class information
+                class_name = "Unknown"
+                if hasattr(equip, "memberOfClass") and equip.memberOfClass:
+                    class_name = getattr(equip.memberOfClass, "equipmentClassId", equip.memberOfClass.name)
+                
+                # Add to the list
+                equip_id = getattr(equip, "equipmentId", equip.name)
+                stats["equipment_without_sequence_by_line"][line_id_str].append({
+                    "id": equip_id,
+                    "name": getattr(equip, "equipmentName", equip.name),
+                    "class": class_name,
+                    "class_has_position": class_name in class_sequence_positions and class_sequence_positions[class_name] is not None
+                })
+        
+        # Add to statistics
+        if sequence:
+            stats["lines_with_sequence"] += 1
+            
+    # Add sequence position information to statistics
+    stats["classes_with_position"] = sum(1 for pos in class_sequence_positions.values() if pos is not None)
+    stats["classes_without_position"] = sum(1 for pos in class_sequence_positions.values() if pos is None)
+    stats["class_positions"] = {cls: pos for cls, pos in class_sequence_positions.items() if pos is not None}
+    
+    # Convert set to list for JSON serialization
+    stats["classes_without_sequence_position"] = list(stats["classes_without_sequence_position"])
+    
+    analysis_logger.info(f"Sequence analysis complete: {stats['lines_with_sequence']} lines with sequences, "
+                          f"{stats['lines_without_sequence']} lines without sequences, "
+                          f"{len(stats['classes_without_sequence_position'])} classes without positions")
+    
+    return sequences, stats
+
+def generate_enhanced_sequence_report(onto: Ontology) -> str:
+    """
+    Generates an enhanced report of equipment sequences and related issues.
+    
+    Args:
+        onto: The ontology object
+        
+    Returns:
+        A string with the enhanced sequence report
+    """
+    # Get sequence data and statistics
+    sequences, stats = analyze_equipment_sequences(onto)
+    
+    # Build report
+    report_lines = []
+    report_lines.append("\n=== ENHANCED EQUIPMENT SEQUENCE REPORT ===")
+    
+    # Summary statistics
+    report_lines.append(f"\nSUMMARY STATISTICS:")
+    report_lines.append(f"  Total production lines: {stats['total_lines']}")
+    report_lines.append(f"  Lines with equipment sequences: {stats['lines_with_sequence']}")
+    report_lines.append(f"  Lines with equipment but no sequence: {len(stats.get('lines_with_equipment_but_no_sequence', []))}")
+    report_lines.append(f"  Total equipment instances: {stats['total_equipment']}")
+    report_lines.append(f"  Equipment classes without sequence positions: {len(stats.get('classes_without_sequence_position', []))}")
+    
+    # Class sequence positions
+    report_lines.append(f"\nEQUIPMENT CLASS SEQUENCE POSITIONS:")
+    for cls, pos in sorted(stats.get('class_positions', {}).items(), key=lambda x: x[1]):
+        report_lines.append(f"  {cls}: Position {pos}")
+    
+    # Classes without positions
+    if stats.get('classes_without_sequence_position'):
+        report_lines.append(f"\nEQUIPMENT CLASSES WITHOUT SEQUENCE POSITIONS:")
+        for cls in sorted(stats.get('classes_without_sequence_position', [])):
+            report_lines.append(f"  {cls}")
+    
+    # Lines with equipment but no sequence
+    if stats.get('lines_with_equipment_but_no_sequence'):
+        report_lines.append(f"\nLINES WITH EQUIPMENT BUT NO SEQUENCE ESTABLISHED:")
+        for line_id in sorted(stats.get('lines_with_equipment_but_no_sequence', [])):
+            report_lines.append(f"  Line {line_id}:")
+            equip_list = stats.get('equipment_without_sequence_by_line', {}).get(line_id, [])
+            for eq in equip_list:
+                class_status = "No position" if not eq['class_has_position'] else "Has position"
+                report_lines.append(f"    {eq['id']} ({eq['name']}) - Class: {eq['class']} ({class_status})")
+    
+    # Equipment sequences by line
+    report_lines.append(f"\nEQUIPMENT SEQUENCES BY LINE:")
+    for line_id, sequence in sorted(sequences.items()):
+        report_lines.append(f"\nLine: {line_id}")
+        
+        if not sequence:
+            report_lines.append("  No equipment sequence found")
+            continue
+        
+        # List equipment in sequence
+        for i, eq in enumerate(sequence, 1):
+            eq_id = getattr(eq, "equipmentId", "Unknown")
+            eq_name = getattr(eq, "equipmentName", eq.name)
+            eq_class = "Unknown"
+            
+            # Get class information
+            if hasattr(eq, "memberOfClass") and eq.memberOfClass:
+                if hasattr(eq.memberOfClass, "equipmentClassId"):
+                    eq_class = eq.memberOfClass.equipmentClassId
+            
+            report_lines.append(f"  {i}. {eq_id} ({eq_name}) - Class: {eq_class}")
+    
+    return "\n".join(report_lines) 

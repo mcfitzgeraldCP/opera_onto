@@ -9,6 +9,7 @@ from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 
 from ontology_generator.utils.logging import pop_logger
 from ontology_generator.population.core import PopulationContext, _set_property_value
+from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE, LINE_SPECIFIC_EQUIPMENT_SEQUENCE
 
 def _safe_sort_by_position(items, default_position=999999):
     """
@@ -156,6 +157,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
     The approach:
     1. Group equipment instances by production line and equipment class
     2. For each line, sequence equipment classes based on the positions
+       - Check for line-specific sequence configuration first
+       - Fall back to global sequence positions if no line-specific config exists
     3. For each class on a line, sort its instances by equipmentId
     4. Chain instances within the same class sequentially
     5. Chain the last instance of one class to the first instance of the next class
@@ -208,6 +211,10 @@ def setup_equipment_instance_relationships(onto: Ontology,
     # Group equipment instances by line and class name
     pop_logger.debug("Grouping equipment instances by production line and class name...")
     line_equipment_map: Dict[Thing, Dict[str, List[Thing]]] = {}  # {line_individual: {class_name_str: [equipment_instances]}}
+    # Track equipment classes without sequence position
+    unsequenced_classes: Dict[str, List[str]] = {}  # {line_id: [class_names_without_position]}
+    # Track lines with equipment but no sequence
+    lines_without_sequence: List[str] = []
 
     # Iterate through all Equipment individuals in the ontology
     for equipment_inst in onto.search(type=cls_Equipment):
@@ -230,15 +237,24 @@ def setup_equipment_instance_relationships(onto: Ontology,
             continue
 
         # Check if this class name is in our sequence map
-        if class_name_str not in equipment_class_positions:
-            pop_logger.debug(f"Equipment {equipment_inst.name}'s class '{class_name_str}' not in sequence map. Skipping.")
-            continue
+        has_position = class_name_str in equipment_class_positions
 
         # Add equipment to the map for each line it belongs to
         for equipment_line in equipment_lines:
             if not isinstance(equipment_line, cls_ProductionLine):
                 pop_logger.warning(f"Equipment {equipment_inst.name} linked to non-ProductionLine '{equipment_line}'. Skipping this link.")
                 continue
+                
+            # Get line ID for tracking
+            line_id_str = getattr(equipment_line, "lineId", equipment_line.name)
+            
+            # Track classes without positions for diagnostics
+            if not has_position:
+                if line_id_str not in unsequenced_classes:
+                    unsequenced_classes[line_id_str] = []
+                if class_name_str not in unsequenced_classes[line_id_str]:
+                    unsequenced_classes[line_id_str].append(class_name_str)
+                    pop_logger.warning(f"Equipment class '{class_name_str}' on line {line_id_str} has no sequence position.")
 
             # Add equipment to the map structure
             if equipment_line not in line_equipment_map:
@@ -254,7 +270,7 @@ def setup_equipment_instance_relationships(onto: Ontology,
     # Create instance-level relationships within each line
     total_relationships = 0
     line_relationship_counts: Dict[str, int] = {}
-    pop_logger.info(f"Found {len(line_equipment_map)} lines with sequenced equipment.")
+    pop_logger.info(f"Found {len(line_equipment_map)} lines with equipment.")
 
     def safe_get_equipment_id(equipment: Thing) -> str:
         """Helper to safely get equipmentId or fallback to name for sorting."""
@@ -267,13 +283,38 @@ def setup_equipment_instance_relationships(onto: Ontology,
         for line_ind, class_equipment_map_on_line in line_equipment_map.items():
             line_id_str = getattr(line_ind, "lineId", line_ind.name)
             line_relationships = 0
+            
+            # Check for line-specific sequence configuration
+            line_specific_sequence = LINE_SPECIFIC_EQUIPMENT_SEQUENCE.get(line_id_str)
+            
+            if line_specific_sequence:
+                pop_logger.info(f"Using line-specific sequence configuration for line {line_id_str}")
+                
+                # Create a sorted list of class names based on the line-specific configuration
+                line_sorted_classes = _safe_sort_by_position(line_specific_sequence.items())
+                sorted_class_names_for_line = [item[0] for item in line_sorted_classes]
+                
+                # Log the line-specific sequence
+                pos_str = ", ".join([f"{cls}:{pos}" for cls, pos in line_sorted_classes])
+                pop_logger.info(f"Line-specific sequence for {line_id_str}: {pos_str}")
+            else:
+                # Use the default global sequence
+                pop_logger.info(f"Using default sequence configuration for line {line_id_str}")
+                sorted_class_names_for_line = sorted_class_names_by_pos
+            
+            # If no classes were found with positions, track this line
+            if not sorted_class_names_for_line:
+                lines_without_sequence.append(line_id_str)
+                pop_logger.warning(f"Line {line_id_str} has equipment but no sequence could be established. Skipping.")
+                continue
+                
             pop_logger.info(f"Processing equipment instance relationships for line: {line_id_str}")
 
             # Track the last instance in the chain to link between classes
             last_instance_in_chain = None
 
-            # Process each equipment class in sequence order
-            for class_name in sorted_class_names_by_pos:
+            # Process each equipment class in sequence order specific to this line
+            for class_name in sorted_class_names_for_line:
                 equipment_instances = class_equipment_map_on_line.get(class_name, [])
 
                 if not equipment_instances:
@@ -351,8 +392,26 @@ def setup_equipment_instance_relationships(onto: Ontology,
         print("\nChaining approach:")
         print("  • Equipment instances of the same class are chained in sequence by their equipmentId")
         print("  • Last instance of each class is linked to first instance of the next class in sequence")
-        print("  • Class sequence is determined by the DEFAULT_EQUIPMENT_SEQUENCE dictionary")
+        print("  • Class sequence is determined by:")
+        print("    - Line-specific configuration (if available in LINE_SPECIFIC_EQUIPMENT_SEQUENCE)")
+        print("    - Global DEFAULT_EQUIPMENT_SEQUENCE configuration (fallback)")
     else:
         pop_logger.warning("No equipment instance relationships were created or verified.")
         print("No equipment instance relationships could be established or verified.")
         print("Possible reasons: Equipment not linked to lines/classes, missing sequence positions, or no equipment found on the same line.")
+        
+    # Report sequence analysis issues
+    if unsequenced_classes:
+        print("\n=== EQUIPMENT SEQUENCE DIAGNOSTIC ISSUES ===")
+        print(f"Found {sum(len(classes) for classes in unsequenced_classes.values())} equipment classes without sequence positions:")
+        for line_id, classes in sorted(unsequenced_classes.items()):
+            print(f"  Line {line_id}: {', '.join(sorted(classes))}")
+            
+    if lines_without_sequence:
+        if not unsequenced_classes:  # Only print header if not already printed
+            print("\n=== EQUIPMENT SEQUENCE DIAGNOSTIC ISSUES ===")
+        print(f"Found {len(lines_without_sequence)} lines with equipment but no sequence established:")
+        for line_id in sorted(lines_without_sequence):
+            print(f"  Line {line_id}")
+        
+    print("\n---")

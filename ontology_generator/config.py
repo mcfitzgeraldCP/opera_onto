@@ -56,6 +56,23 @@ DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
     # Add any other classes with default positions if needed
 }
 
+# --- Line-Specific Equipment Class Sequencing ---
+# Allows for custom equipment sequences for specific lines
+# Format: {"line_id": {"equipment_class": sequence_position}}
+LINE_SPECIFIC_EQUIPMENT_SEQUENCE: Dict[str, Dict[str, int]] = {
+    # Example: Line FIPCO001 has a different sequence than the default
+    "FIPCO001": {
+        "Filler": 1,
+        "Cartoner": 2,
+        "CaseFormer": 3,
+        "CasePacker": 4,
+        "Bundler": 5,    # Different from default sequence (moved after case packer)
+        "CaseSealer": 6,
+        "Palletizer": 7
+    },
+    # Add more line-specific sequences as needed
+}
+
 # --- XSD Type Mapping ---
 # This will be initialized when importing the required modules to avoid
 # circular imports with owlready2 types

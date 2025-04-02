@@ -194,31 +194,55 @@ def process_equipment_and_class(
 
     eq_class_ind = get_or_create_individual(cls_EquipmentClass, eq_class_base_name, context.onto, all_created_individuals_by_uid, add_labels=eq_class_labels)
 
+    # Initialize sequence position to None
     eq_class_pos = None
+
     if eq_class_ind and pass_num == 1 and "EquipmentClass" in property_mappings:
+        # First check if there's a mapping for defaultSequencePosition
+        sequence_pos_mapping = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('defaultSequencePosition')
+        sequence_pos_column = sequence_pos_mapping.get('column') if sequence_pos_mapping else None
+        
+        # Try to get sequence position from mapped column if available
+        if sequence_pos_column and sequence_pos_column in row:
+            raw_pos_from_data = row.get(sequence_pos_column)
+            # Use safe_cast to convert to integer
+            pos_from_data = safe_cast(raw_pos_from_data, int)
+            if pos_from_data is not None:
+                # Set the position directly from data
+                context.set_prop(eq_class_ind, "defaultSequencePosition", pos_from_data)
+                eq_class_pos = pos_from_data
+                pop_logger.info(f"Set sequence position {pos_from_data} for equipment class '{eq_class_base_name}' from column '{sequence_pos_column}'")
+            else:
+                pop_logger.debug(f"Column '{sequence_pos_column}' exists but value '{raw_pos_from_data}' could not be cast to int")
+        
+        # Apply all other mapped data properties
         apply_data_property_mappings(eq_class_ind, property_mappings["EquipmentClass"], row, context, "EquipmentClass", pop_logger)
-        # Extract sequence position after applying data properties
-        pos_prop_name = "defaultSequencePosition"
-        if context.get_prop(pos_prop_name):
-            try:
-                # Use safe_cast directly on the potential attribute value
-                # getattr might return None or the value
-                raw_pos = getattr(eq_class_ind, pos_prop_name, None)
-                eq_class_pos = safe_cast(raw_pos, int) if raw_pos is not None else None
-                
-                # If no position set, try using the default from config
-                if eq_class_pos is None and eq_class_base_name in DEFAULT_EQUIPMENT_SEQUENCE:
-                    default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
-                    pop_logger.info(f"Using default sequence position {default_pos} for equipment class '{eq_class_base_name}' from config.DEFAULT_EQUIPMENT_SEQUENCE")
-                    # Set the position in the individual
-                    context.set_prop(eq_class_ind, pos_prop_name, default_pos)
-                    eq_class_pos = default_pos
-                elif eq_class_pos is None:
-                    pop_logger.debug(f"No sequence position available for equipment class '{eq_class_base_name}' (not in config defaults)")
-            except Exception as e:
-                 pop_logger.warning(f"Could not read or cast {pos_prop_name} for {eq_class_ind.name}: {e}")
+        
+        # If no position was set from mapped column, check if we already have one from prior processing or try config
+        if eq_class_pos is None:
+            # Check if position was set by apply_data_property_mappings
+            raw_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+            eq_class_pos = safe_cast(raw_pos, int) if raw_pos is not None else None
+            
+            # If still no position, try using the default from config
+            if eq_class_pos is None and eq_class_base_name in DEFAULT_EQUIPMENT_SEQUENCE:
+                default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
+                pop_logger.info(f"Using default sequence position {default_pos} for equipment class '{eq_class_base_name}' from config.DEFAULT_EQUIPMENT_SEQUENCE")
+                # Set the position in the individual
+                context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
+                eq_class_pos = default_pos
+            elif eq_class_pos is None:
+                pop_logger.debug(f"No sequence position available for equipment class '{eq_class_base_name}' (not in mapped column or config defaults)")
+        
         # Prepare info for tracking
         eq_class_info_out = (eq_class_base_name, eq_class_ind, eq_class_pos)
+        
+        # Add some validation logging to verify the position was properly set
+        final_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
+        if final_pos is not None:
+            pop_logger.debug(f"Verified equipment class '{eq_class_base_name}' has defaultSequencePosition set to {final_pos}")
+        else:
+            pop_logger.warning(f"Equipment class '{eq_class_base_name}' still has no defaultSequencePosition after all attempts")
 
     elif not eq_class_ind:
         pop_logger.warning(f"Failed to create/retrieve EquipmentClass individual for base '{eq_class_base_name}'. Equipment processing might be incomplete.")

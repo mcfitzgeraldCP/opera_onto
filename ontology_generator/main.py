@@ -777,31 +777,46 @@ def test_property_mappings(spec_file_path: str):
 
 def analyze_equipment_sequence_in_ontology(owl_file_path: str, verbose: bool = False) -> bool:
     """
-    Analyze equipment sequences in an existing ontology file.
+    Standalone function to analyze equipment sequences in an existing ontology file.
     
     Args:
         owl_file_path: Path to the OWL file to analyze
-        verbose: Whether to output verbose logging
+        verbose: Enable verbose output
         
     Returns:
-        bool: True if analysis was successful, False otherwise
+        True if analysis was successful, False otherwise
     """
     # Configure logging
-    log_level = logging.DEBUG if verbose else logging.INFO
-    configure_logging(log_level)
-    logger = main_logger
-    
-    logger.info(f"Analyzing equipment sequences in ontology file: {owl_file_path}")
+    configure_logging(logging.DEBUG if verbose else logging.INFO)
+    logger = logging.getLogger(__name__)
     
     try:
-        # Load the ontology
+        # Import here to avoid circular imports
+        from ontology_generator.analysis.sequence_analysis import (
+            generate_equipment_sequence_report, 
+            analyze_equipment_sequences,
+            generate_enhanced_sequence_report
+        )
+        from owlready2 import get_ontology, IRIS
+        
+        logger.info(f"Loading ontology from {owl_file_path} for sequence analysis...")
+        # Initialize owlready2 world and load ontology
+        from owlready2 import World
         world = World()
         onto = world.get_ontology(owl_file_path).load()
+        
+        # Get namespace
+        IRIS.prefixes[""] = onto.base_iri
+        
         logger.info(f"Loaded ontology: {onto.base_iri}")
         
-        # Generate and print the equipment sequence report
+        # Generate and print the standard equipment sequence report
         sequence_report = generate_equipment_sequence_report(onto)
         print(sequence_report)
+        
+        # Generate and print the enhanced sequence report 
+        enhanced_report = generate_enhanced_sequence_report(onto)
+        print(enhanced_report)
         
         # Run deeper analysis if verbose
         if verbose:
@@ -811,7 +826,7 @@ def analyze_equipment_sequence_in_ontology(owl_file_path: str, verbose: bool = F
             print(f"Lines with Equipment Sequence: {stats['lines_with_sequence']}")
             print(f"Total Equipment in Sequences: {stats['total_equipment']}")
             print("\nEquipment Classes:")
-            for cls, count in sorted(stats['class_counts'].items(), key=lambda x: x[1], reverse=True):
+            for cls, count in sorted(stats.get('class_counts', {}).items(), key=lambda x: x[1], reverse=True):
                 print(f"  {cls}: {count}")
         
         return True
