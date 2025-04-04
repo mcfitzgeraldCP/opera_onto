@@ -273,175 +273,24 @@ def process_structural_relationships(
         "memberOfClass"                # Equipment -> EquipmentClass
     ]
     
-    # --- Process Equipment -> EquipmentClass relationships ---
-    # CRITICAL FIX FOR TKT-002: Ensure correct memberOfClass links are established
-    if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
-        log.info("Processing Equipment.memberOfClass structural relationships...")
-        
-        # Get all Equipment individuals 
-        equipment_individuals = [
-            ind for uid, ind in all_created_individuals_by_uid.items() 
-            if uid[0] == "Equipment"
-        ]
-        log.info(f"Found {len(equipment_individuals)} Equipment individuals for class linking")
-        
-        # Get all EquipmentClass individuals
-        class_individuals = [
-            ind for uid, ind in all_created_individuals_by_uid.items() 
-            if uid[0] == "EquipmentClass"
-        ]
-        log.info(f"Found {len(class_individuals)} EquipmentClass individuals for linking")
-        
-        # Get the memberOfClass property mapping
-        eq_class_mapping = property_mappings["Equipment"]["object_properties"].get("memberOfClass")
-        
-        if eq_class_mapping and equipment_individuals and class_individuals:
-            # Check if the memberOfClass property exists
-            member_of_class_prop = context.get_prop("memberOfClass")
-            if not member_of_class_prop:
-                log.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to classes.")
-            else:
-                # Build a comprehensive lookup map for equipment classes by both ID and name
-                classes_by_identifier = {}
-                
-                # Key properties that might identify an EquipmentClass
-                identifiers = ["equipmentClassId", "equipmentClassName", "name"]
-                
-                # TKT-005: Log all EquipmentClass individuals with their identifiers for debugging
-                log.debug("TKT-005: EquipmentClass individuals available for linking:")
-                for class_ind in class_individuals:
-                    class_identifiers = []
-                    
-                    # TKT-005: Prioritize equipmentClassId property as the key identifier
-                    # This property should be explicitly set during EquipmentClass creation
-                    eq_class_id = None
-                    if hasattr(class_ind, "equipmentClassId"):
-                        eq_class_id = getattr(class_ind, "equipmentClassId")
-                        if eq_class_id:
-                            if isinstance(eq_class_id, list) and eq_class_id:
-                                eq_class_id = eq_class_id[0]  # Use first value if it's a list
-                            class_identifiers.append(str(eq_class_id))
-                            # Add to identifier map with high priority
-                            classes_by_identifier[str(eq_class_id)] = class_ind
-                            log.debug(f"  TKT-005: Class {class_ind.name} has explicit equipmentClassId: {eq_class_id}")
-                    
-                    # Collect all other identifiers from the class individual
-                    for id_prop in identifiers:
-                        if id_prop != "equipmentClassId" and hasattr(class_ind, id_prop):  # Skip equipmentClassId, already processed
-                            id_value = getattr(class_ind, id_prop)
-                            if id_value:
-                                if isinstance(id_value, list):
-                                    for val in id_value:
-                                        class_identifiers.append(str(val))
-                                else:
-                                    class_identifiers.append(str(id_value))
-                    
-                    # Extract base name from the class name if it has a prefix
-                    if hasattr(class_ind, "name"):
-                        name = class_ind.name
-                        if name.startswith("EquipmentClass_"):
-                            clean_name = name[len("EquipmentClass_"):]
-                            class_identifiers.append(clean_name)
-                    
-                    # Add all identifiers to the lookup map
-                    log.debug(f"  TKT-005: Class {class_ind.name} all identifiers: {class_identifiers}")
-                    for identifier in class_identifiers:
-                        if identifier not in classes_by_identifier:  # Don't overwrite equipmentClassId entries
-                            classes_by_identifier[identifier] = class_ind
-                
-                # Track linking results
-                equipment_linked = 0
-                equipment_already_linked = 0
-                equipment_not_linked = 0
-                
-                # TKT-005: Iterate through equipment individuals to establish memberOfClass relationships
-                log.info("TKT-005: Processing Equipment-EquipmentClass memberOfClass relationships...")
-                for eq_ind in equipment_individuals:
-                    # Check if this equipment already has a class link
-                    current_class = getattr(eq_ind, member_of_class_prop.python_name, None)
-                    if current_class:
-                        log.debug(f"TKT-005: Equipment {eq_ind.name} already linked to class {current_class.name}")
-                        equipment_already_linked += 1
-                        continue
-                    
-                    # Try multiple methods to determine the appropriate class
-                    
-                    # Method 1: Try to use column value from mapping
-                    matching_class_ind = None
-                    match_method = None
-                    
-                    # Get the column that contains the Class name/ID (if specified in mapping)
-                    class_id_column = eq_class_mapping.get("column")
-                    if class_id_column:
-                        # TKT-005: Use the get_individual_data method to retrieve stored data
-                        eq_data = context.get_individual_data(eq_ind) or {}
-                        class_value = eq_data.get(class_id_column)
-                        
-                        if class_value and str(class_value) in classes_by_identifier:
-                            matching_class_ind = classes_by_identifier[str(class_value)]
-                            match_method = f"Column '{class_id_column}'"
-                            log.info(f"TKT-005: Found matching class {matching_class_ind.name} via column value '{class_value}'")
-                    
-                    # Method 2: Try to parse class from equipment name if column value not found
-                    if not matching_class_ind:
-                        from .equipment import parse_equipment_class
-                        
-                        # Try various properties that might contain the equipment name
-                        name_props = ["equipmentName", "name"]
-                        eq_name = None
-                        
-                        for prop in name_props:
-                            if hasattr(eq_ind, prop):
-                                prop_value = getattr(eq_ind, prop)
-                                if prop_value:
-                                    if isinstance(prop_value, list) and prop_value:
-                                        eq_name = prop_value[0]
-                                    else:
-                                        eq_name = prop_value
-                                    break
-                        
-                        if eq_name:
-                            # TKT-005: Use parse_equipment_class to extract equipment class type string
-                            parsed_class = parse_equipment_class(equipment_name=eq_name)
-                            if parsed_class and str(parsed_class) in classes_by_identifier:
-                                matching_class_ind = classes_by_identifier[str(parsed_class)]
-                                match_method = f"Parsed from name '{eq_name}'"
-                                log.info(f"TKT-005: Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
-                    
-                    # Create the link if we found a matching class
-                    if matching_class_ind:
-                        try:
-                            # TKT-005: Use context.set_prop to link equipment to class via memberOfClass
-                            context.set_prop(eq_ind, "memberOfClass", matching_class_ind)
-                            links_created += 1
-                            equipment_linked += 1
-                            log.info(f"TKT-005: Linked Equipment {eq_ind.name} to EquipmentClass {matching_class_ind.name} via {match_method}")
-                            
-                            # Record the link type for statistics
-                            links_by_type["Equipment->Class"] = links_by_type.get("Equipment->Class", 0) + 1
-                        except Exception as e:
-                            log.error(f"TKT-005: Error linking Equipment {eq_ind.name} to Class {matching_class_ind.name}: {e}")
-                    else:
-                        equipment_not_linked += 1
-                        log.warning(f"TKT-005: Could not determine appropriate class for Equipment {eq_ind.name}")
-                
-                # Log summary of Equipment-Class linking
-                log.info(f"TKT-005: Equipment-Class linking summary:")
-                log.info(f"  • Equipment already linked: {equipment_already_linked}")
-                log.info(f"  • Equipment newly linked: {equipment_linked}")
-                log.info(f"  • Equipment not linked: {equipment_not_linked}")
-                log.info(f"  • Total equipment processed: {len(equipment_individuals)}")
+    # TKT-005: Removed the redundant Equipment -> EquipmentClass linking logic
+    # This relationship is properly handled during the initial population in Pass 1
+    # by the process_equipment_and_class function (in equipment.py) which establishes 
+    # memberOfClass links during the initial creation phase in the section labeled 
+    # "TKT-005: EXPLICIT EQUIPMENT TO CLASS LINKING" (around line 476).
+    # The post-processing step was redundant and logs showed it was finding 
+    # 0 individuals needing linking.
+    log.info("TKT-005: Skipping Equipment.memberOfClass structural relationships (handled in Pass 1 via process_equipment_and_class)")
     
     # Process Equipment -> ProductionLine relationships
     if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
         log.info("Processing Equipment.isPartOfProductionLine structural relationships...")
         
-        # Get all Equipment individuals (if not already fetched)
-        if 'equipment_individuals' not in locals():
-            equipment_individuals = [
-                ind for uid, ind in all_created_individuals_by_uid.items() 
-                if uid[0] == "Equipment"
-            ]
+        # Get all Equipment individuals
+        equipment_individuals = [
+            ind for uid, ind in all_created_individuals_by_uid.items() 
+            if uid[0] == "Equipment"
+        ]
         
         # Get all ProductionLine individuals
         line_individuals = [

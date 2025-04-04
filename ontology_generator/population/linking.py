@@ -11,12 +11,13 @@ from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 
 from ontology_generator.utils.logging import link_logger
 from ontology_generator.config import DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
+from ontology_generator.population.core import PopulationContext
 
 def link_equipment_events_to_line_events(onto: Ontology,
-                                        created_events_context: List[Tuple[Thing, Thing, str]],
+                                        created_events_context: List[Tuple[Thing, Thing, str, Thing]],
                                         defined_classes: Dict[str, ThingClass],
                                         defined_properties: Dict[str, PropertyClass],
-                                        event_buffer_minutes: Optional[int] = None) -> int:
+                                        event_buffer_minutes: Optional[int] = None) -> Tuple[int, Optional[PopulationContext]]:
     """
     Second pass function to link equipment EventRecords to their containing line EventRecords,
     using relaxed temporal containment logic.
@@ -26,7 +27,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
     
     Args:
         onto: The ontology
-        created_events_context: List of tuples (event_ind, resource_ind, resource_type)
+        created_events_context: List of tuples (event_ind, resource_ind, resource_type, line_ind_associated)
                                 where resource_type is "Equipment" or "Line"
         defined_classes: Dictionary of defined classes
         defined_properties: Dictionary of defined properties
@@ -34,11 +35,17 @@ def link_equipment_events_to_line_events(onto: Ontology,
                              overrides the default value if provided
         
     Returns:
-        The number of links created
+        A tuple containing:
+        - The number of links created
+        - The PopulationContext with updated property usage tracking
     """
     link_logger.info("Starting second pass: Linking equipment events to line events (Enhanced Relaxed Temporal Logic)...")
 
     # --- Get required classes and properties ---
+    # TKT-004: Create a PopulationContext for property usage tracking
+    property_is_functional = {}  # We'll fill this as needed
+    context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
+    
     cls_EventRecord = defined_classes.get("EventRecord")
     cls_ProductionLine = defined_classes.get("ProductionLine")
     cls_Equipment = defined_classes.get("Equipment")
@@ -54,7 +61,14 @@ def link_equipment_events_to_line_events(onto: Ontology,
 
     if not all([cls_EventRecord, cls_ProductionLine, cls_Equipment, prop_isPartOfLineEvent, prop_startTime, prop_endTime]):
         link_logger.error("Missing essential classes or properties (EventRecord, ProductionLine, Equipment, isPartOfLineEvent, startTime, endTime) for linking. Aborting.")
-        return 0  # Return count of links created
+        return 0, None  # Return count of links created and None for context
+
+    # TKT-004: Track property functionality for correct usage in _set_property_value
+    for prop_name, prop in defined_properties.items():
+        if hasattr(prop, "functional") and prop.functional:
+            property_is_functional[prop_name] = True
+        else:
+            property_is_functional[prop_name] = False
 
     # --- Configure Linking Parameters ---
     # Time buffer for edge cases: allows equipment events that start slightly before/after line events
@@ -93,7 +107,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
     equipment_event_ids = {}  # Map event ind to human-readable event ID
     line_event_ids = {}       # Map event ind to human-readable event ID
     
-    for event_ind, resource_ind, resource_type in created_events_context:
+    for event_ind, resource_ind, resource_type, _associated_line_ind in created_events_context:
         # TKT-003: Verify that resource_type accurately reflects the actual resource
         if resource_type == "Line" and not isinstance(resource_ind, cls_ProductionLine):
             link_logger.warning(f"Event {event_ind.name} has resource_type 'Line' but the resource is not a ProductionLine. Skipping.")
@@ -438,37 +452,19 @@ def link_equipment_events_to_line_events(onto: Ontology,
                             continue
                         
                         # Link: Equipment Event ---isPartOfLineEvent---> Line Event
-                        current_parents = getattr(eq_event_ind, prop_isPartOfLineEvent.python_name, [])
-                        if not isinstance(current_parents, list): 
-                            current_parents = [current_parents] if current_parents is not None else []
+                        context.set_prop(eq_event_ind, "isPartOfLineEvent", line_event_ind)
+                        links_created += 1
+                        linking_methods_used[link_method] += 1
+                        link_logger.info(f"Linked ({link_method}): {eq_id} isPartOfLineEvent {line_id}")
 
-                        line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
-                        
-                        if line_event_ind not in current_parents:
-                            getattr(eq_event_ind, prop_isPartOfLineEvent.python_name).append(line_event_ind)
-                            links_created += 1
-                            linking_methods_used[link_method] += 1
-                            link_logger.info(f"Linked ({link_method}): {eq_id} isPartOfLineEvent {line_id}")
+                        # Optional: Link inverse if property exists
+                        if prop_hasDetailedEquipmentEvent:
+                            context.set_prop(line_event_ind, "hasDetailedEquipmentEvent", eq_event_ind)
+                            link_logger.debug(f"Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}")
 
-                            # Optional: Link inverse if property exists
-                            if prop_hasDetailedEquipmentEvent:
-                                current_children = getattr(line_event_ind, prop_hasDetailedEquipmentEvent.python_name, [])
-                                if not isinstance(current_children, list): 
-                                    current_children = [current_children] if current_children is not None else []
-
-                                if eq_event_ind not in current_children:
-                                    getattr(line_event_ind, prop_hasDetailedEquipmentEvent.python_name).append(eq_event_ind)
-                                    link_logger.debug(f"Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}")
-
-                            parent_found = True
-                            linked_events += 1
-                            break  # Stop searching for parents for this equipment event
-                        else:
-                            # Log if the link already existed (useful for debugging duplicates/re-runs)
-                            link_logger.debug(f"Link already exists: {eq_id} isPartOfLineEvent {line_id}. Skipping append.")
-                            parent_found = True  # Treat existing link as success
-                            linked_events += 1  # Count as linked since it's already linked
-                            break
+                        parent_found = True
+                        linked_events += 1
+                        break  # Stop searching for parents for this equipment event
                     except Exception as e:
                         line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
                         link_logger.error(f"Error linking equipment event {eq_id} to line event {line_id}: {e}")
@@ -599,4 +595,4 @@ def link_equipment_events_to_line_events(onto: Ontology,
     
     print(f"=== END EVENT LINKING RESULTS ===\n")
     
-    return links_created
+    return links_created, context

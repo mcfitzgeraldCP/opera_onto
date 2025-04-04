@@ -169,54 +169,69 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 logger.error("Equipment class not found. Cannot define instance-level sequence properties.")
             else:
                 # 1. sequencePosition (DataProperty)
-                prop_sequencePosition = types.new_class("sequencePosition", (DataProperty, FunctionalProperty))
-                prop_sequencePosition.domain = [cls_Equipment]
-                prop_sequencePosition.range = [int]
-                prop_sequencePosition.comment = ["Position of equipment instance in production sequence"]
-                defined_properties["sequencePosition"] = prop_sequencePosition
+                # TKT-001: Fix - Create property instance directly
+                with onto:
+                    class sequencePosition(DataProperty, FunctionalProperty):
+                        domain = [cls_Equipment]
+                        range = [int]
+                        comment = ["Position of equipment instance in production sequence"]
+                
+                defined_properties["sequencePosition"] = onto.sequencePosition
                 property_is_functional["sequencePosition"] = True
                 logger.info("Defined property: sequencePosition")
                 
                 # 2. isImmediatelyUpstreamOf (ObjectProperty) with its inverse
                 if cls_Equipment:
-                    prop_isImmediatelyUpstreamOf = types.new_class("isImmediatelyUpstreamOf", (ObjectProperty,))
-                    prop_isImmediatelyUpstreamOf.domain = [cls_Equipment]
-                    prop_isImmediatelyUpstreamOf.range = [cls_Equipment]
-                    prop_isImmediatelyUpstreamOf.comment = ["Links to the immediate downstream equipment in sequence"]
-                    defined_properties["isImmediatelyUpstreamOf"] = prop_isImmediatelyUpstreamOf
+                    # TKT-001: Fix - Create property instance directly
+                    with onto:
+                        class isImmediatelyUpstreamOf(ObjectProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_Equipment]
+                            comment = ["Links to the immediate downstream equipment in sequence"]
+                    
+                    defined_properties["isImmediatelyUpstreamOf"] = onto.isImmediatelyUpstreamOf
                     property_is_functional["isImmediatelyUpstreamOf"] = False
                     logger.info("Defined property: isImmediatelyUpstreamOf")
                     
                     # Define inverse
-                    prop_isImmediatelyDownstreamOf = types.new_class("isImmediatelyDownstreamOf", (ObjectProperty,))
-                    prop_isImmediatelyDownstreamOf.domain = [cls_Equipment]
-                    prop_isImmediatelyDownstreamOf.range = [cls_Equipment]
-                    prop_isImmediatelyDownstreamOf.comment = ["Links to the immediate upstream equipment in sequence"]
-                    defined_properties["isImmediatelyDownstreamOf"] = prop_isImmediatelyDownstreamOf
+                    # TKT-001: Fix - Create property instance directly
+                    with onto:
+                        class isImmediatelyDownstreamOf(ObjectProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_Equipment]
+                            comment = ["Links to the immediate upstream equipment in sequence"]
+                    
+                    defined_properties["isImmediatelyDownstreamOf"] = onto.isImmediatelyDownstreamOf
                     property_is_functional["isImmediatelyDownstreamOf"] = False
                     logger.info("Defined property: isImmediatelyDownstreamOf")
                     
                     # Set inverses
-                    prop_isImmediatelyUpstreamOf.inverse_property = prop_isImmediatelyDownstreamOf
-                    prop_isImmediatelyDownstreamOf.inverse_property = prop_isImmediatelyUpstreamOf
+                    onto.isImmediatelyUpstreamOf.inverse_property = onto.isImmediatelyDownstreamOf
+                    onto.isImmediatelyDownstreamOf.inverse_property = onto.isImmediatelyUpstreamOf
                 
                 # 3. isPartOfProductionLine (ObjectProperty)
                 if cls_Equipment and cls_ProductionLine:
-                    prop_isPartOfProductionLine = types.new_class("isPartOfProductionLine", (ObjectProperty,))
-                    prop_isPartOfProductionLine.domain = [cls_Equipment]
-                    prop_isPartOfProductionLine.range = [cls_ProductionLine]
-                    prop_isPartOfProductionLine.comment = ["Links equipment to its production line"]
-                    defined_properties["isPartOfProductionLine"] = prop_isPartOfProductionLine
+                    # TKT-001: Fix - Create property instance directly
+                    with onto:
+                        class isPartOfProductionLine(ObjectProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_ProductionLine]
+                            comment = ["Links equipment to its production line"]
+                    
+                    defined_properties["isPartOfProductionLine"] = onto.isPartOfProductionLine
                     property_is_functional["isPartOfProductionLine"] = False
                     logger.info("Defined property: isPartOfProductionLine")
                 
                 # 4. memberOfClass (ObjectProperty)
                 if cls_Equipment and cls_EquipmentClass:
-                    prop_memberOfClass = types.new_class("memberOfClass", (ObjectProperty, FunctionalProperty))
-                    prop_memberOfClass.domain = [cls_Equipment]
-                    prop_memberOfClass.range = [cls_EquipmentClass]
-                    prop_memberOfClass.comment = ["Links equipment instance to its equipment class"]
-                    defined_properties["memberOfClass"] = prop_memberOfClass
+                    # TKT-001: Fix - Create property instance directly
+                    with onto:
+                        class memberOfClass(ObjectProperty, FunctionalProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_EquipmentClass]
+                            comment = ["Links equipment instance to its equipment class"]
+                    
+                    defined_properties["memberOfClass"] = onto.memberOfClass
                     property_is_functional["memberOfClass"] = True
                     logger.info("Defined property: memberOfClass")
                     
@@ -226,11 +241,14 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 
                 cls_EquipmentClass = defined_classes.get("EquipmentClass")
                 
-                prop_equipmentClassId = types.new_class("equipmentClassId", (DataProperty, FunctionalProperty))
-                prop_equipmentClassId.domain = [cls_EquipmentClass]
-                prop_equipmentClassId.range = [str]
-                prop_equipmentClassId.comment = ["Identifier for the equipment class"]
-                defined_properties["equipmentClassId"] = prop_equipmentClassId
+                # TKT-001: Fix - Create property instance directly
+                with onto:
+                    class equipmentClassId(DataProperty, FunctionalProperty):
+                        domain = [cls_EquipmentClass]
+                        range = [str]
+                        comment = ["Identifier for the equipment class"]
+                
+                defined_properties["equipmentClassId"] = onto.equipmentClassId
                 property_is_functional["equipmentClassId"] = True
                 logger.info("Defined property: equipmentClassId")
 
@@ -263,37 +281,52 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 logger.warning(f"Skipping property '{prop_name}' due to missing type, domain, or range in spec.")
                 continue
 
-            # Determine parent classes for the property
-            parent_classes: List[type] = []
-            base_prop_type: Optional[type] = None
+            # TKT-001: Fix - Set up parent classes for property creation
+            parent_classes = []
+            base_prop_type = None
             if prop_type_str == 'ObjectProperty':
                 base_prop_type = ObjectProperty
+                parent_classes.append(ObjectProperty)
             elif prop_type_str == 'DatatypeProperty':
                 base_prop_type = DataProperty
+                parent_classes.append(DataProperty)
             else:
                 logger.warning(f"Unknown property type '{prop_type_str}' for property '{prop_name}'. Skipping.")
                 continue
 
-            parent_classes.append(base_prop_type)
-
             # Add characteristics
             is_functional = 'functional' in characteristics_str
-            property_is_functional[prop_name] = is_functional # Track functionality status
-            if is_functional: parent_classes.append(FunctionalProperty)
-            if 'inversefunctional' in characteristics_str: parent_classes.append(InverseFunctionalProperty)
-            if 'transitive' in characteristics_str: parent_classes.append(TransitiveProperty)
-            if 'symmetric' in characteristics_str: parent_classes.append(SymmetricProperty)
-            if 'asymmetric' in characteristics_str: parent_classes.append(AsymmetricProperty)
-            if 'reflexive' in characteristics_str: parent_classes.append(ReflexiveProperty)
-            if 'irreflexive' in characteristics_str: parent_classes.append(IrreflexiveProperty)
+            property_is_functional[prop_name] = is_functional  # Track functionality status
+            
+            if is_functional: 
+                parent_classes.append(FunctionalProperty)
+            if 'inversefunctional' in characteristics_str: 
+                parent_classes.append(InverseFunctionalProperty)
+            if 'transitive' in characteristics_str: 
+                parent_classes.append(TransitiveProperty)
+            if 'symmetric' in characteristics_str: 
+                parent_classes.append(SymmetricProperty)
+            if 'asymmetric' in characteristics_str: 
+                parent_classes.append(AsymmetricProperty)
+            if 'reflexive' in characteristics_str: 
+                parent_classes.append(ReflexiveProperty)
+            if 'irreflexive' in characteristics_str: 
+                parent_classes.append(IrreflexiveProperty)
 
             try:
-                # Define the property
-                new_prop: PropertyClass = types.new_class(prop_name, tuple(parent_classes))
+                # TKT-001: Fix - Create property using class definition syntax within onto context
+                # This creates a property instance rather than a property class
+                exec(f"""
+with onto:
+    class {prop_name}({', '.join([p.__name__ for p in parent_classes])}):
+        pass
+""")
+                # Get the created property instance
+                new_prop = getattr(onto, prop_name)
 
                 # Set Domain
                 domain_class_names = [dc.strip() for dc in domain_str.split('|')]
-                prop_domain: List[ThingClass] = []
+                prop_domain = []
                 valid_domain_found = False
                 for dc_name in domain_class_names:
                     domain_class = defined_classes.get(dc_name)
@@ -315,7 +348,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 # Set Range
                 if base_prop_type is ObjectProperty:
                     range_class_names = [rc.strip() for rc in range_str.split('|')]
-                    prop_range: List[ThingClass] = []
+                    prop_range = []
                     valid_range_found = False
                     for rc_name in range_class_names:
                         range_class = defined_classes.get(rc_name)
@@ -351,7 +384,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                     new_prop.comment = comments
 
                 defined_properties[prop_name] = new_prop
-                logger.debug(f"Defined Property: {new_prop.iri} of type {prop_type_str} with characteristics {' '.join([p.__name__ for p in parent_classes[1:]]) if len(parent_classes) > 1 else 'None'}")
+                logger.debug(f"Defined Property: {new_prop.iri} of type {prop_type_str} with characteristics {', '.join([p.__name__ for p in parent_classes[1:]]) if len(parent_classes) > 1 else 'None'}")
 
                 # Store inverse relationship for later processing
                 if inverse_prop_name and base_prop_type is ObjectProperty:
@@ -409,7 +442,9 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
     
     # Log total property counts
-    logger.info(f"TKT-002: Defined {len(defined_properties)} total properties ({len([p for p in defined_properties.values() if isinstance(p, ObjectProperty)])} object properties, {len([p for p in defined_properties.values() if isinstance(p, DataProperty)])} data properties)")
+    object_props = [p for p in defined_properties.values() if isinstance(p, ObjectProperty)]
+    data_props = [p for p in defined_properties.values() if isinstance(p, DataProperty)]
+    logger.info(f"TKT-002: Defined {len(defined_properties)} total properties ({len(object_props)} object properties, {len(data_props)} data properties)")
     
     logger.info("Ontology structure definition complete.")
     return defined_classes, defined_properties, property_is_functional

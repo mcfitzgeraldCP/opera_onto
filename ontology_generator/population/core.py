@@ -132,7 +132,7 @@ class PopulationContext:
         is_functional = self.property_is_functional.get(prop_name, False) # Assume non-functional if not specified
 
         try:
-            _set_property_value(individual, prop, value, is_functional)
+            _set_property_value(individual, prop, value, is_functional, self)
         except Exception as e:
             pop_logger.error(f"Error setting property '{prop_name}' on individual '{individual.name}' with value '{value}': {e}", exc_info=True)
     
@@ -224,7 +224,7 @@ class PopulationContext:
         pop_logger.info(f"  Most used properties: {', '.join([f'{name} ({count})' for name, count in report['most_used'][:5]])}")
 
 
-def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_functional: bool) -> None:
+def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_functional: bool, context: Optional[PopulationContext] = None) -> None:
     """
     Helper to set functional or non-functional properties, checking existence first.
     
@@ -233,11 +233,17 @@ def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_f
         prop: The property to set
         value: The value to set
         is_functional: Whether the property is functional
+        context: Optional PopulationContext to track property usage
     """
     if value is None: 
         return  # Don't set None values
 
     prop_name = prop.python_name  # Use Python name for attribute access
+
+    # TKT-004: Track property usage in context if provided
+    if context is not None and hasattr(context, '_property_usage_count'):
+        prop_name_for_counter = prop.name  # Use the property's original name for the counter
+        context._property_usage_count[prop_name_for_counter] = context._property_usage_count.get(prop_name_for_counter, 0) + 1
 
     try:
         if is_functional:
@@ -374,28 +380,62 @@ def get_or_create_individual(
     individual_name = f"{class_name_str}_{sanitized_name_base}"
 
     try:
-        with onto: # Ensure operation within ontology context
-             # Check if an individual with this *exact* name already exists in owlready's cache
-             # This can happen if safe_name produces the same result for different inputs,
-             # or if an individual was created outside the registry mechanism.
-            existing_by_name = onto.search_one(iri=f"*{individual_name}")
-            if existing_by_name and isinstance(existing_by_name, onto_class):
-                pop_logger.warning(f"Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Returning existing one and adding to registry.")
-                new_individual = existing_by_name
-            elif existing_by_name:
-                 # Name collision with an individual of a DIFFERENT class - should be rare with prefixing
-                 pop_logger.error(f"Cannot create individual '{individual_name}': Name collision with existing individual '{existing_by_name.name}' of different class ({type(existing_by_name).__name__})")
-                 return None
-            else:
-                # Create the new individual
-                new_individual = onto_class(individual_name)
-                pop_logger.info(f"Created new individual '{individual_name}' (Class: {class_name_str}, Base: '{individual_name_base}')")
+        # First, check if individual already exists in the ontology by full IRI
+        # This is more reliable than partial matching with '*' wildcard
+        existing_by_iri = onto.search_one(iri=f"{onto.base_iri}{individual_name}")
+        
+        # If not found by full IRI, try the more general search (backward compatibility)
+        if not existing_by_iri:
+            existing_by_iri = onto.search_one(iri=f"*{individual_name}")
+            
+        if existing_by_iri and isinstance(existing_by_iri, onto_class):
+            # TKT-003: Add the individual to the registry and return it
+            # This handles cases where individuals were created outside the registry
+            pop_logger.warning(f"TKT-003: Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Adding to registry and returning existing one.")
+            registry[registry_key] = existing_by_iri
+            
+            # Add labels if provided
+            if add_labels:
+                for label in add_labels:
+                    if label and label not in existing_by_iri.label:
+                        existing_by_iri.label.append(str(label))
+                        
+            return existing_by_iri
+        elif existing_by_iri:
+            # Name collision with an individual of a DIFFERENT class - should be rare with prefixing
+            pop_logger.error(f"Cannot create individual '{individual_name}': Name collision with existing individual '{existing_by_iri.name}' of different class ({type(existing_by_iri).__name__})")
+            return None
+            
+        # If we get here, the individual doesn't exist yet - create it within onto context
+        with onto:
+            # Double-check again within context to ensure thread safety
+            double_check = onto.search_one(iri=f"{onto.base_iri}{individual_name}")
+            if double_check:
+                # Another thread/process created it while we were checking
+                if isinstance(double_check, onto_class):
+                    pop_logger.warning(f"TKT-003: Race condition - individual '{individual_name}' was created between checks. Adding to registry and returning.")
+                    registry[registry_key] = double_check
+                    
+                    # Add labels if provided
+                    if add_labels:
+                        for label in add_labels:
+                            if label and label not in double_check.label:
+                                double_check.label.append(str(label))
+                                
+                    return double_check
+                else:
+                    pop_logger.error(f"Race condition - individual with name '{individual_name}' was created between checks with incompatible class. Cannot proceed.")
+                    return None
+            
+            # Create the new individual
+            new_individual = onto_class(individual_name)
+            pop_logger.info(f"Created new individual '{individual_name}' (Class: {class_name_str}, Base: '{individual_name_base}')")
 
-                # Add labels if provided
-                if add_labels:
-                    for label in add_labels:
-                        if label: # Ensure label is not empty
-                            new_individual.label.append(str(label)) # Ensure labels are strings
+            # Add labels if provided
+            if add_labels:
+                for label in add_labels:
+                    if label: # Ensure label is not empty
+                        new_individual.label.append(str(label)) # Ensure labels are strings
 
         # Add to registry *after* successful creation
         registry[registry_key] = new_individual

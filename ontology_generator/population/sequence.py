@@ -225,8 +225,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
                             position = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(equipment_class_id)
                             pop_logger.info(f"TKT-006: Found position {position} for {eq_id} using line-specific config for class {equipment_class_id}")
                             
-                            # Set the position on the equipment individual
-                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            # Set the position on the equipment individual - TKT-004: Pass context
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
                             equipment_with_positions.append((equipment_inst, position, eq_id))
                             total_equipment_with_sequence_position += 1
                             continue
@@ -236,8 +236,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
                             position = DEFAULT_EQUIPMENT_SEQUENCE.get(equipment_class_id)
                             pop_logger.info(f"TKT-006: Found position {position} for {eq_id} using default config for class {equipment_class_id}")
                             
-                            # Set the position on the equipment individual
-                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            # Set the position on the equipment individual - TKT-004: Pass context
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
                             equipment_with_positions.append((equipment_inst, position, eq_id))
                             total_equipment_with_sequence_position += 1
                             continue
@@ -271,13 +271,13 @@ def setup_equipment_instance_relationships(onto: Ontology,
                     continue
                 
                 try:
-                    # Create forward relationship (isImmediatelyUpstreamOf)
-                    _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False)
+                    # Create forward relationship (isImmediatelyUpstreamOf) - TKT-004: Pass context
+                    _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False, context=context)
                     pop_logger.debug(f"TKT-006: Created relationship: {up_id} (pos {upstream_pos}) isImmediatelyUpstreamOf {down_id} (pos {downstream_pos})")
                     
-                    # Create inverse relationship (isImmediatelyDownstreamOf) if property exists
+                    # Create inverse relationship (isImmediatelyDownstreamOf) if property exists - TKT-004: Pass context
                     if prop_isImmediatelyDownstreamOf:
-                        _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False)
+                        _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False, context=context)
                         pop_logger.debug(f"TKT-006: Created inverse relationship: {down_id} isImmediatelyDownstreamOf {up_id}")
                     
                     relationships_created += 1
@@ -318,8 +318,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
                                 
                                 try:
                                     # Since isParallelWith is symmetric, we only need to set it in one direction
-                                    # The OWL reasoner will infer the other direction
-                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False)
+                                    # The OWL reasoner will infer the other direction - TKT-004: Pass context
+                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False, context=context)
                                     pop_logger.debug(f"TKT-007: Created parallel relationship: {eq1_id} isParallelWith {eq2_id} (position {pos})")
                                     parallel_relationships += 1
                                 except Exception as e:
@@ -391,5 +391,6 @@ def setup_equipment_instance_relationships(onto: Ontology,
     # TKT-007: Add a summary log for the parallel relationships created
     if prop_isParallelWith:
         pop_logger.info(f"TKT-007: Successfully established {total_parallel_relationships} parallel equipment relationships")
-
-    return total_relationships  # Return count of created relationships for tracking
+    
+    # TKT-004: Return the context along with the relationship count for property usage tracking
+    return total_relationships, context

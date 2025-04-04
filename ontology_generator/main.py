@@ -428,43 +428,59 @@ def _run_analysis_and_optimization(onto, defined_classes, specification, optimiz
         # Continue despite analysis failure
 
 def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
-    logger.info("Setting up equipment instance relationships...")
+    """Setup equipment sequence relationships if any equipment classes were created."""
     try:
-        # Add TKT-006 specific logging
-        logger.info("TKT-006: Verifying Equipment.sequencePosition population and sequence linking...")
+        # Import here to avoid circular imports
+        from ontology_generator.population.sequence import setup_equipment_instance_relationships
         
-        # Log some diagnostics about available data
-        logger.info(f"TKT-006: Found {len(eq_class_positions)} equipment class positions for sequencing")
-        if eq_class_positions:
-            sample_classes = list(eq_class_positions.keys())[:3]
-            logger.info(f"TKT-006: Sample classes with positions: {', '.join([f'{cls}={eq_class_positions[cls]}' for cls in sample_classes])}")
+        logger.info("Setting up equipment sequence relationships...")
         
-        # Only set up instance-level relationships
-        relationships_created = setup_equipment_instance_relationships(
-            onto, defined_classes, defined_properties, property_is_functional, eq_class_positions
+        # Setup instance-level relationships (upstream/downstream)
+        # TKT-004: Handle the updated return tuple including the context
+        ret_val = setup_equipment_instance_relationships(
+            onto=onto,
+            defined_classes=defined_classes,
+            defined_properties=defined_properties,
+            property_is_functional=property_is_functional,
+            equipment_class_positions=eq_class_positions
         )
         
-        logger.info(f"TKT-006: Equipment instance sequence relationship setup complete. Created {relationships_created} relationships.")
-        
-        # Add equipment sequence report generation
-        sequence_report = generate_equipment_sequence_report(onto)
-        logger.info("Equipment sequence report generated.")
-        print(sequence_report)  # Print to console for immediate visibility
-        
-    except Exception as seq_exc:
-        logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
-        # Log error but continue
+        # TKT-004: Unpack return value which now includes both the relationship count and the context
+        if isinstance(ret_val, tuple) and len(ret_val) >= 2:
+            relationships_count, seq_context = ret_val
+            logger.info(f"Created {relationships_count} equipment instance relationships.")
+            # Return the sequence context for property usage tracking
+            return seq_context
+        else:
+            # Backward compatibility with older function signature
+            relationships_count = ret_val
+            logger.info(f"Created {relationships_count} equipment instance relationships.")
+            return None
+    except Exception as e:
+        logger.error(f"Error during equipment sequence relationship setup: {e}", exc_info=True)
+        return None
 
 def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger, event_buffer_minutes=None):
-    logger.info("Linking equipment events to line events...")
+    """Link equipment events to line events if event context is available."""
     try:
-        links_made = link_equipment_events_to_line_events(
-            onto, created_events_context, defined_classes, defined_properties, event_buffer_minutes
+        # Import the linking module
+        from ontology_generator.population.linking import link_equipment_events_to_line_events
+        
+        logger.info("Linking equipment events to line events...")
+        # TKT-004: Updated to handle both return values
+        links_created, link_context = link_equipment_events_to_line_events(
+            onto,
+            created_events_context,
+            defined_classes,
+            defined_properties,
+            event_buffer_minutes
         )
-        logger.info(f"Event linking pass created {links_made} links.")
-    except Exception as link_exc:
-        logger.error(f"Error during event linking pass: {link_exc}", exc_info=True)
-        # Log error but continue
+        
+        logger.info(f"Created {links_created} links between equipment events and line events")
+        return link_context
+    except Exception as e:
+        logger.exception(f"Error during event linking: {e}")
+        return None
 
 def _process_structural_relationships(onto, data_rows, defined_classes, defined_properties, property_is_functional, property_mappings, all_created_individuals_by_uid, logger):
     """
@@ -732,17 +748,33 @@ def main_ontology_generation(spec_file_path: str,
 
         # 9. Setup Sequence Relationships (Optional)
         if population_successful and created_eq_classes:
-             _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
+             # TKT-004: Get the sequence context with updated property usages
+             seq_context = _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
+             # TKT-004: If we got a valid context back, use it to update the main population_context
+             if seq_context and population_context:
+                 main_logger.info("TKT-004: Updating property usage tracking with sequence relationship data")
+                 # Merge property usage counts from sequence operations
+                 for prop_name, count in seq_context._property_usage_count.items():
+                     if count > 0:
+                         population_context._property_usage_count[prop_name] = population_context._property_usage_count.get(prop_name, 0) + count
         elif population_successful:
              main_logger.warning("Skipping sequence relationship setup: No EquipmentClass individuals found during population.")
         # No action needed if population failed, handled by checks below
 
         # 10. Link Events (Optional)
         if created_events_context:
-            _link_equipment_events(
+            # TKT-004: Get the link context with updated property usages
+            link_context = _link_equipment_events(
                 onto, created_events_context, defined_classes, defined_properties, 
                 main_logger, args.event_buffer_minutes
             )
+            # TKT-004: If we got a valid context back, use it to update the main population_context
+            if link_context and population_context:
+                main_logger.info("TKT-004: Updating property usage tracking with event linking data")
+                # Merge property usage counts from event linking operations
+                for prop_name, count in link_context._property_usage_count.items():
+                    if count > 0:
+                        population_context._property_usage_count[prop_name] = population_context._property_usage_count.get(prop_name, 0) + count
         else:
             main_logger.warning("No event context data available for linking. Event linking skipped.")
 

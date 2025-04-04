@@ -208,3 +208,80 @@ def sanitize_name(name: Any) -> str:
         pop_logger.warning(f"Sanitized name for '{name_str}' became empty or invalid. Using fallback hash: {safe_name}")
         
     return safe_name
+
+# TKT-003: Add unit tests for sanitize_name function
+# These tests can be run directly with Python to verify the function works as expected
+def _test_sanitize_name():
+    """
+    Test suite for sanitize_name function.
+    Run this function directly to verify sanitize_name behavior.
+    """
+    test_cases = [
+        # (input, expected_output, description)
+        (None, "unnamed", "None value"),
+        ("", "unnamed", "Empty string"),
+        ("   ", "unnamed", "Whitespace only"),
+        ("Simple", "Simple", "Simple alphanumeric"),
+        ("Simple Name", "Simple_Name", "Spaces to underscore"),
+        ("Name-With-Hyphens", "Name-With-Hyphens", "Preserve hyphens"),
+        ("Name.With.Dots", "Name.With.Dots", "Preserve periods"),
+        ("Name_With_Underscores", "Name_With_Underscores", "Preserve underscores"),
+        ("123StartsWithNumber", "_123StartsWithNumber", "Prepend underscore to numbers"),
+        ("-StartsWithHyphen", "_-StartsWithHyphen", "Prepend underscore to hyphen"),
+        ("Special@#$%^&*()Chars", "Special_____Chars", "Replace special chars with underscores"),
+        ("<>:\"/\\|?*", "________", "All special chars become underscores"),
+        ("Mixed<>:\"/\\|?*AndLetters", "Mixed________AndLetters", "Mixed content"),
+        ("Üñîçøδê", "____", "Unicode characters"),  # Note: This case is strict - non-ASCII removed
+        # Edge cases
+        ("   Trim   Spaces   ", "Trim___Spaces", "Trim and collapse spaces"),
+        ("<all special>", "_all_special_", "Special chars at boundaries"),
+    ]
+    
+    passed = 0
+    failed = 0
+    
+    print("\n===== TESTING sanitize_name FUNCTION =====")
+    for i, (input_val, expected, desc) in enumerate(test_cases):
+        result = sanitize_name(input_val)
+        if result == expected:
+            passed += 1
+            print(f"✓ Test {i+1}: {desc}")
+        else:
+            failed += 1
+            print(f"✗ Test {i+1}: {desc}")
+            print(f"  Input: {repr(input_val)}")
+            print(f"  Expected: {repr(expected)}")
+            print(f"  Got: {repr(result)}")
+    
+    # Test for consistency - same input should always yield same output
+    consistency_check = sanitize_name("Test String")
+    for i in range(5):
+        if sanitize_name("Test String") != consistency_check:
+            failed += 1
+            print(f"✗ Consistency check failed on iteration {i+1}")
+            break
+    else:
+        passed += 1
+        print("✓ Consistency check passed")
+    
+    # Hash fallback test (these inputs clean to empty string)
+    print("\nHash fallback test (unpredictable output):")
+    empty_after_clean = "!@#$%^&*()"
+    fallback_result = sanitize_name(empty_after_clean)
+    print(f"Input: {repr(empty_after_clean)}")
+    print(f"Result: {repr(fallback_result)}")
+    if fallback_result.startswith("UnnamedData_"):
+        passed += 1
+        print("✓ Hash fallback test passed")
+    else:
+        failed += 1
+        print("✗ Hash fallback test failed")
+    
+    print(f"\nTests complete: {passed} passed, {failed} failed")
+    print("========================================\n")
+    
+    return passed, failed
+
+# Run tests automatically if this module is executed directly
+if __name__ == "__main__":
+    _test_sanitize_name()

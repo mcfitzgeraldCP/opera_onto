@@ -582,12 +582,12 @@ def get_equipment_sequence_for_line(onto: Ontology, line_individual: Thing) -> L
     # Get required properties
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == "equipmentIsUpstreamOf":
+        if prop.name == "isImmediatelyUpstreamOf":
             equipment_is_upstream_of = prop
             break
     
     if not equipment_is_upstream_of:
-        analysis_logger.warning("Property 'equipmentIsUpstreamOf' not found in ontology")
+        analysis_logger.warning("Property 'isImmediatelyUpstreamOf' not found in ontology")
         return []
     
     # Get all equipment on this line
@@ -793,10 +793,10 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
         analysis_logger.warning("Equipment class not found in ontology")
         return {}, {"error": "Equipment class not found"}
         
-    # Get the "equipmentIsUpstreamOf" property
+    # Get the "isImmediatelyUpstreamOf" property
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == "equipmentIsUpstreamOf":
+        if prop.name == "isImmediatelyUpstreamOf":
             equipment_is_upstream_of = prop
             break
             
@@ -988,6 +988,16 @@ DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 SPEC_PARENT_CLASS_COLUMN = 'Parent Class'  # Column name for hierarchy definition
 
+# Event Linking Configuration
+# Buffer time (in minutes) to allow for temporal matching of equipment and line events
+# Allows equipment events to be linked even if they start slightly before/after line events
+# Higher values will capture more relationships but might introduce false positives
+DEFAULT_EVENT_LINKING_BUFFER_MINUTES = 5
+
+# Default duration (in hours) to assume for events with missing end times
+# Used for temporal matching when end times are not available in the source data
+DEFAULT_EVENT_DURATION_HOURS = 2
+
 # -----------------------------------------------------------------------------
 # SPECIFICATION COLUMN NAMES
 # -----------------------------------------------------------------------------
@@ -1108,14 +1118,43 @@ DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
 KNOWN_EQUIPMENT_CLASSES = list(DEFAULT_EQUIPMENT_SEQUENCE.keys())
 
 # Maps specific patterns in equipment names to their classes
+# Key TKT-004: Extended to provide more robust matching patterns for equipment types
 EQUIPMENT_NAME_TO_CLASS_MAP = {
+    # Standard underscore prefixed types
     "_Filler": "Filler",
     "_Cartoner": "Cartoner",
     "_Bundler": "Bundler",
     "_CaseFormer": "CaseFormer",
     "_CasePacker": "CasePacker",
     "_CaseSealer": "CaseSealer",
-    "_Palletizer": "Palletizer"
+    "_Palletizer": "Palletizer",
+    
+    # Common parenthesized formats
+    "(Filler)": "Filler",
+    "(Cartoner)": "Cartoner",
+    "(Bundler)": "Bundler",
+    "(CaseFormer)": "CaseFormer",
+    "(CasePacker)": "CasePacker",
+    "(CaseSealer)": "CaseSealer",
+    "(Palletizer)": "Palletizer",
+    
+    # Variations with common prefixes/suffixes
+    "FIL": "Filler",
+    "FILL": "Filler",
+    "FILLING": "Filler",
+    "CART": "Cartoner",
+    "CARTONING": "Cartoner",
+    "BUND": "Bundler",
+    "BUNDLING": "Bundler",
+    "CASEFORM": "CaseFormer",
+    "CASE FORM": "CaseFormer",
+    "CASEPAK": "CasePacker",
+    "CASE PAK": "CasePacker",
+    "CASE PACK": "CasePacker",
+    "CASESEAL": "CaseSealer",
+    "CASE SEAL": "CaseSealer",
+    "PALLET": "Palletizer",
+    "PAL": "Palletizer"
 }
 
 # Line-specific equipment sequences that override the default
@@ -1598,11 +1637,25 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
     defined_properties: Dict[str, PropertyClass] = {}
     property_is_functional: Dict[str, bool] = {}  # Track which properties are functional based on spec
     class_metadata: Dict[str, Dict[str, Any]] = {} # Store metadata like notes per class
-
+    
+    # TKT-002: Track all property names in the specification
+    spec_property_names = set()
+    spec_property_types = {} # Store property types for validation
+    
     # --- Pre-process Spec for Class Metadata and Hierarchy ---
     logger.debug("--- Pre-processing specification for class details ---")
     all_class_names: Set[str] = set()
     class_parents: Dict[str, str] = {} # {child_name: parent_name}
+    
+    # TKT-002: Pre-process property names from specification
+    for row in specification:
+        prop_name = row.get(SPEC_COL_PROPERTY, '').strip()
+        if prop_name:
+            spec_property_names.add(prop_name)
+            spec_property_types[prop_name] = row.get(SPEC_COL_PROP_TYPE, '').strip()
+    
+    logger.info(f"TKT-002: Found {len(spec_property_names)} unique properties in specification")
+    
     for i, row in enumerate(specification):
         class_name = row.get(SPEC_COL_ENTITY, '').strip()
         if class_name:
@@ -1761,6 +1814,20 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                     defined_properties["memberOfClass"] = prop_memberOfClass
                     property_is_functional["memberOfClass"] = True
                     logger.info("Defined property: memberOfClass")
+                    
+            # TKT-001: Define equipmentClassId property for EquipmentClass if it doesn't exist
+            if defined_classes.get("EquipmentClass") and "equipmentClassId" not in defined_properties:
+                logger.info("Adding missing equipmentClassId property for EquipmentClass")
+                
+                cls_EquipmentClass = defined_classes.get("EquipmentClass")
+                
+                prop_equipmentClassId = types.new_class("equipmentClassId", (DataProperty, FunctionalProperty))
+                prop_equipmentClassId.domain = [cls_EquipmentClass]
+                prop_equipmentClassId.range = [str]
+                prop_equipmentClassId.comment = ["Identifier for the equipment class"]
+                defined_properties["equipmentClassId"] = prop_equipmentClassId
+                property_is_functional["equipmentClassId"] = True
+                logger.info("Defined property: equipmentClassId")
 
     with onto:
         # Define properties first without inverse, handle inverse in a second pass
@@ -1774,9 +1841,12 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 logger.info(f"Skipping deprecated class-level property: {prop_name}")
                 continue
             
-            # Ensure instance-level equipment sequence properties are properly created
-            if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf", "isParallelWith"]:
-                logger.info(f"Creating instance-level equipment property: {prop_name}")
+            # TKT-008: Skip redundant definition of instance-level sequence properties
+            # Since we already define these above if needed, just continue when they appear in the spec
+            if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf",
+                             "isPartOfProductionLine", "memberOfClass"]:
+                logger.debug(f"Skipping duplicate definition of instance-level property: {prop_name}")
+                continue
                 
             prop_type_str = row.get(SPEC_COL_PROP_TYPE, '').strip()
             domain_str = row.get(SPEC_COL_DOMAIN, '').strip()
@@ -1911,6 +1981,31 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             elif not inverse_prop:
                 logger.warning(f"Inverse property '{inverse_name}' not found for property '{prop_name}'.")
 
+    # TKT-002: Verify all properties from spec were defined
+    missing_properties = spec_property_names - set(defined_properties.keys())
+    
+    # Exclude properties we intentionally skip
+    excluded_properties = {"classIsUpstreamOf", "classIsDownstreamOf", "defaultSequencePosition"}
+    real_missing = missing_properties - excluded_properties
+    
+    if real_missing:
+        logger.warning(f"TKT-002: {len(real_missing)} properties in specification were not defined: {', '.join(sorted(real_missing))}")
+    else:
+        logger.info(f"TKT-002: All properties from specification were successfully defined")
+    
+    # Check for property type consistency
+    for prop_name, prop_obj in defined_properties.items():
+        if prop_name in spec_property_types:
+            expected_type = spec_property_types[prop_name]
+            # Simple type check between expected and actual property type
+            if expected_type == 'ObjectProperty' and not isinstance(prop_obj, ObjectProperty):
+                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
+            elif expected_type == 'DatatypeProperty' and not isinstance(prop_obj, DataProperty):
+                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
+    
+    # Log total property counts
+    logger.info(f"TKT-002: Defined {len(defined_properties)} total properties ({len([p for p in defined_properties.values() if isinstance(p, ObjectProperty)])} object properties, {len([p for p in defined_properties.values() if isinstance(p, DataProperty)])} data properties)")
+    
     logger.info("Ontology structure definition complete.")
     return defined_classes, defined_properties, property_is_functional
 
@@ -2038,7 +2133,10 @@ from owlready2 import (
     ThingClass, FunctionalProperty, InverseFunctionalProperty, TransitiveProperty, SymmetricProperty, AsymmetricProperty, ReflexiveProperty, IrreflexiveProperty, Nothing
 )
 
-from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map, DEFAULT_EQUIPMENT_SEQUENCE
+from ontology_generator.config import (
+    DEFAULT_ONTOLOGY_IRI, init_xsd_type_map, DEFAULT_EQUIPMENT_SEQUENCE,
+    DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
+)
 from ontology_generator.utils.logging import (
     main_logger, configure_logging, analysis_logger
 )
@@ -2047,7 +2145,6 @@ from ontology_generator.definition import (
     parse_property_mappings, validate_property_mappings, read_data
 )
 from ontology_generator.population import (
-    setup_equipment_sequence_relationships, # Need these post-population steps
     setup_equipment_instance_relationships,
     link_equipment_events_to_line_events
 )
@@ -2231,12 +2328,19 @@ def populate_ontology_from_data(onto: Ontology,
 
     main_logger.info(f"Pass 2 Complete. Rows successfully linked: {pass2_successful_rows}, Rows failed/skipped linking: {pass2_failed_rows}.")
 
-    # Determine overall failed count (consider a row failed if it failed either pass?)
-    # For now, return Pass 1 failure count as it indicates primary data issues.
-    # The warnings originally reported were link failures (Pass 2 type issues).
-    final_failed_rows = pass1_failed_rows # Or potentially max(pass1_failed_rows, pass2_failed_rows) or other logic
+    # Determine overall failed count - TKT-006: Improve failure reporting
+    final_failed_rows = pass1_failed_rows  # Use the Pass 1 failures as the primary metric
 
-    main_logger.info(f"Ontology population complete. Final failed row count (based on Pass 1): {final_failed_rows}.")
+    # Report both pass failures if they differ significantly
+    if pass2_failed_rows > pass1_failed_rows:
+        main_logger.warning(f"Note: Pass 2 had {pass2_failed_rows - pass1_failed_rows} additional failures during linking phase.")
+    
+    if final_failed_rows > 0:
+        failure_rate = (final_failed_rows / len(data_rows)) * 100
+        main_logger.info(f"Ontology population complete with {final_failed_rows} failed rows ({failure_rate:.1f}% failure rate).")
+    else:
+        main_logger.info("Ontology population complete. All rows processed successfully.")
+        
     # Return collected contexts from Pass 1 and the registry
     return final_failed_rows, created_equipment_class_inds, equipment_class_positions, created_events_context, all_created_individuals_by_uid
 
@@ -2334,38 +2438,69 @@ def _read_operational_data(data_file_path, logger):
         return None # Indicate failure
 
 def _populate_abox(onto, data_rows, defined_classes, defined_properties, prop_is_functional, specification, property_mappings, logger):
-    logger.info("Starting ontology population (ABox)...")
-    population_successful = True
-    failed_rows_count = 0
-    created_eq_classes = {}
-    eq_class_positions = {}
-    created_events_context = []
-    all_created_individuals_by_uid = {}
-
-    if not data_rows:
-        logger.warning("Skipping population as no data rows were provided.")
-        # Return success=True but with zero counts/empty contexts
-        return True, 0, {}, {}, [], {}
-
+    """
+    Populate the ontology from data rows (ABox).
+    
+    Args:
+        onto: The ontology to populate
+        data_rows: The parsed data rows
+        defined_classes: Dictionary of defined classes
+        defined_properties: Dictionary of defined properties
+        prop_is_functional: Dictionary indicating functionality of properties
+        specification: The parsed specification
+        property_mappings: The parsed property mappings
+        logger: The logger to use
+        
+    Returns:
+        Tuple containing:
+        - population_successful: Whether population was overall successful
+        - failed_rows_count: Number of rows that failed to process
+        - created_eq_classes: Dictionary of equipment classes created
+        - eq_class_positions: Dictionary of equipment class positions
+        - created_events_context: Context data for event linking
+        - all_created_individuals_by_uid: Registry of all created individuals
+    """
+    logger.info("Populating ontology from data (ABox)...")
     try:
-        failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid = populate_ontology_from_data(
-            onto, data_rows, defined_classes, defined_properties, prop_is_functional,
-            specification, property_mappings
+        # Import here to avoid circular imports
+        from ontology_generator.population.processing import populate_ontology_from_data
+        
+        # Call the populate function
+        (failed_rows_count, created_eq_classes, eq_class_positions, 
+         created_events_context, all_created_individuals_by_uid, population_context) = populate_ontology_from_data(
+            onto, data_rows, defined_classes, defined_properties, 
+            prop_is_functional, specification, property_mappings
         )
-        if failed_rows_count == len(data_rows) and len(data_rows) > 0:
-            logger.error(f"Population failed for all {len(data_rows)} data rows.")
-            population_successful = False
-        elif failed_rows_count > 0:
-            logger.warning(f"Population completed with {failed_rows_count} out of {len(data_rows)} failed rows.")
+        
+        # Determine success based on failure rate (threshold could be configurable)
+        if failed_rows_count > 0:
+            failure_rate = failed_rows_count / len(data_rows) if data_rows else 1.0
+            if failure_rate > 0.5:  # More than 50% failure is considered severe
+                logger.error(f"Severe data processing failure rate: {failure_rate:.2%} ({failed_rows_count}/{len(data_rows)})")
+                population_successful = False
+            else:
+                logger.warning(f"Data processing has some failures: {failure_rate:.2%} ({failed_rows_count}/{len(data_rows)})")
+                population_successful = True  # Some failures are acceptable
         else:
-            logger.info(f"Population completed successfully for all {len(data_rows)} rows.")
-
-    except Exception as pop_exc:
-        logger.error(f"Critical error during population: {pop_exc}", exc_info=True)
-        population_successful = False
-
-    logger.info("ABox population phase finished.")
-    return population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid
+            logger.info("All data rows were processed successfully.")
+            population_successful = True
+        
+        # TKT-002: Track and store population_context for property usage reporting
+        if population_context:
+            logger.info("Prepared population context for later property usage reporting.")
+        else:
+            logger.warning("Population context not available for property usage tracking.")
+        
+        # Log count of individuals created
+        all_inds_count = len(all_created_individuals_by_uid) if all_created_individuals_by_uid else 0
+        logger.info(f"Ontology population complete. Created/used {all_inds_count} total individuals.")
+        
+        # Return all the context data needed for subsequent steps
+        return (population_successful, failed_rows_count, created_eq_classes, 
+                eq_class_positions, created_events_context, all_created_individuals_by_uid, population_context)
+    except Exception as e:
+        logger.error(f"Error during ontology population: {e}", exc_info=True)
+        return False, 0, {}, {}, [], {}, None
 
 def _run_analysis_and_optimization(onto, defined_classes, specification, optimize_ontology, output_owl_path, logger):
     logger.info("Analyzing ontology population status...")
@@ -2410,12 +2545,21 @@ def _run_analysis_and_optimization(onto, defined_classes, specification, optimiz
 def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
     logger.info("Setting up equipment instance relationships...")
     try:
-        # Remove class-level sequence relationship setup
-        setup_equipment_sequence_relationships(onto, eq_class_positions, defined_classes, defined_properties, created_eq_classes)
+        # Add TKT-006 specific logging
+        logger.info("TKT-006: Verifying Equipment.sequencePosition population and sequence linking...")
+        
+        # Log some diagnostics about available data
+        logger.info(f"TKT-006: Found {len(eq_class_positions)} equipment class positions for sequencing")
+        if eq_class_positions:
+            sample_classes = list(eq_class_positions.keys())[:3]
+            logger.info(f"TKT-006: Sample classes with positions: {', '.join([f'{cls}={eq_class_positions[cls]}' for cls in sample_classes])}")
         
         # Only set up instance-level relationships
-        setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
-        logger.info("Equipment instance sequence relationship setup complete.")
+        relationships_created = setup_equipment_instance_relationships(
+            onto, defined_classes, defined_properties, property_is_functional, eq_class_positions
+        )
+        
+        logger.info(f"TKT-006: Equipment instance sequence relationship setup complete. Created {relationships_created} relationships.")
         
         # Add equipment sequence report generation
         sequence_report = generate_equipment_sequence_report(onto)
@@ -2426,11 +2570,11 @@ def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, 
         logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
         # Log error but continue
 
-def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger):
+def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger, event_buffer_minutes=None):
     logger.info("Linking equipment events to line events...")
     try:
         links_made = link_equipment_events_to_line_events(
-            onto, created_events_context, defined_classes, defined_properties
+            onto, created_events_context, defined_classes, defined_properties, event_buffer_minutes
         )
         logger.info(f"Event linking pass created {links_made} links.")
     except Exception as link_exc:
@@ -2608,7 +2752,8 @@ def main_ontology_generation(spec_file_path: str,
                              analyze_population: bool = True,
                              strict_adherence: bool = False,
                              skip_classes: List[str] = None,
-                             optimize_ontology: bool = False
+                             optimize_ontology: bool = False,
+                             event_buffer_minutes: Optional[int] = None
                             ) -> bool:
     """
     Main function to generate the ontology by orchestrating helper functions.
@@ -2636,12 +2781,14 @@ def main_ontology_generation(spec_file_path: str,
     args.strict_adherence = strict_adherence
     args.skip_classes = skip_classes
     args.optimize_ontology = optimize_ontology
+    args.event_buffer_minutes = event_buffer_minutes
 
     world = None
     onto = None
     population_successful = False
     reasoning_successful = True # Assume success unless reasoner runs and fails
     save_failed = False
+    population_context = None  # TKT-002: Track population context for property usage reporting
 
     try:
         # 1. Log Initial Parameters
@@ -2667,10 +2814,21 @@ def main_ontology_generation(spec_file_path: str,
         if data_rows is None: return False # Indicate failure if reading failed
 
         # 6. Populate Ontology (ABox)
-        population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid = _populate_abox(
+        population_result = _populate_abox(
             onto, data_rows, defined_classes, defined_properties, property_is_functional,
             specification, property_mappings, main_logger
         )
+        
+        # Unpack the population result tuple
+        if len(population_result) >= 7:  # TKT-002: Check for extended result tuple with context
+            (population_successful, failed_rows_count, created_eq_classes, 
+             eq_class_positions, created_events_context, all_created_individuals_by_uid, 
+             population_context) = population_result
+        else:
+            # Backward compatibility with older function signature
+            (population_successful, failed_rows_count, created_eq_classes, 
+             eq_class_positions, created_events_context, all_created_individuals_by_uid) = population_result
+            main_logger.warning("TKT-002: Population context not available from population result. Property usage reporting may be limited.")
         
         # 7. Process Structural Relationships (NEW STEP)
         if population_successful:
@@ -2688,18 +2846,20 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.warning("Skipping ontology population analysis as requested.")
 
         # 9. Setup Sequence Relationships (Optional)
-        if population_successful and created_eq_classes and eq_class_positions:
+        if population_successful and created_eq_classes:
              _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
         elif population_successful:
-             main_logger.warning("Skipping sequence relationship setup: No EquipmentClass info available.")
+             main_logger.warning("Skipping sequence relationship setup: No EquipmentClass individuals found during population.")
         # No action needed if population failed, handled by checks below
 
         # 10. Link Events (Optional)
-        if population_successful and created_events_context:
-            _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger)
-        elif population_successful:
-             main_logger.warning("Skipping event linking: No event context available.")
-        # No action needed if population failed
+        if created_events_context:
+            _link_equipment_events(
+                onto, created_events_context, defined_classes, defined_properties, 
+                main_logger, args.event_buffer_minutes
+            )
+        else:
+            main_logger.warning("No event context data available for linking. Event linking skipped.")
 
         # 11. Apply Reasoning (Optional)
         if args.reasoner and population_successful:
@@ -2708,6 +2868,13 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.warning("Skipping reasoning due to prior population failure.")
             reasoning_successful = False # Ensure overall success reflects this skipped step
         # If reasoner not used, reasoning_successful remains True
+        
+        # TKT-002: Log property usage report at the end of the entire process
+        if population_context:
+            main_logger.info("TKT-002: Generating final property usage report")
+            population_context.log_property_usage_report()
+        else:
+            main_logger.warning("TKT-002: Population context not available for final property usage report")
 
         # 12. Save Ontology
         # Saving logic depends on population and reasoning success
@@ -2922,6 +3089,8 @@ def main():
     parser.add_argument("--optimize", action="store_true", dest="optimize_ontology", help="Generate detailed optimization recommendations.")
     parser.add_argument("--test-mappings", action="store_true", help="Test the property mapping functionality only, without generating the ontology.")
     parser.add_argument("--analyze-sequences", metavar="OWL_FILE", help="Analyze equipment sequences in an existing ontology file.")
+    parser.add_argument("--event-buffer", type=int, default=None, metavar="MINUTES", 
+                       help=f"Time buffer in minutes for event linking (default: {DEFAULT_EVENT_LINKING_BUFFER_MINUTES}).")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging.")
 
@@ -2956,7 +3125,8 @@ def main():
         analyze_population=args.analyze_population,
         strict_adherence=args.strict_adherence,
         skip_classes=args.skip_classes,
-        optimize_ontology=args.optimize_ontology
+        optimize_ontology=args.optimize_ontology,
+        event_buffer_minutes=args.event_buffer
     )
     
     # Exit with appropriate code
@@ -2976,14 +3146,13 @@ if __name__ == "__main__":
 FILE: ontology_generator/population/__init__.py
 ===========================================
 
-from .sequence import setup_equipment_sequence_relationships, setup_equipment_instance_relationships
+from .sequence import setup_equipment_instance_relationships
 from .linking import link_equipment_events_to_line_events
 from .row_processor import process_single_data_row_pass1, process_single_data_row_pass2
 
 # List functions/classes to expose at the package level
 __all__ = [
     # 'populate_ontology_from_data', # Removed - Defined in main.py
-    'setup_equipment_sequence_relationships',
     'setup_equipment_instance_relationships',
     'link_equipment_events_to_line_events',
     'process_single_data_row_pass1',
@@ -3410,6 +3579,12 @@ class PopulationContext:
         self.property_is_functional = property_is_functional
         self._property_cache = {} # Cache for faster property lookup
         self._class_cache = {} # Cache for faster class lookup
+        
+        # TKT-002: Track property usage and access patterns
+        self._property_access_count = {prop_name: 0 for prop_name in defined_properties}
+        self._property_usage_count = {prop_name: 0 for prop_name in defined_properties}
+        self._property_misses = set()  # Track property names that were requested but not found
+        self._individual_data_cache = {}  # Cache for storing data associated with individuals
 
     def get_class(self, name: str) -> Optional[ThingClass]:
         """
@@ -3446,12 +3621,17 @@ class PopulationContext:
         Returns:
             The property object or None if not found
         """
+        # TKT-002: Track access counts for all properties
+        self._property_access_count[name] = self._property_access_count.get(name, 0) + 1
+        
         if name in self._property_cache:
             return self._property_cache[name]
 
         prop = self.defined_properties.get(name)
         if not prop:
-            pop_logger.warning(f"Property '{name}' not found in defined properties.")
+            # TKT-002: Track property misses for later analysis
+            self._property_misses.add(name)
+            pop_logger.warning(f"TKT-002: Property '{name}' not found in defined properties.")
             return None
         # Basic validation (could add more specific checks if needed)
         if not isinstance(prop, (ObjectPropertyClass, DataPropertyClass)):
@@ -3474,12 +3654,103 @@ class PopulationContext:
         if not prop:
             # Error logged by get_prop
             return
+            
+        # TKT-002: Track usage count when property is successfully retrieved and used
+        self._property_usage_count[prop_name] = self._property_usage_count.get(prop_name, 0) + 1
+        
         is_functional = self.property_is_functional.get(prop_name, False) # Assume non-functional if not specified
 
         try:
             _set_property_value(individual, prop, value, is_functional)
         except Exception as e:
             pop_logger.error(f"Error setting property '{prop_name}' on individual '{individual.name}' with value '{value}': {e}", exc_info=True)
+    
+    # TKT-002: New method to store data associated with individuals for property access
+    def store_individual_data(self, individual: Thing, data: Dict[str, Any]) -> None:
+        """
+        Store row data associated with an individual for later property lookups.
+        
+        Args:
+            individual: The individual to associate with data
+            data: Dictionary of column data that can be used for property lookup
+        """
+        if individual and hasattr(individual, "name"):
+            self._individual_data_cache[individual.name] = data
+    
+    # TKT-002: New method to retrieve data associated with individuals
+    def get_individual_data(self, individual: Thing) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve data associated with an individual.
+        
+        Args:
+            individual: The individual to get data for
+            
+        Returns:
+            Dictionary of data associated with the individual or None
+        """
+        if individual and hasattr(individual, "name"):
+            return self._individual_data_cache.get(individual.name)
+        return None
+    
+    # TKT-002: New diagnostic method to report property usage statistics
+    def report_property_usage(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Generate a report of property usage statistics.
+        
+        Returns:
+            Dictionary with property usage statistics
+        """
+        unused_properties = [
+            prop_name for prop_name, count in self._property_usage_count.items() 
+            if count == 0
+        ]
+        
+        accessed_but_unused = [
+            prop_name for prop_name in self.defined_properties
+            if self._property_access_count.get(prop_name, 0) > 0 and 
+               self._property_usage_count.get(prop_name, 0) == 0
+        ]
+        
+        most_used = sorted(
+            [(prop_name, count) for prop_name, count in self._property_usage_count.items() if count > 0],
+            key=lambda x: x[1], 
+            reverse=True
+        )[:10]  # Top 10 most used properties
+        
+        report = {
+            "total_properties": len(self.defined_properties),
+            "total_accessed": len([p for p, c in self._property_access_count.items() if c > 0]),
+            "total_used": len([p for p, c in self._property_usage_count.items() if c > 0]),
+            "unused_count": len(unused_properties),
+            "unused_properties": unused_properties,
+            "accessed_but_unused": accessed_but_unused,
+            "most_used": most_used,
+            "property_misses": sorted(list(self._property_misses))
+        }
+        return report
+    
+    def log_property_usage_report(self) -> None:
+        """
+        Log property usage statistics at INFO level.
+        """
+        report = self.report_property_usage()
+        
+        pop_logger.info("TKT-002: Property Usage Report")
+        pop_logger.info(f"  Total properties defined: {report['total_properties']}")
+        pop_logger.info(f"  Properties accessed: {report['total_accessed']}/{report['total_properties']} ({report['total_accessed']/report['total_properties']*100:.1f}%)")
+        pop_logger.info(f"  Properties used (set on individuals): {report['total_used']}/{report['total_properties']} ({report['total_used']/report['total_properties']*100:.1f}%)")
+        
+        if report['unused_count'] > 0:
+            pop_logger.info(f"  Unused properties: {report['unused_count']} properties were never used")
+            pop_logger.debug(f"  Unused property names: {', '.join(sorted(report['unused_properties'][:20]))}{' ...' if len(report['unused_properties']) > 20 else ''}")
+        
+        if report['accessed_but_unused']:
+            pop_logger.warning(f"  TKT-002: {len(report['accessed_but_unused'])} properties were accessed but never successfully used: {', '.join(sorted(report['accessed_but_unused']))}")
+        
+        if report['property_misses']:
+            pop_logger.warning(f"  TKT-002: {len(report['property_misses'])} undefined properties were requested: {', '.join(sorted(report['property_misses']))}")
+        
+        pop_logger.info(f"  Most used properties: {', '.join([f'{name} ({count})' for name, count in report['most_used'][:5]])}")
 
 
 def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_functional: bool) -> None:
@@ -3681,6 +3952,13 @@ def apply_data_property_mappings(
     data_prop_mappings = mappings.get('data_properties', {})
 
     for prop_name, details in data_prop_mappings.items():
+        # TKT-003: Skip properties with no column specified
+        # These are programmatic/config properties like sequencePosition
+        # that will be populated elsewhere (not from data rows)
+        if 'column' not in details:
+            logger.debug(f"Skipping programmatic/config property {entity_name}.{prop_name} - no column specified in mapping")
+            continue
+            
         col_name = details.get('column')
         # Get cast type from mapping, default to string
         data_type_str = details.get('data_type', 'xsd:string')
@@ -3898,7 +4176,8 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
     1. Check for match in EQUIPMENT_NAME_TO_CLASS_MAP
     2. Parse from EQUIPMENT_NAME if contains underscore (FIPCO009_Filler)
     3. Check if name matches or contains a known class name from KNOWN_EQUIPMENT_CLASSES
-    4. Generic string parsing as fallback
+    4. Equipment model inspection (if available)
+    5. Generic string parsing as fallback
     
     Args:
         equipment_name: The equipment name to parse (primary source)
@@ -3931,110 +4210,201 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
     match_method = "None"
     matched_class = None
     
-    # --- Process inputs --- 
+    # --- Process inputs and validate --- 
     if not equipment_name:
         pop_logger.warning("Equipment name is empty or None, cannot parse equipment class")
         return None
         
+    # Use equipment_model parameter if provided, otherwise fall back to model parameter
+    actual_model = equipment_model if equipment_model else model
+    
+    # Log equipment name for debugging
+    pop_logger.debug(f"Attempting to parse equipment class from: '{equipment_name}'")
+    if actual_model:
+        pop_logger.debug(f"Equipment model information: '{actual_model}'")
+    
     # --- Method 1: Direct match from configuration map ---
     if equipment_name and isinstance(equipment_name, str):
-        # Check for matches in the equipment name-to-class mapping
         for pattern, class_name in EQUIPMENT_NAME_TO_CLASS_MAP.items():
             if pattern in equipment_name:
                 match_method = "Config Map"
                 matched_class = class_name
-                pop_logger.debug(f"Found equipment class '{matched_class}' via pattern '{pattern}' in config map")
+                pop_logger.info(f"Found equipment class '{matched_class}' via pattern '{pattern}' in config map")
                 break
                 
     # --- Method 2: Parse from EQUIPMENT_NAME with underscore ---
     if not matched_class and equipment_name and isinstance(equipment_name, str) and '_' in equipment_name:
+        # Split on underscore and take part after the last underscore
         parts = equipment_name.split('_')
-        class_part = parts[-1]  # Take the part after the last underscore
+        class_part = parts[-1].strip()  # Take the part after the last underscore and remove whitespace
 
         # Try to extract base class name by removing trailing digits
         base_class = re.sub(r'\d+$', '', class_part)
+        
+        # Clean up any remaining non-alphanumeric characters
+        base_class = re.sub(r'[^a-zA-Z0-9]', '', base_class)
 
         # Validate the base class name
         if base_class and re.search(r'[a-zA-Z]', base_class):
             # Further validate that this looks like an equipment class and not a line ID
-            if not base_class.startswith("FIPCO"):
+            if not re.match(r'^(FIPCO|LINE)\d*$', base_class, re.IGNORECASE):
                 # Check if this matches or is a substring of a known class
+                match_found = False
                 for known_class in KNOWN_EQUIPMENT_CLASSES:
-                    if base_class == known_class or known_class.startswith(base_class):
-                        match_method = "Name Underscore Parsing"
+                    if base_class.lower() == known_class.lower():
+                        # Exact match (case insensitive)
+                        match_method = "Name Underscore Parsing (Exact Match)"
+                        matched_class = known_class  # Use the properly capitalized version
+                        match_found = True
+                        pop_logger.info(f"Parsed equipment class '{matched_class}' via exact match from '{equipment_name}'")
+                        break
+                    elif known_class.lower().startswith(base_class.lower()):
+                        # Known class starts with our parsed base class - likely a match
+                        match_method = "Name Underscore Parsing (Prefix Match)"
                         matched_class = known_class
-                        pop_logger.debug(f"Parsed equipment class '{matched_class}' from underscore format '{equipment_name}'")
+                        match_found = True
+                        pop_logger.info(f"Parsed equipment class '{matched_class}' via prefix match from '{equipment_name}'")
                         break
                 
                 # If we didn't find a match in known classes but have a valid class name
-                if not matched_class and len(base_class) >= 3:
+                if not match_found and len(base_class) >= 3:
                     match_method = "Name Underscore Parsing (New Class)"
                     matched_class = base_class
-                    pop_logger.debug(f"Parsed potential new equipment class '{matched_class}' from '{equipment_name}'")
+                    pop_logger.info(f"Parsed potential new equipment class '{matched_class}' from '{equipment_name}'")
             else:
                 pop_logger.debug(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
     
-    # --- Method 3: Known Class Matching ---
+    # --- Method 3: Known Class Matching (without underscore) ---
     if not matched_class and equipment_name and isinstance(equipment_name, str):
-        # Attempt exact match with known classes (case-insensitive)
-        for known_class in KNOWN_EQUIPMENT_CLASSES:
-            # Check if the equipment name IS the class name (with optional trailing digits)
-            class_pattern = re.compile(f"^{known_class}\\d*$", re.IGNORECASE)
-            if class_pattern.match(equipment_name):
-                match_method = "Known Class Exact Match"
-                matched_class = known_class
-                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}'")
-                break
+        # Remove any line ID prefix first (e.g., FIPCO009, LINE1)
+        cleaned_name = re.sub(r'^(FIPCO|LINE)\d*_?', '', equipment_name)
+        
+        # Extract parenthesized content if present - often contains class info
+        paren_match = re.search(r'\((.*?)\)', cleaned_name)
+        if paren_match:
+            paren_content = paren_match.group(1).strip()
+            pop_logger.debug(f"Found parenthesized content: '{paren_content}'")
             
-            # Check if name starts with known class followed by numbers
-            if equipment_name.startswith(known_class):
-                # Check if what follows is just digits
-                remainder = equipment_name[len(known_class):]
-                if not remainder or remainder.isdigit() or remainder[0].isdigit():
-                    match_method = "Known Class Prefix Match"
+            # Try to extract from parenthesized content first (higher priority)
+            for known_class in KNOWN_EQUIPMENT_CLASSES:
+                if known_class.lower() in paren_content.lower():
+                    match_method = "Parenthesized Content Match"
                     matched_class = known_class
-                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix")
+                    pop_logger.info(f"Extracted equipment class '{matched_class}' from parenthesized content in '{equipment_name}'")
                     break
+        
+        if not matched_class:
+            # Remove trailing numbers
+            base_name = re.sub(r'\d+$', '', cleaned_name)
+            pop_logger.debug(f"Cleaned base name for matching: '{base_name}'")
             
-            # Check if a known class is embedded within the name
-            if known_class in equipment_name:
-                match_method = "Known Class Substring Match"
-                matched_class = known_class
-                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}'")
-                break
+            # Clean up any remaining non-alphanumeric characters for better matching
+            cleaned_base = re.sub(r'[^a-zA-Z0-9\s]', '', base_name).strip()
+            
+            # Try various matching strategies with known classes
+            for known_class in KNOWN_EQUIPMENT_CLASSES:
+                # 1. Exact match with known classes (case-insensitive)
+                if cleaned_base.lower() == known_class.lower():
+                    match_method = "Known Class Exact Match"
+                    matched_class = known_class  # Use the properly capitalized version
+                    pop_logger.info(f"Matched equipment name '{equipment_name}' to known class '{matched_class}' (exact match)")
+                    break
+                
+                # 2. Check if cleaned name starts with known class (case-insensitive)
+                if cleaned_base.lower().startswith(known_class.lower()):
+                    # Ensure what follows isn't alphabetic (could be a longer but different class name)
+                    remainder = cleaned_base[len(known_class):].strip()
+                    if not remainder or not re.search(r'[a-zA-Z]', remainder):
+                        match_method = "Known Class Prefix Match"
+                        matched_class = known_class
+                        pop_logger.info(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix match")
+                        break
+                
+                # 3. Check if a known class is embedded within the name
+                if known_class.lower() in cleaned_base.lower():
+                    match_method = "Known Class Substring Match" 
+                    matched_class = known_class
+                    pop_logger.info(f"Found equipment class '{matched_class}' embedded within '{equipment_name}'")
+                    break
+                
+                # 4. Check for word boundary matches (most precise)
+                word_pattern = r'\b' + re.escape(known_class.lower()) + r'\b'
+                if re.search(word_pattern, cleaned_base.lower()):
+                    match_method = "Known Class Word Match"
+                    matched_class = known_class
+                    pop_logger.info(f"Found equipment class '{matched_class}' as a complete word in '{equipment_name}'")
+                    break
     
-    # --- Method 4: Equipment Model Inspection (if available) ---
-    if not matched_class and equipment_model and isinstance(equipment_model, str):
-        model_to_use = equipment_model
+    # --- Method 4: Equipment Model Inspection ---
+    if not matched_class and actual_model and isinstance(actual_model, str):
+        model_to_use = actual_model.strip()
+        pop_logger.debug(f"Attempting to parse class from equipment model: '{model_to_use}'")
         
         # Look for known classes in the model information
         for known_class in KNOWN_EQUIPMENT_CLASSES:
-            if known_class in model_to_use:
+            if known_class.lower() in model_to_use.lower():
                 match_method = "Model-Based Match"
                 matched_class = known_class
-                pop_logger.debug(f"Extracted equipment class '{matched_class}' from model '{model_to_use}'")
+                pop_logger.info(f"Extracted equipment class '{matched_class}' from model '{model_to_use}'")
                 break
     
-    # --- Method 5: Generic Extraction (most permissive, last resort) ---
+    # --- Method 5: Generic String Extraction (most permissive, last resort) ---
     if not matched_class and equipment_name and isinstance(equipment_name, str):
-        # Try to extract a class-like string if it starts with capital letter and has no spaces
-        words = re.findall(r'[A-Z][a-zA-Z]*', equipment_name)
+        pop_logger.debug(f"Attempting generic string extraction as last resort for '{equipment_name}'")
+        # Remove any line ID prefix first
+        cleaned_name = re.sub(r'^(FIPCO|LINE)\d*_?', '', equipment_name)
+        
+        # Try to extract a class-like string if it has proper capitalization
+        words = re.findall(r'[A-Z][a-zA-Z]*', cleaned_name)
         if words:
+            candidate_classes = []
             for word in words:
-                # Look for words that might be equipment classes (proper noun-like)
-                if len(word) > 3 and word not in ['LINE', 'FIPCO']:
+                # Identify potential equipment class names (proper noun-like with meaningful length)
+                if len(word) > 3 and word not in ['LINE', 'FIPCO', 'TEST', 'TEMP', 'UNIT']:
                     base_class = re.sub(r'\d+$', '', word)
+                    candidate_classes.append((base_class, len(base_class)))
+            
+            # Sort candidates by length (prefer longer class names as they're typically more specific)
+            if candidate_classes:
+                # Sort by length in descending order
+                sorted_candidates = sorted(candidate_classes, key=lambda x: x[1], reverse=True)
+                best_candidate = sorted_candidates[0][0]
+                
+                # Check if the best candidate is similar to a known class
+                similar_to_known = False
+                most_similar_known = None
+                for known_class in KNOWN_EQUIPMENT_CLASSES:
+                    # Simple similarity check - case insensitive starts with
+                    if known_class.lower().startswith(best_candidate.lower()) or best_candidate.lower().startswith(known_class.lower()):
+                        similar_to_known = True
+                        most_similar_known = known_class
+                        break
+                
+                if similar_to_known and most_similar_known:
+                    match_method = "Generic Extraction (Similar to Known Class)"
+                    matched_class = most_similar_known
+                    pop_logger.info(f"Extracted equipment class '{matched_class}' via similarity to extracted candidate '{best_candidate}'")
+                else:
                     match_method = "Generic String Extraction"
-                    matched_class = base_class
-                    pop_logger.debug(f"Extracted potential equipment class '{matched_class}' via generic parsing")
-                    break
+                    matched_class = best_candidate
+                    pop_logger.info(f"Extracted potential equipment class '{matched_class}' via generic parsing from candidates: {[c[0] for c in candidate_classes]}")
     
-    # Log the result
+    # Final validation and logging
     if matched_class:
-        pop_logger.info(f"Parsed equipment class '{matched_class}' from '{equipment_name}' using method: {match_method}")
+        # Ensure the matched class has proper capitalization if it's a known class
+        for known_class in KNOWN_EQUIPMENT_CLASSES:
+            if matched_class.lower() == known_class.lower():
+                matched_class = known_class  # Use the properly capitalized version
+                break
+        
+        pop_logger.info(f"Successfully parsed equipment class '{matched_class}' from '{equipment_name}' using method: {match_method}")
         return matched_class
     else:
-        pop_logger.warning(f"Could not extract valid equipment class from EQUIPMENT_NAME='{equipment_name}'")
+        # More detailed logging for troubleshooting
+        if equipment_type and equipment_type.lower() == 'equipment':
+            pop_logger.warning(f"CRITICAL: Could not extract valid equipment class from EQUIPMENT_NAME='{equipment_name}' with type 'Equipment'")
+        else:
+            pop_logger.warning(f"Could not extract valid equipment class from EQUIPMENT_NAME='{equipment_name}'")
         return None
 
 def process_equipment_and_class(
@@ -4144,7 +4514,8 @@ def process_equipment_and_class(
     if not eq_class_base_name:
         parsed_class = parse_equipment_class(
             equipment_name=eq_name,
-            equipment_type=eq_type
+            equipment_type=eq_type,
+            equipment_model=row.get('EQUIPMENT_MODEL', '') # Add potential model information
         )
         if parsed_class:
             eq_class_base_name = parsed_class
@@ -4168,11 +4539,18 @@ def process_equipment_and_class(
     
     # --- EQUIPMENT CLASS INDIVIDUAL CREATION ---
     
-    # Create the EquipmentClass individual using a stable identifier
+    # CRITICAL FIX: Use the class base name as the unique identifier
+    # This ensures only one EquipmentClass individual per type (e.g., one :Filler)
     try:
+        # Key modification for TKT-001: Use eq_class_base_name directly as unique ID 
+        # rather than using the full equipment name
+        eq_class_unique_id = eq_class_base_name
+        
+        pop_logger.debug(f"Creating/retrieving EquipmentClass individual with unique ID: '{eq_class_unique_id}'")
+        
         eq_class_ind = get_or_create_individual(
             cls_EquipmentClass, 
-            eq_class_base_name, 
+            eq_class_unique_id, 
             context.onto, 
             all_created_individuals_by_uid, 
             add_labels=eq_class_labels
@@ -4180,7 +4558,7 @@ def process_equipment_and_class(
         
         # Set the sequence position property during population, if available
         eq_class_sequence_map = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('classSequencePosition')
-        if eq_class_ind and pass_num == 1 and eq_class_sequence_map:
+        if eq_class_ind and pass_num == 1:
             # Check if the sequence is from the DEFAULT_EQUIPMENT_SEQUENCE or from a column
             sequence_position = None
             
@@ -4188,6 +4566,11 @@ def process_equipment_and_class(
             if eq_class_base_name in KNOWN_EQUIPMENT_CLASSES:
                 sequence_position = KNOWN_EQUIPMENT_CLASSES.index(eq_class_base_name) + 1
                 pop_logger.debug(f"Retrieved sequence position {sequence_position} for {eq_class_base_name} from KNOWN_EQUIPMENT_CLASSES")
+            
+            # TKT-005: Explicitly set equipmentClassId to ensure it matches the base name
+            # This ensures the EquipmentClass can be properly identified and linked
+            pop_logger.info(f"TKT-005: Setting equipmentClassId='{eq_class_base_name}' for EquipmentClass individual '{eq_class_unique_id}'")
+            context.set_prop(eq_class_ind, "equipmentClassId", eq_class_base_name)
             
             # Apply data property mappings for EquipmentClass
             if "EquipmentClass" in property_mappings:
@@ -4197,10 +4580,15 @@ def process_equipment_and_class(
             eq_class_info_out = (eq_class_base_name, eq_class_ind, sequence_position)
     except Exception as e:
         pop_logger.error(f"Error creating EquipmentClass '{eq_class_base_name}': {e}")
+        # Return meaningful error details
+        if not eq_class_base_name:
+            pop_logger.error("Failed due to missing class base name")
+        elif not cls_EquipmentClass:
+            pop_logger.error("Failed due to missing EquipmentClass class in ontology")
     
     # --- EQUIPMENT INDIVIDUAL CREATION ---
     
-    # Only create equipment individual if we have a valid equipment id
+    # CRITICAL FIX: Ensure we use the equipment ID as the unique identifier
     if eq_id:
         # Create descriptive labels for Equipment
         eq_labels = []
@@ -4216,11 +4604,16 @@ def process_equipment_and_class(
         if eq_class_base_name:
             eq_labels.append(f"Type: {eq_class_base_name}")
             
-        # Create the Equipment individual
+        # Create the Equipment individual using equipment ID as the unique identifier
         try:
+            # Key modification for TKT-002-2c: Explicitly use EQUIPMENT_ID for unique identification
+            eq_unique_id = eq_id
+            
+            pop_logger.debug(f"Creating/retrieving Equipment individual with unique ID: '{eq_unique_id}'")
+            
             eq_ind = get_or_create_individual(
                 cls_Equipment,
-                eq_id,  # Use equipment ID as base for stable identifier
+                eq_unique_id,  # Use equipment ID as base for stable identifier
                 context.onto,
                 all_created_individuals_by_uid,
                 add_labels=eq_labels
@@ -4231,17 +4624,58 @@ def process_equipment_and_class(
                 if "Equipment" in property_mappings:
                     apply_data_property_mappings(eq_ind, property_mappings["Equipment"], row, context, "Equipment", pop_logger)
                 
-                # --- MANUAL PROPERTY LINKING OUTSIDE OF OBJECT PROPERTY MAPPINGS ---
+                # --- TKT-005: EXPLICIT EQUIPMENT TO CLASS LINKING ---
                 
-                # 1. Link equipment to its class - add memberOfClass property (handled by object_prop_maps in pass 2 as well)
+                # Ensure memberOfClass relationship is established between Equipment and EquipmentClass
                 if eq_ind and eq_class_ind:
                     # Check if the memberOfClass property is available before attempting to set it
                     member_of_class_prop = context.get_prop("memberOfClass")
                     if member_of_class_prop:
+                        # Set the memberOfClass relationship
                         context.set_prop(eq_ind, "memberOfClass", eq_class_ind)
-                        pop_logger.debug(f"Linked equipment '{eq_name}' to its class '{eq_class_base_name}'")
+                        pop_logger.info(f"TKT-005: Linked equipment '{eq_id}' to its class '{eq_class_base_name}' via memberOfClass property")
                     else:
-                        pop_logger.warning(f"Required property mapping 'memberOfClass' not found. Cannot link equipment to class.")
+                        pop_logger.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to class.")
+                elif not eq_class_ind:
+                    pop_logger.error(f"CRITICAL: Failed to establish memberOfClass link - missing class individual for '{eq_class_base_name}'")
+                
+                # TKT-002: Set sequencePosition property on the Equipment individual based on its class
+                # First check if the sequencePosition property exists
+                sequence_position_prop = context.get_prop("sequencePosition")
+                if sequence_position_prop:
+                    # Determine sequence position from equipment class
+                    position_value = None
+                    
+                    # Try to get line ID for line-specific sequence positions
+                    line_id = None
+                    if line_ind:
+                        line_id_prop = context.get_prop("lineId")
+                        if line_id_prop:
+                            line_id = getattr(line_ind, line_id_prop.python_name, None)
+                    
+                    # TKT-006: Enhanced logic for finding sequence position based on equipment class
+                    if eq_class_base_name:
+                        # First check if there's a line-specific sequence
+                        from ontology_generator.config import LINE_SPECIFIC_EQUIPMENT_SEQUENCE
+                        if line_id and line_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE and eq_class_base_name in LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id]:
+                            position_value = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(eq_class_base_name)
+                            pop_logger.debug(f"Using line-specific sequence position {position_value} for {eq_class_base_name} on line {line_id}")
+                        
+                        # Otherwise, use the default sequence from DEFAULT_EQUIPMENT_SEQUENCE
+                        if position_value is None:
+                            from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
+                            position_value = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
+                            if position_value:
+                                pop_logger.debug(f"Using default sequence position {position_value} for {eq_class_base_name}")
+                    
+                    # Set the sequencePosition if we found a value
+                    if position_value is not None:
+                        context.set_prop(eq_ind, "sequencePosition", position_value)
+                        pop_logger.debug(f"TKT-006: Set sequencePosition={position_value} for equipment {eq_id} of class {eq_class_base_name}")
+                    else:
+                        pop_logger.warning(f"TKT-006: No sequence position found for equipment class {eq_class_base_name}")
+                else:
+                    pop_logger.warning(f"Required property 'sequencePosition' not found. Cannot set sequence position.")
                 
                 # 2. Link equipment to its production line if available
                 if eq_ind and line_ind:
@@ -4265,6 +4699,45 @@ def process_equipment_and_class(
             pop_logger.error(f"Error creating Equipment '{eq_id}': {e}")
     
     return eq_ind, eq_class_ind, eq_class_info_out
+
+def process_equipment(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    line_ind: Optional[Thing] = None,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
+) -> Tuple[Optional[Thing], Optional[Thing], Optional[str]]:
+    """
+    Process equipment data to create/retrieve Equipment and EquipmentClass individuals.
+    
+    This is a wrapper around process_equipment_and_class to maintain backward compatibility.
+    
+    Args:
+        row: The data row/dict being processed.
+        context: The population context with ontology, classes and properties.
+        line_ind: Optional production line individual to link to (if available).
+        property_mappings: Property mappings dictionary for populating individuals.
+    
+    Returns:
+        Tuple: (equipment_ind, equipment_class_ind, equipment_class_name)
+               - equipment_ind: Created/retrieved Equipment individual (or None)
+               - equipment_class_ind: Created/retrieved EquipmentClass individual (or None)
+               - equipment_class_name: Name of the equipment class (or None)
+    """
+    all_created_individuals_by_uid = {}  # Create empty registry for the single call
+    
+    eq_ind, eq_class_ind, eq_class_info = process_equipment_and_class(
+        row=row,
+        context=context,
+        property_mappings=property_mappings,
+        all_created_individuals_by_uid=all_created_individuals_by_uid,
+        line_ind=line_ind,
+        pass_num=1
+    )
+    
+    # Extract the class name from the tuple if available
+    eq_class_name = eq_class_info[0] if eq_class_info and len(eq_class_info) > 0 else None
+    
+    return eq_ind, eq_class_ind, eq_class_name
 
 
 ===========================================
@@ -4611,13 +5084,27 @@ def process_event_record(
     if not state_ind:
         pop_logger.warning(f"Row {row_num}: Missing state individual for event. Skipping event creation.")
         return None, None
-    if not (equipment_ind or line_ind):
-        pop_logger.warning(f"Row {row_num}: Missing both equipment and line individuals for event. Need at least one resource. Skipping event creation.")
-        return None, None
 
-    # Determine the main resource involved (equipment or line)
-    resource_ind = equipment_ind if equipment_ind else line_ind
-    resource_type = "Equipment" if equipment_ind else "Line"
+    # TKT-003: Strictly validate that the appropriate resource individual is available based on EQUIPMENT_TYPE
+    equipment_type = row.get('EQUIPMENT_TYPE', '').strip()
+    
+    if equipment_type == 'Line':
+        if not line_ind:
+            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Line' but no line_ind was provided. Cannot create line event.")
+            return None, None
+        resource_ind = line_ind
+        resource_type = "Line"
+    elif equipment_type == 'Equipment':
+        if not equipment_ind:
+            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Equipment' but no equipment_ind was provided. Cannot create equipment event.")
+            return None, None
+        resource_ind = equipment_ind
+        resource_type = "Equipment"
+    else:
+        # Provide detailed warning for unknown EQUIPMENT_TYPE
+        pop_logger.warning(f"Row {row_num}: Unknown EQUIPMENT_TYPE '{equipment_type}'. Must be either 'Line' or 'Equipment'. Skipping event creation.")
+        return None, None
+    
     resource_id = None
     
     # Extract resource ID with property existence check
@@ -4701,55 +5188,57 @@ def process_event_record(
         
         # 2. Link to OperationalState - critical
         # Check for hasOperationalState property existence
-        has_state_prop = context.get_prop("hasOperationalState")
+        has_state_prop = context.get_prop("eventHasState")
         if has_state_prop:
-            context.set_prop(event_ind, "hasOperationalState", state_ind)
+            context.set_prop(event_ind, "eventHasState", state_ind)
         else:
-            pop_logger.warning(f"Row {row_num}: Required property 'hasOperationalState' not found. Cannot link event to state.")
+            pop_logger.warning(f"Row {row_num}: Required property 'eventHasState' not found. Cannot link event to state.")
         
         # 3. Link to OperationalReason if available
         if reason_ind:
             # Check for hasOperationalReason property existence
-            has_reason_prop = context.get_prop("hasOperationalReason")
+            has_reason_prop = context.get_prop("eventHasReason")
             if has_reason_prop:
-                context.set_prop(event_ind, "hasOperationalReason", reason_ind)
+                context.set_prop(event_ind, "eventHasReason", reason_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Required property 'hasOperationalReason' not found. Cannot link event to reason.")
+                pop_logger.warning(f"Row {row_num}: Required property 'eventHasReason' not found. Cannot link event to reason.")
         
         # 4. Link to primary resource (Equipment or ProductionLine) - critical
-        # Check for involvesResource property existence
+        # TKT-003: Ensure events link to the correct resource based on EQUIPMENT_TYPE
         involves_resource_prop = context.get_prop("involvesResource")
         if involves_resource_prop:
+            # Set involvesResource to only the appropriate resource type (equipment or line)
             context.set_prop(event_ind, "involvesResource", resource_ind)
+            pop_logger.debug(f"Row {row_num}: Linked event to {resource_type} '{resource_ind.name}' via involvesResource")
         else:
             pop_logger.warning(f"Row {row_num}: Required property 'involvesResource' not found. Cannot link event to resource.")
         
         # 5. Link to Shift if available
         if shift_ind:
             # Check for occursInShift property existence
-            occurs_in_shift_prop = context.get_prop("occursInShift")
+            occurs_in_shift_prop = context.get_prop("duringShift")
             if occurs_in_shift_prop:
-                context.set_prop(event_ind, "occursInShift", shift_ind)
+                context.set_prop(event_ind, "duringShift", shift_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'occursInShift' not found. Cannot link event to shift.")
+                pop_logger.warning(f"Row {row_num}: Property 'duringShift' not found. Cannot link event to shift.")
         
         # 6. Link to Material if available and context equipment/line supports it
         if material_ind:
-            # Check for involvesMaterial property existence
-            involves_material_prop = context.get_prop("involvesMaterial")
-            if involves_material_prop:
-                context.set_prop(event_ind, "involvesMaterial", material_ind)
+            # Check for involvesMaterial property existence (using consumedMaterial)
+            consumed_material_prop = context.get_prop("consumedMaterial")
+            if consumed_material_prop:
+                context.set_prop(event_ind, "consumedMaterial", material_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'involvesMaterial' not found. Cannot link event to material.")
+                pop_logger.warning(f"Row {row_num}: Property 'consumedMaterial' not found. Cannot link event to material.")
         
         # 7. Link to ProductionRequest if available
         if request_ind:
-            # Check for involvesRequest property existence
-            involves_request_prop = context.get_prop("involvesRequest")
-            if involves_request_prop:
-                context.set_prop(event_ind, "involvesRequest", request_ind)
+            # Check for involvesRequest property existence (using associatedRequest)
+            associated_request_prop = context.get_prop("associatedRequest")
+            if associated_request_prop:
+                context.set_prop(event_ind, "associatedRequest", request_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'involvesRequest' not found. Cannot link event to production request.")
+                pop_logger.warning(f"Row {row_num}: Property 'associatedRequest' not found. Cannot link event to production request.")
     
     # Create event context tuple for post-processing
     event_context = (event_ind, resource_ind, resource_type) if event_ind else None
@@ -4814,6 +5303,12 @@ def process_event_related(
     resource_base_id = None
     resource_type_hint = row.get('EQUIPMENT_TYPE', 'Equipment').strip()
 
+    # Verify that both the required individuals (line_ind or equipment_ind) are available based on EQUIPMENT_TYPE
+    if resource_type_hint == 'Line' and not line_ind:
+        pop_logger.warning(f"Row {actual_row_num}: EQUIPMENT_TYPE is 'Line' but no line_ind was provided. Event processing may fail.")
+    elif resource_type_hint == 'Equipment' and not equipment_ind:
+        pop_logger.warning(f"Row {actual_row_num}: EQUIPMENT_TYPE is 'Equipment' but no equipment_ind was provided. Event processing may fail.")
+        
     if resource_type_hint == 'Line':
         if line_ind:
             resource_base_id = line_ind.lineId[0] if hasattr(line_ind, 'lineId') and line_ind.lineId else line_ind.name
@@ -4881,11 +5376,13 @@ from typing import Dict, List, Tuple, Set, Optional
 from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 
 from ontology_generator.utils.logging import link_logger
+from ontology_generator.config import DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
 
 def link_equipment_events_to_line_events(onto: Ontology,
                                         created_events_context: List[Tuple[Thing, Thing, str]],
                                         defined_classes: Dict[str, ThingClass],
-                                        defined_properties: Dict[str, PropertyClass]) -> int:
+                                        defined_properties: Dict[str, PropertyClass],
+                                        event_buffer_minutes: Optional[int] = None) -> int:
     """
     Second pass function to link equipment EventRecords to their containing line EventRecords,
     using relaxed temporal containment logic.
@@ -4899,6 +5396,8 @@ def link_equipment_events_to_line_events(onto: Ontology,
                                 where resource_type is "Equipment" or "Line"
         defined_classes: Dictionary of defined classes
         defined_properties: Dictionary of defined properties
+        event_buffer_minutes: Optional time buffer in minutes for temporal linking,
+                             overrides the default value if provided
         
     Returns:
         The number of links created
@@ -4917,6 +5416,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
     prop_occursDuring = defined_properties.get("occursDuring")
     prop_involvesResource = defined_properties.get("involvesResource")
     prop_isPartOfProductionLine = defined_properties.get("isPartOfProductionLine")
+    prop_eventId = defined_properties.get("eventId")  # Added for better event identification
 
     if not all([cls_EventRecord, cls_ProductionLine, cls_Equipment, prop_isPartOfLineEvent, prop_startTime, prop_endTime]):
         link_logger.error("Missing essential classes or properties (EventRecord, ProductionLine, Equipment, isPartOfLineEvent, startTime, endTime) for linking. Aborting.")
@@ -4925,28 +5425,61 @@ def link_equipment_events_to_line_events(onto: Ontology,
     # --- Configure Linking Parameters ---
     # Time buffer for edge cases: allows equipment events that start slightly before/after line events
     # This helps account for minor clock sync issues or timing discrepancies
-    TIME_BUFFER_MINUTES = 5
+    TIME_BUFFER_MINUTES = event_buffer_minutes if event_buffer_minutes is not None else DEFAULT_EVENT_LINKING_BUFFER_MINUTES
     time_buffer = timedelta(minutes=TIME_BUFFER_MINUTES)
     
     # Default duration to assume for events with missing end times
-    DEFAULT_EVENT_DURATION_HOURS = 2
-    default_duration = timedelta(hours=DEFAULT_EVENT_DURATION_HOURS)
+    DEFAULT_DURATION_HOURS = DEFAULT_EVENT_DURATION_HOURS
+    default_duration = timedelta(hours=DEFAULT_DURATION_HOURS)
     
-    link_logger.info(f"Using temporal linking parameters: Buffer={TIME_BUFFER_MINUTES} minutes, Default Duration={DEFAULT_EVENT_DURATION_HOURS} hours")
+    link_logger.info(f"Using temporal linking parameters: Buffer={TIME_BUFFER_MINUTES} minutes, Default Duration={DEFAULT_DURATION_HOURS} hours")
 
     # --- Prepare Lookups ---
     line_events_by_line: Dict[Thing, List[Tuple[Thing, Optional[datetime], Optional[datetime]]]] = defaultdict(list)
     equipment_events_to_link: List[Tuple[Thing, Thing, Optional[datetime], Optional[datetime]]] = []  # (eq_event, line_ind, start, end)
 
+    # TKT-003: Ensure we're only processing events with the correct resource type
+    line_events_count = 0
+    equipment_events_count = 0
+    skipped_wrong_type_count = 0
+    
     # Create tracking for statistics and diagnostics
     missing_start_count = 0
     missing_end_count = 0
     inferred_end_count = 0
     
+    # Added tracking for equipment events with no line association
+    equipment_without_line = []
+    
     link_logger.debug("Indexing created events...")
     processed_intervals = 0
     skipped_intervals = 0
+    
+    # Added tracking for equipment identification
+    equipment_event_ids = {}  # Map event ind to human-readable event ID
+    line_event_ids = {}       # Map event ind to human-readable event ID
+    
     for event_ind, resource_ind, resource_type in created_events_context:
+        # TKT-003: Verify that resource_type accurately reflects the actual resource
+        if resource_type == "Line" and not isinstance(resource_ind, cls_ProductionLine):
+            link_logger.warning(f"Event {event_ind.name} has resource_type 'Line' but the resource is not a ProductionLine. Skipping.")
+            skipped_wrong_type_count += 1
+            continue
+        elif resource_type == "Equipment" and not isinstance(resource_ind, cls_Equipment):
+            link_logger.warning(f"Event {event_ind.name} has resource_type 'Equipment' but the resource is not an Equipment. Skipping.")
+            skipped_wrong_type_count += 1
+            continue
+            
+        # Capture event ID for better logging (if eventId property exists)
+        if prop_eventId:
+            event_id = getattr(event_ind, prop_eventId.python_name, event_ind.name)
+            if resource_type == "Equipment":
+                equipment_event_ids[event_ind] = event_id
+                equipment_events_count += 1
+            else:
+                line_event_ids[event_ind] = event_id
+                line_events_count += 1
+        
         # Get time interval using the occursDuring property
         time_interval_ind = None
         if prop_occursDuring:
@@ -4957,7 +5490,8 @@ def link_equipment_events_to_line_events(onto: Ontology,
         
         # Skip if no interval exists
         if not time_interval_ind:
-            link_logger.warning(f"Event {event_ind.name} has no associated TimeInterval. Cannot use for linking.")
+            event_id = getattr(event_ind, prop_eventId.python_name, event_ind.name) if prop_eventId else event_ind.name
+            link_logger.warning(f"Event {event_id} has no associated TimeInterval. Cannot use for linking.")
             skipped_intervals += 1
             continue
         
@@ -4977,7 +5511,8 @@ def link_equipment_events_to_line_events(onto: Ontology,
                 missing_end_count += 1
                 
         except Exception as e:
-            link_logger.warning(f"Error retrieving time properties from interval {time_interval_ind.name}: {e}")
+            event_id = getattr(event_ind, prop_eventId.python_name, event_ind.name) if prop_eventId else event_ind.name
+            link_logger.warning(f"Error retrieving time properties from interval for event {event_id}: {e}")
             skipped_intervals += 1
             continue
         
@@ -4985,15 +5520,16 @@ def link_equipment_events_to_line_events(onto: Ontology,
         # Explicitly check if it's a datetime to avoid type errors later
         if not isinstance(start_time, datetime):
             interval_name = getattr(time_interval_ind, 'name', 'UnnamedInterval')
-            link_logger.warning(f"Event {event_ind.name} has invalid or missing start time in interval {interval_name}. Cannot use for linking.")
+            event_id = getattr(event_ind, prop_eventId.python_name, event_ind.name) if prop_eventId else event_ind.name
+            link_logger.warning(f"Event {event_id} has invalid or missing start time in interval {interval_name}. Cannot use for linking.")
             skipped_intervals += 1
             continue  # Skip this event for linking if start time is bad
 
-        # Check if it's a line event or equipment event
+        # TKT-003: Check if it's a line event or equipment event strictly by resource_type
         if resource_type == "Line":
             # It's a line event
             line_events_by_line[resource_ind].append((event_ind, start_time, end_time))
-            link_logger.debug(f"Indexed line event {event_ind.name} for line {resource_ind.name}")
+            link_logger.debug(f"Indexed line event {getattr(event_ind, prop_eventId.python_name, event_ind.name) if prop_eventId else event_ind.name} for line {resource_ind.name}")
         elif resource_type == "Equipment":
             # It's an equipment event, find its associated line
             associated_line_ind = None
@@ -5005,14 +5541,38 @@ def link_equipment_events_to_line_events(onto: Ontology,
             
             if associated_line_ind:
                 equipment_events_to_link.append((event_ind, associated_line_ind, start_time, end_time))
-                link_logger.debug(f"Found equipment event {event_ind.name} for equipment {resource_ind.name} with line {associated_line_ind.name}")
+                link_logger.debug(f"Found equipment event {getattr(event_ind, prop_eventId.python_name, event_ind.name) if prop_eventId else event_ind.name} for equipment {resource_ind.name} with line {associated_line_ind.name}")
             else:
-                link_logger.debug(f"Equipment event {event_ind.name} has no associated line. Cannot link.")
+                event_id = getattr(event_ind, prop_eventId.python_name, event_ind.name) if prop_eventId else event_ind.name
+                equipment_without_line.append((event_id, resource_ind.name))
+                link_logger.warning(f"Equipment event {event_id} for equipment {resource_ind.name} has no associated line. Cannot link.")
+
+    # TKT-003: Log the counts of events by type for verification
+    link_logger.info(f"TKT-003: Event type counts - Line events: {line_events_count}, Equipment events: {equipment_events_count}")
+    if skipped_wrong_type_count > 0:
+        link_logger.warning(f"TKT-003: Skipped {skipped_wrong_type_count} events due to resource type mismatch")
+    
+    # Log lines with no events
+    lines_with_no_events = set()
+    all_lines = onto.search(type=cls_ProductionLine)
+    for line in all_lines:
+        if line not in line_events_by_line:
+            lines_with_no_events.add(line.name)
 
     link_logger.info(f"Indexed {len(line_events_by_line)} lines with line events.")
     link_logger.info(f"Found {len(equipment_events_to_link)} equipment events with context to potentially link.")
     link_logger.info(f"Processed {processed_intervals} valid intervals, skipped {skipped_intervals} invalid/incomplete intervals.")
     link_logger.info(f"Time data statistics: Missing start times: {missing_start_count}, Missing end times: {missing_end_count}")
+    
+    # Log lines with no events
+    if lines_with_no_events:
+        line_count = len(lines_with_no_events)
+        link_logger.warning(f"Found {line_count} lines with no associated events. First 5: {', '.join(list(lines_with_no_events)[:5])}")
+    
+    # Log equipment with no line association
+    if equipment_without_line:
+        eq_count = len(equipment_without_line)
+        link_logger.warning(f"Found {eq_count} equipment events with no line association. First 5: {[f'{eid} ({equ})' for eid, equ in equipment_without_line[:5]]}")
     
     if processed_intervals == 0 and (len(line_events_by_line) > 0 or len(equipment_events_to_link) > 0):
         link_logger.warning("Processed events but found 0 valid time intervals. Linking will likely fail.")
@@ -5027,11 +5587,28 @@ def link_equipment_events_to_line_events(onto: Ontology,
     failed_events = 0
     linking_methods_used = defaultdict(int)
     
+    # Enhanced failure tracking - TKT-004
+    failed_eq_events = []
+    
+    # Track failure reasons
+    failure_categories = {
+        "no_line_events": 0,           # Line has no events at all
+        "no_temporal_match": 0,        # No temporal match found between equipment and line events
+        "time_gap_too_large": 0,       # Time gap between equipment and nearest line event exceeds buffer
+        "equipment_outside_range": 0,   # Equipment event completely outside any line event's range
+        "other": 0                     # Other unclassified failures
+    }
+    
+    # Track nearest miss data for analysis
+    nearest_misses = []
+    
     link_logger.info("Attempting to link equipment events to containing line events...")
     with onto:  # Use ontology context for modifications
         for eq_event_ind, line_ind, eq_start, eq_end in equipment_events_to_link:
             potential_parents = line_events_by_line.get(line_ind, [])
             parent_found = False
+            
+            eq_id = equipment_event_ids.get(eq_event_ind, eq_event_ind.name)
 
             # Equipment start time must be valid (already checked during indexing)
             if not isinstance(eq_start, datetime):
@@ -5043,10 +5620,37 @@ def link_equipment_events_to_line_events(onto: Ontology,
                 inferred_eq_end = eq_start + default_duration
                 inferred_end_count += 1
             
+            # Track failed event details - TKT-004
+            event_details = {
+                "event_id": eq_id,
+                "line": line_ind.name,
+                "start_time": eq_start,
+                "end_time": eq_end,
+                "inferred_end_time": inferred_eq_end,
+                "potential_parents_count": len(potential_parents),
+                "nearest_line_event": None,
+                "nearest_line_event_gap": None,
+                "failure_reason": None
+            }
+                
+            # Check if there are no line events at all for this line
+            if not potential_parents:
+                failure_categories["no_line_events"] += 1
+                event_details["failure_reason"] = "No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation."
+                failed_eq_events.append(event_details)
+                failed_events += 1
+                link_logger.warning(f"Equipment event {eq_id} has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line {line_ind.name}. Verify source data.")
+                continue
+                
+            # Track nearest line event for diagnostic purposes
+            nearest_line_event = None
+            min_gap = timedelta(days=999)  # A very large initial gap
+            
             for line_event_ind, line_start, line_end in potential_parents:
                 # Line event start time must be valid (defensive check)
                 if not isinstance(line_start, datetime):
-                    link_logger.debug(f"Skipping line event {line_event_ind.name} - invalid start time")
+                    line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
+                    link_logger.debug(f"Skipping line event {line_id} - invalid start time")
                     continue
 
                 # --- Enhanced Temporal Containment Logic ---
@@ -5056,20 +5660,71 @@ def link_equipment_events_to_line_events(onto: Ontology,
                 # Diagnostic information for logging interval comparison details
                 eq_interval_str = f"{eq_start}" + (f" - {eq_end}" if isinstance(eq_end, datetime) else f" - (inferred: {inferred_eq_end})" if inferred_eq_end else " - NoEnd")
                 line_interval_str = f"{line_start}" + (f" - {line_end}" if isinstance(line_end, datetime) else " - NoEnd")
+                
+                # Calculate temporal distance for nearest miss analysis - TKT-004
+                eq_actual_end = eq_end if isinstance(eq_end, datetime) else inferred_eq_end
+                
+                # Calculate gap between events for nearest miss analysis
+                line_end_or_max = line_end if isinstance(line_end, datetime) else datetime.max
+                
+                start_gap = abs(eq_start - line_start)
+                
+                # Calculate end gap if both ends are available
+                end_gap = None
+                if isinstance(eq_actual_end, datetime) and isinstance(line_end, datetime):
+                    end_gap = abs(eq_actual_end - line_end)
+                
+                # Calculate minimum gap for this line event
+                current_gap = min(
+                    start_gap,
+                    end_gap if end_gap is not None else timedelta(days=999)
+                )
+                
+                # Track the nearest line event
+                if current_gap < min_gap:
+                    min_gap = current_gap
+                    line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
+                    nearest_line_event = {
+                        "line_event_id": line_id,
+                        "gap": current_gap,
+                        "start_time": line_start,
+                        "end_time": line_end
+                    }
 
+                # TKT-003: Improved temporal containment logic, prioritizing overlap detection
+                
                 # 1. Check for Strict Containment (requires valid start/end for both)
                 if isinstance(eq_end, datetime) and isinstance(line_end, datetime):
-                    # Apply time buffer for start comparison (equipment can start slightly before line)
-                    strict_cond1 = (line_start - time_buffer <= eq_start <= line_end)
-                    # Apply time buffer for end comparison (equipment can end slightly after line)
-                    strict_cond2 = (line_start <= eq_end <= line_end + time_buffer)
+                    # Equipment event is fully contained within line event (with buffer)
+                    strict_contained = (
+                        line_start - time_buffer <= eq_start <= line_end + time_buffer and
+                        line_start - time_buffer <= eq_end <= line_end + time_buffer
+                    )
                     
-                    if strict_cond1 and strict_cond2:
+                    if strict_contained:
                         link = True
                         link_method = "Strict Containment"
                         link_logger.debug(f"Match via strict containment: Equipment event {eq_interval_str} within Line event {line_interval_str}")
                 
-                # 2. Check for Start Containment (if strict containment failed or missing end times)
+                # 2. Check for Significant Overlap (at least 50% of equipment event overlaps with line event)
+                if not link and (isinstance(eq_end, datetime) or inferred_eq_end) and isinstance(line_end, datetime):
+                    actual_eq_end = eq_end if isinstance(eq_end, datetime) else inferred_eq_end
+                    
+                    # Calculate overlap duration
+                    overlap_start = max(eq_start, line_start)
+                    overlap_end = min(actual_eq_end, line_end)
+                    
+                    if overlap_start <= overlap_end:  # There is some overlap
+                        overlap_duration = (overlap_end - overlap_start).total_seconds()
+                        eq_duration = (actual_eq_end - eq_start).total_seconds()
+                        
+                        # If equipment event overlaps with line event for at least 50% of its duration
+                        if overlap_duration >= 0.5 * eq_duration:
+                            link = True
+                            link_method = "Significant Overlap"
+                            link_logger.debug(f"Match via significant overlap: Equipment event {eq_interval_str} overlaps with Line event {line_interval_str}")
+                
+                # 3. Check for Start Containment (equipment starts within line event timespan)
                 if not link:
                     # Equipment starts within line event timespan (with buffer)
                     # - Equipment starts after or at the same time as line (minus buffer)
@@ -5082,7 +5737,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
                         link_method = "Start Containment"
                         link_logger.debug(f"Match via start containment: Equipment event {eq_interval_str} starts within Line event {line_interval_str}")
                 
-                # 3. Check for End Containment if we have a real or inferred equipment end time
+                # 4. Check for End Containment if we have a real or inferred equipment end time
                 if not link and (isinstance(eq_end, datetime) or inferred_eq_end):
                     actual_eq_end = eq_end if isinstance(eq_end, datetime) else inferred_eq_end
                     
@@ -5097,30 +5752,69 @@ def link_equipment_events_to_line_events(onto: Ontology,
                         link_method = "End Containment" if isinstance(eq_end, datetime) else "Inferred End Containment"
                         link_logger.debug(f"Match via {link_method}: Equipment event {eq_interval_str} ends within Line event {line_interval_str}")
                 
-                # 4. Check for Temporal Overlap when both events have a start and at least one has an end time
-                if not link and line_end is not None:
-                    # Either the equipment event has a real end time or we use the inferred one
-                    actual_eq_end = eq_end if isinstance(eq_end, datetime) else inferred_eq_end
+                # 5. Check for Temporal Proximity when events don't overlap but are very close in time
+                if not link:
+                    # Calculate proximity between events
+                    proximity = None
                     
-                    if actual_eq_end and ((eq_start <= line_end + time_buffer and actual_eq_end >= line_start - time_buffer)):
+                    if isinstance(line_end, datetime) and eq_start > line_end:
+                        # Equipment event starts after line event ends
+                        proximity = eq_start - line_end
+                    elif isinstance(eq_end, datetime) and line_start > eq_end:
+                        # Line event starts after equipment event ends
+                        proximity = line_start - eq_end
+                    elif isinstance(inferred_eq_end, datetime) and line_start > inferred_eq_end:
+                        # Line event starts after inferred equipment event end
+                        proximity = line_start - inferred_eq_end
+                    
+                    # If events are within very close proximity (half the buffer)
+                    if proximity is not None and proximity <= time_buffer / 2:
                         link = True
-                        link_method = "Temporal Overlap" if isinstance(eq_end, datetime) else "Inferred Overlap"
-                        link_logger.debug(f"Match via {link_method}: Equipment event {eq_interval_str} overlaps with Line event {line_interval_str}")
+                        link_method = "Close Temporal Proximity"
+                        link_logger.debug(f"Match via close proximity: Equipment event {eq_interval_str} is {proximity} from Line event {line_interval_str}")
 
                 # --- End of Enhanced Containment Logic ---
 
                 if link:
                     try:
+                        # TKT-003: Verify both events have the correct resource types before linking
+                        eq_resource = getattr(eq_event_ind, prop_involvesResource.python_name, None)
+                        line_resource = getattr(line_event_ind, prop_involvesResource.python_name, None)
+                        
+                        # Get the first item if it's a list
+                        if isinstance(eq_resource, list) and eq_resource:
+                            eq_resource = eq_resource[0]
+                        if isinstance(line_resource, list) and line_resource:
+                            line_resource = line_resource[0]
+                        
+                        is_valid_resource_types = True
+                        
+                        # Check that equipment event links to an Equipment resource
+                        if not isinstance(eq_resource, cls_Equipment):
+                            link_logger.warning(f"TKT-003: Equipment event {eq_id} does not link to an Equipment resource. Cannot link to line event.")
+                            is_valid_resource_types = False
+                        
+                        # Check that line event links to a ProductionLine resource
+                        if not isinstance(line_resource, cls_ProductionLine):
+                            line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
+                            link_logger.warning(f"TKT-003: Line event {line_id} does not link to a ProductionLine resource. Cannot link from equipment event.")
+                            is_valid_resource_types = False
+                        
+                        if not is_valid_resource_types:
+                            continue
+                        
                         # Link: Equipment Event ---isPartOfLineEvent---> Line Event
                         current_parents = getattr(eq_event_ind, prop_isPartOfLineEvent.python_name, [])
                         if not isinstance(current_parents, list): 
                             current_parents = [current_parents] if current_parents is not None else []
 
+                        line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
+                        
                         if line_event_ind not in current_parents:
                             getattr(eq_event_ind, prop_isPartOfLineEvent.python_name).append(line_event_ind)
                             links_created += 1
                             linking_methods_used[link_method] += 1
-                            link_logger.info(f"Linked ({link_method}): {eq_event_ind.name} isPartOfLineEvent {line_event_ind.name}")
+                            link_logger.info(f"Linked ({link_method}): {eq_id} isPartOfLineEvent {line_id}")
 
                             # Optional: Link inverse if property exists
                             if prop_hasDetailedEquipmentEvent:
@@ -5130,24 +5824,107 @@ def link_equipment_events_to_line_events(onto: Ontology,
 
                                 if eq_event_ind not in current_children:
                                     getattr(line_event_ind, prop_hasDetailedEquipmentEvent.python_name).append(eq_event_ind)
-                                    link_logger.debug(f"Linked Inverse: {line_event_ind.name} hasDetailedEquipmentEvent {eq_event_ind.name}")
+                                    link_logger.debug(f"Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}")
 
                             parent_found = True
                             linked_events += 1
                             break  # Stop searching for parents for this equipment event
                         else:
                             # Log if the link already existed (useful for debugging duplicates/re-runs)
-                            link_logger.debug(f"Link already exists: {eq_event_ind.name} isPartOfLineEvent {line_event_ind.name}. Skipping append.")
+                            link_logger.debug(f"Link already exists: {eq_id} isPartOfLineEvent {line_id}. Skipping append.")
                             parent_found = True  # Treat existing link as success
                             linked_events += 1  # Count as linked since it's already linked
                             break
                     except Exception as e:
-                        link_logger.error(f"Error linking equipment event {eq_event_ind.name} to line event {line_event_ind.name}: {e}")
+                        line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
+                        link_logger.error(f"Error linking equipment event {eq_id} to line event {line_id}: {e}")
                         continue
                     
             if not parent_found:
                 failed_events += 1
-                link_logger.debug(f"Could not find suitable parent line event for equipment event {eq_event_ind.name}")
+                
+                # Record nearest line event details for diagnostics - TKT-004
+                if nearest_line_event:
+                    event_details["nearest_line_event"] = nearest_line_event["line_event_id"]
+                    event_details["nearest_line_event_gap"] = str(nearest_line_event["gap"])
+                    
+                    # Classify failure reason
+                    if nearest_line_event["gap"] > time_buffer:
+                        event_details["failure_reason"] = f"Time gap too large: {nearest_line_event['gap']} > buffer {time_buffer}"
+                        failure_categories["time_gap_too_large"] += 1
+                        
+                        # Add to nearest misses for pattern analysis if gap is within a reasonable threshold (e.g., 2x buffer)
+                        if nearest_line_event["gap"] < time_buffer * 5:  # Track near misses within 5x buffer
+                            nearest_misses.append({
+                                "equipment_event": eq_id,
+                                "line_event": nearest_line_event["line_event_id"],
+                                "gap": nearest_line_event["gap"],
+                                "eq_start": eq_start,
+                                "eq_end": eq_end if isinstance(eq_end, datetime) else inferred_eq_end,
+                                "line_start": nearest_line_event["start_time"],
+                                "line_end": nearest_line_event["end_time"],
+                            })
+                    else:
+                        event_details["failure_reason"] = "Failed despite being within time buffer - check containment logic"
+                        failure_categories["other"] += 1
+                else:
+                    event_details["failure_reason"] = "All line events completely outside equipment event range"
+                    failure_categories["equipment_outside_range"] += 1
+                
+                failed_eq_events.append(event_details)
+                link_logger.warning(f"Could not find suitable parent line event for equipment event {eq_id}")
+    
+    # --- Detailed Failure Analysis - TKT-004 ---
+    if failed_events > 0:
+        link_logger.warning(f"FAILURE ANALYSIS: {failed_events} equipment events could not be linked")
+        link_logger.warning("Failure categories:")
+        for category, count in failure_categories.items():
+            if count > 0:
+                link_logger.warning(f"  • {category}: {count} events")
+        
+        # Log details of all failed events
+        link_logger.warning("Detailed failure information for failed equipment events:")
+        for i, event in enumerate(failed_eq_events):
+            link_logger.warning(f"Unlinked Equipment Event #{i+1}: {event['event_id']}")
+            link_logger.warning(f"  • Line: {event['line']}")
+            link_logger.warning(f"  • Start Time: {event['start_time']}")
+            link_logger.warning(f"  • End Time: {event['end_time'] if event['end_time'] else event['inferred_end_time']}")
+            link_logger.warning(f"  • Potential Line Events: {event['potential_parents_count']}")
+            link_logger.warning(f"  • Nearest Line Event: {event['nearest_line_event']}")
+            link_logger.warning(f"  • Nearest Gap: {event['nearest_line_event_gap']}")
+            link_logger.warning(f"  • Failure Reason: {event['failure_reason']}")
+        
+        # Analyze time gaps patterns for near-misses
+        if nearest_misses:
+            avg_gap = sum((m["gap"].total_seconds() for m in nearest_misses), 0) / len(nearest_misses)
+            min_gap = min(nearest_misses, key=lambda x: x["gap"].total_seconds())
+            max_gap = max(nearest_misses, key=lambda x: x["gap"].total_seconds())
+            
+            link_logger.warning("Near Miss Analysis:")
+            link_logger.warning(f"  • Total near misses: {len(nearest_misses)}")
+            link_logger.warning(f"  • Average gap: {timedelta(seconds=avg_gap)}")
+            link_logger.warning(f"  • Minimum gap: {min_gap['gap']} (Event: {min_gap['equipment_event']})")
+            link_logger.warning(f"  • Maximum gap: {max_gap['gap']} (Event: {max_gap['equipment_event']})")
+            link_logger.warning("  • Potential Adjustment: Consider increasing time buffer from "
+                               f"{TIME_BUFFER_MINUTES} to {int(TIME_BUFFER_MINUTES * 2)} minutes to capture more near misses")
+            
+            # Suggest buffer adjustment based on near miss analysis
+            suggested_buffer = 0
+            
+            # If most misses would be captured by doubling the buffer
+            captured_by_double = sum(1 for m in nearest_misses if m["gap"] <= time_buffer * 2)
+            if captured_by_double > len(nearest_misses) / 2:
+                suggested_buffer = TIME_BUFFER_MINUTES * 2
+            
+            # If most misses would be captured by tripling the buffer
+            captured_by_triple = sum(1 for m in nearest_misses if m["gap"] <= time_buffer * 3)
+            if captured_by_triple > len(nearest_misses) * 0.8:  # 80% capture rate
+                suggested_buffer = TIME_BUFFER_MINUTES * 3
+            
+            if suggested_buffer > 0:
+                link_logger.warning(f"  • Recommended Buffer Adjustment: Increase to {suggested_buffer} minutes "
+                                  f"(would capture {captured_by_double}/{len(nearest_misses)} near misses at 2x, "
+                                  f"{captured_by_triple}/{len(nearest_misses)} at 3x)")
     
     # --- Report Results ---
     link_logger.info(f"Equipment Event Linking Complete: Created {links_created} links between equipment and line events")
@@ -5160,6 +5937,33 @@ def link_equipment_events_to_line_events(onto: Ontology,
     # Report inferred end times usage
     if inferred_end_count > 0:
         link_logger.info(f"Used {inferred_end_count} inferred end times for linking")
+
+    # TKT-003: Additional summary reporting for verification
+    link_logger.info(f"\nTKT-003: Event Linking Verification")
+    link_logger.info(f"  • Total line events processed: {line_events_count}")
+    link_logger.info(f"  • Total equipment events processed: {equipment_events_count}")
+    link_logger.info(f"  • Equipment events successfully linked: {linked_events} ({linked_events/max(1, equipment_events_count)*100:.1f}%)")
+    link_logger.info(f"  • Equipment events without line association: {len(equipment_without_line)}")
+    
+    # Print a summary breakdown of the linking results to stdout for visibility
+    print(f"\n=== EVENT LINKING RESULTS ===")
+    print(f"Total equipment events: {total_equipment_events}")
+    print(f"Events successfully linked: {linked_events} ({linked_events/total_equipment_events*100:.1f}%)")
+    print(f"Failed to link: {failed_events} ({failed_events/total_equipment_events*100:.1f}%)")
+    
+    if failed_events > 0:
+        print("\nFailure breakdown:")
+        for category, count in sorted(failure_categories.items(), key=lambda x: x[1], reverse=True):
+            if count > 0:
+                print(f"  • {category}: {count} ({count/failed_events*100:.1f}%)")
+        
+        if nearest_misses:
+            print(f"\nNear misses (within 5x buffer): {len(nearest_misses)}")
+            print(f"  Average gap: {timedelta(seconds=avg_gap)}")
+            if suggested_buffer > 0:
+                print(f"  Consider increasing buffer from {TIME_BUFFER_MINUTES} to {suggested_buffer} minutes")
+    
+    print(f"=== END EVENT LINKING RESULTS ===\n")
     
     return links_created
 
@@ -5172,16 +5976,16 @@ FILE: ontology_generator/population/processing.py
 Module for processing individual data rows during ontology population.
 """
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List, Set
 
-from owlready2 import Thing, ThingClass
+from owlready2 import Thing, ThingClass, Ontology, PropertyClass
 
 # Assuming PopulationContext is defined elsewhere and imported appropriately
 from .core import PopulationContext
 # Assuming processing functions are available
 from .asset import process_asset_hierarchy, process_material, process_production_request
 from .equipment import process_equipment
-from .events import process_shift, process_state_reason, process_time_interval, process_event_record
+from .events import process_shift, process_state, process_reason, process_time_interval, process_event_record
 
 # Use a logger specific to this module
 proc_logger = logging.getLogger(__name__)
@@ -5196,7 +6000,8 @@ RowProcessingResult = Tuple[
 def process_single_data_row(row: Dict[str, Any],
                             row_num: int,
                             context: PopulationContext,
-                            property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) \
+                            property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+                            all_created_individuals_by_uid: Dict[Tuple[str, str], Thing] = None) \
                             -> RowProcessingResult:
     """
     Processes a single data row to create ontology individuals and relationships.
@@ -5206,6 +6011,7 @@ def process_single_data_row(row: Dict[str, Any],
         row_num: The original row number (for logging).
         context: The PopulationContext object.
         property_mappings: The parsed property mappings.
+        all_created_individuals_by_uid: Registry of created individuals for reuse.
 
     Returns:
         A tuple containing:
@@ -5218,7 +6024,12 @@ def process_single_data_row(row: Dict[str, Any],
     proc_logger.debug(f"--- Processing Row {row_num} ---")
     try:
         # 1. Process Asset Hierarchy -> plant, area, pcell, line individuals
-        plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(row, context, property_mappings)
+        plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid
+        )
         if not plant_ind:  # Plant is essential
             raise ValueError("Failed to establish Plant individual, cannot proceed with row.")
 
@@ -5238,7 +6049,12 @@ def process_single_data_row(row: Dict[str, Any],
             proc_logger.debug(f"Row {row_num}: Identified as Line record for: {line_ind.name}")
 
         elif eq_type == 'Equipment':
-            equipment_ind, eq_class_ind, eq_class_name = process_equipment(row, context, line_ind, property_mappings)
+            equipment_ind, eq_class_ind, eq_class_name = process_equipment(
+                row=row, 
+                context=context, 
+                line_ind=line_ind, 
+                property_mappings=property_mappings
+            )
             if equipment_ind:
                 resource_individual = equipment_ind
                 resource_base_id = f"Eq_{equipment_ind.name}"
@@ -5261,41 +6077,94 @@ def process_single_data_row(row: Dict[str, Any],
             # Continue processing other parts, but event linking will fail later
 
         # 3. Process Material
-        material_ind = process_material(row, context, property_mappings)
+        material_ind = process_material(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid
+        )
 
         # 4. Process Production Request
-        request_ind = process_production_request(row, context, property_mappings)
+        request_ind = process_production_request(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid
+        )
 
         # 5. Process Shift
-        shift_ind = process_shift(row, context, property_mappings)
+        shift_ind = process_shift(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
+            pass_num=1
+        )
 
-        # 6. Process State & Reason
-        state_ind, reason_ind = process_state_reason(row, context, property_mappings)
+        # 6. Process State & Reason (now as separate functions)
+        state_ind = process_state(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
+            pass_num=1
+        )
+        reason_ind = process_reason(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
+            pass_num=1
+        )
 
         # 7. Process Time Interval
-        time_interval_ind = process_time_interval(row, context, resource_base_id, row_num, property_mappings)
+        time_interval_ind = process_time_interval(
+            row=row, 
+            context=context, 
+            resource_base_id=resource_base_id, 
+            row_num=row_num, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
+            pass_num=1
+        )
 
         # 8. Process Event Record and Links
         event_ind: Optional[Thing] = None
         event_context_result: Optional[Tuple[Thing, Thing, Thing, Thing]] = None
         if resource_individual and time_interval_ind: # Need resource and interval for meaningful event
-            event_ind = process_event_record(row, context, resource_individual, resource_base_id, row_num,
-                                             request_ind, material_ind, time_interval_ind,
-                                             shift_ind, state_ind, reason_ind, property_mappings)
+            event_ind, event_context_tuple = process_event_record(
+                row=row,
+                context=context,
+                property_mappings=property_mappings,
+                all_created_individuals_by_uid=all_created_individuals_by_uid,
+                time_interval_ind=time_interval_ind,
+                shift_ind=shift_ind,
+                state_ind=state_ind,
+                reason_ind=reason_ind,
+                equipment_ind=equipment_ind,
+                line_ind=line_ind,
+                material_ind=material_ind,
+                request_ind=request_ind,
+                pass_num=1,
+                row_num=row_num
+            )
             if not event_ind:
                 raise ValueError("Failed to create EventRecord individual.")
             else:
+                # Extract resource_ind from the event context tuple returned by process_event_record
+                resource_ind_from_tuple = event_context_tuple[1] if event_context_tuple and len(event_context_tuple) > 1 else resource_individual
+                
                 # Determine associated line for linking context
                 associated_line_ind: Optional[Thing] = None
                 prod_line_class = context.get_class("ProductionLine")
                 equipment_class = context.get_class("Equipment")
                 part_of_prop = context.get_prop("isPartOfProductionLine")
 
-                if prod_line_class and isinstance(resource_individual, prod_line_class):
-                    associated_line_ind = resource_individual
-                elif equipment_class and part_of_prop and isinstance(resource_individual, equipment_class):
+                if prod_line_class and isinstance(resource_ind_from_tuple, prod_line_class):
+                    associated_line_ind = resource_ind_from_tuple
+                elif equipment_class and part_of_prop and isinstance(resource_ind_from_tuple, equipment_class):
                     # Safely access potentially multi-valued property
-                    line_val = getattr(resource_individual, part_of_prop.python_name, None)
+                    line_val = getattr(resource_ind_from_tuple, part_of_prop.python_name, None)
                     if isinstance(line_val, list) and line_val:
                         associated_line_ind = line_val[0] # Take first if multiple
                     elif line_val and not isinstance(line_val, list):
@@ -5303,10 +6172,10 @@ def process_single_data_row(row: Dict[str, Any],
 
                 # Check if associated_line_ind is indeed a ProductionLine instance
                 if prod_line_class and isinstance(associated_line_ind, prod_line_class):
-                    event_context_result = (event_ind, resource_individual, time_interval_ind, associated_line_ind)
-                    proc_logger.debug(f"Row {row_num}: Stored context for Event {event_ind.name} (Resource: {resource_individual.name}, Line: {associated_line_ind.name})")
+                    event_context_result = (event_ind, resource_ind_from_tuple, time_interval_ind, associated_line_ind)
+                    proc_logger.debug(f"Row {row_num}: Stored context for Event {event_ind.name} (Resource: {resource_ind_from_tuple.name}, Line: {associated_line_ind.name})")
                 else:
-                    proc_logger.warning(f"Row {row_num}: Could not determine associated ProductionLine for Event {event_ind.name} (Resource: {resource_individual.name}). Skipping context for isPartOfLineEvent linking.")
+                    proc_logger.warning(f"Row {row_num}: Could not determine associated ProductionLine for Event {event_ind.name} (Resource: {resource_ind_from_tuple.name}). Skipping context for isPartOfLineEvent linking.")
         elif not resource_individual:
              proc_logger.warning(f"Row {row_num}: Skipping EventRecord creation as no valid resource individual was found.")
         elif not time_interval_ind:
@@ -5323,6 +6192,85 @@ def process_single_data_row(row: Dict[str, Any],
         # Log unexpected errors with traceback
         proc_logger.error(f"An unexpected error processing data row {row_num}: {row if len(str(row)) < 500 else str(row)[:500] + '...'}", exc_info=True)
         return False, None, None # Indicate failure
+
+def populate_ontology_from_data(onto: Ontology,
+                                data_rows: List[Dict[str, Any]],
+                                defined_classes: Dict[str, ThingClass],
+                                defined_properties: Dict[str, PropertyClass],
+                                property_is_functional: Dict[str, bool],
+                                specification: List[Dict[str, str]],
+                                property_mappings: Dict[str, Dict[str, Dict[str, Any]]] = None
+                              ) -> Tuple[int, Dict[str, ThingClass], Dict[str, int], List[Tuple[Thing, Thing, Thing, Thing]], Dict[Tuple[str, str], Thing], PopulationContext]:
+    """
+    Populates the ontology from data rows, creating individuals and establishing links.
+    
+    Args:
+        onto: The ontology to populate
+        data_rows: The parsed data rows
+        defined_classes: Dictionary of defined classes
+        defined_properties: Dictionary of defined properties
+        property_is_functional: Dictionary indicating which properties are functional
+        specification: The parsed specification
+        property_mappings: The parsed property mappings
+    
+    Returns:
+        Tuple containing:
+        - failed_rows_count: Number of rows that failed to process
+        - created_eq_classes: Dictionary of equipment classes created
+        - eq_class_positions: Dictionary of equipment class positions
+        - created_events_context: Context tuples for event linking
+        - all_created_individuals_by_uid: Registry of all created individuals
+        - population_context: The PopulationContext used during population (for property reporting)
+    """
+    # Create the PopulationContext
+    context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
+    proc_logger.info(f"Created population context with {len(defined_classes)} classes and {len(defined_properties)} properties")
+    
+    # Validate property mappings
+    if not property_mappings:
+        proc_logger.error("No property mappings provided. Population may fail or be incomplete.")
+        # Continue anyway with empty mappings
+        property_mappings = {}
+    
+    # Initialize counters and containers
+    failed_rows_count = 0
+    total_rows = len(data_rows)
+    created_events_context: List[Tuple[Thing, Thing, Thing, Thing]] = []
+    created_eq_classes: Dict[str, ThingClass] = {}  # Key: class name, Value: class individual
+    eq_class_positions: Dict[str, int] = {}  # Key: class name, Value: sequence position
+    all_created_individuals_by_uid: Dict[Tuple[str, str], Thing] = {}  # Registry for get_or_create lookups
+    
+    # Process each data row
+    for index, row in enumerate(data_rows):
+        row_num = index + 1  # 1-indexed for user-friendly logging
+        
+        # Process row and gather context/info
+        success, event_context, eq_class_info = process_single_data_row(
+            row, row_num, context, property_mappings, all_created_individuals_by_uid
+        )
+        
+        if not success:
+            failed_rows_count += 1
+            continue  # Skip to next row
+        
+        # Store event context if available
+        if event_context:
+            created_events_context.append(event_context)
+        
+        # Store equipment class info if available
+        if eq_class_info:
+            eq_class_name, eq_class_ind, position = eq_class_info
+            created_eq_classes[eq_class_name] = eq_class_ind
+            if position is not None:
+                eq_class_positions[eq_class_name] = position
+    
+    # Log statistics
+    proc_logger.info(f"Ontology population complete: Processed {total_rows} rows with {failed_rows_count} failures.")
+    proc_logger.info(f"Created {len(created_eq_classes)} unique equipment classes")
+    proc_logger.info(f"Collected {len(created_events_context)} event contexts for linking")
+    
+    # TKT-002: Return the PopulationContext for property usage reporting
+    return failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid, context
 
 ===========================================
 FILE: ontology_generator/population/row_processor.py
@@ -5379,6 +6327,7 @@ def process_single_data_row_pass1(
     event_context = None
     eq_class_info = None
     success = True # Assume success unless critical failure
+    critical_event_failure = False # TKT-006: Track critical failures in event processing
 
     try:
         # Add row_num to the row dictionary for use by downstream processors
@@ -5388,10 +6337,23 @@ def process_single_data_row_pass1(
         plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(
             row, context, property_mappings, all_created_individuals_by_uid, pass_num=1
         )
-        if plant_ind: created_inds_this_row["Plant"] = plant_ind
-        if area_ind: created_inds_this_row["Area"] = area_ind
-        if pcell_ind: created_inds_this_row["ProcessCell"] = pcell_ind
-        if line_ind: created_inds_this_row["ProductionLine"] = line_ind
+        if plant_ind: 
+            created_inds_this_row["Plant"] = plant_ind
+            # TKT-002: Store row data with individual
+            context.store_individual_data(plant_ind, row)
+            
+        if area_ind: 
+            created_inds_this_row["Area"] = area_ind
+            context.store_individual_data(area_ind, row)
+            
+        if pcell_ind: 
+            created_inds_this_row["ProcessCell"] = pcell_ind
+            context.store_individual_data(pcell_ind, row)
+            
+        if line_ind: 
+            created_inds_this_row["ProductionLine"] = line_ind
+            context.store_individual_data(line_ind, row)
+            
         if not plant_ind:
              row_proc_logger.error(f"Row {row_num} - Pass 1: Failed to process mandatory Plant. Aborting row.")
              return False, {}, None, None
@@ -5399,29 +6361,53 @@ def process_single_data_row_pass1(
         # --- 2. Process Equipment & Equipment Class ---
         equipment_ind, eq_class_ind, eq_class_info_out = None, None, None
         
-        # Check EQUIPMENT_TYPE to determine if we should process equipment
+        # TKT-003: Check EQUIPMENT_TYPE to determine if we should process equipment
         equipment_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
+        
+        # TKT-003: Log the equipment type for traceability
+        row_proc_logger.debug(f"Row {row_num} - TKT-003: Processing row with EQUIPMENT_TYPE='{equipment_type}'")
         
         if equipment_type == 'Equipment':
             # Only process equipment and class if it's actually an equipment type
             equipment_ind, eq_class_ind, eq_class_info_out = process_equipment_and_class(
                 row, context, property_mappings, all_created_individuals_by_uid, line_ind, pass_num=1
             )
-            if equipment_ind: created_inds_this_row["Equipment"] = equipment_ind
-            if eq_class_ind: created_inds_this_row["EquipmentClass"] = eq_class_ind
+            if equipment_ind: 
+                created_inds_this_row["Equipment"] = equipment_ind
+                context.store_individual_data(equipment_ind, row)
+                
+            if eq_class_ind: 
+                created_inds_this_row["EquipmentClass"] = eq_class_ind
+                context.store_individual_data(eq_class_ind, row)
+                
             if eq_class_info_out: eq_class_info = eq_class_info_out
+        elif equipment_type == 'Line':
+            row_proc_logger.debug(f"Row {row_num} - TKT-003: Row has EQUIPMENT_TYPE='Line', skipping equipment processing")
+            # Verify that we have a line_ind for line events
+            if not line_ind:
+                row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE is 'Line' but no line individual was created. Event linking may fail.")
         else:
-            row_proc_logger.debug(f"Row {row_num} - Not processing equipment for EQUIPMENT_TYPE='{equipment_type}'")
+            row_proc_logger.warning(f"Row {row_num} - TKT-003: Unknown EQUIPMENT_TYPE '{equipment_type}'. Expected 'Equipment' or 'Line'.")
 
         # --- 3. Process Material ---
         material_ind = process_material(row, context, property_mappings, all_created_individuals_by_uid, pass_num=1)
-        if material_ind: created_inds_this_row["Material"] = material_ind
+        if material_ind: 
+            created_inds_this_row["Material"] = material_ind
+            context.store_individual_data(material_ind, row)
 
         # --- 4. Process Production Request ---
         request_ind = process_production_request(row, context, property_mappings, all_created_individuals_by_uid, pass_num=1)
-        if request_ind: created_inds_this_row["ProductionRequest"] = request_ind
+        if request_ind: 
+            created_inds_this_row["ProductionRequest"] = request_ind
+            context.store_individual_data(request_ind, row)
 
         # --- 5. Process Events (EventRecord, TimeInterval, Shift, State, Reason) ---
+        # TKT-003: Verify appropriate resource is available based on EQUIPMENT_TYPE
+        if equipment_type == 'Equipment' and not equipment_ind:
+            row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE is 'Equipment' but no equipment resource is available. Event creation may fail.")
+        elif equipment_type == 'Line' and not line_ind:
+            row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE is 'Line' but no line resource is available. Event creation may fail.")
+        
         event_related_inds, event_context_out = process_event_related(
             row, context, property_mappings, all_created_individuals_by_uid,
             equipment_ind=equipment_ind,
@@ -5431,8 +6417,23 @@ def process_single_data_row_pass1(
             pass_num=1,
             row_num=row_num  # Pass the actual row number explicitly
         )
-        created_inds_this_row.update(event_related_inds)
-        if event_context_out: event_context = event_context_out
+        # TKT-002: Store row data with event-related individuals
+        for entity_type, entity_ind in event_related_inds.items():
+            created_inds_this_row[entity_type] = entity_ind
+            context.store_individual_data(entity_ind, row)
+            
+        if event_context_out: 
+            event_context = event_context_out
+            # TKT-003: Validate event has correct resource type association
+            event_ind, resource_ind, resource_type = event_context
+            if equipment_type != resource_type:
+                row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE '{equipment_type}' does not match linked resource type '{resource_type}'. Event linking may be incorrect.")
+        else:
+            # TKT-006: Track critical failure if we expected events but none were created
+            if 'EVENT_TYPE' in row and row.get('EVENT_TYPE', '').strip():
+                row_proc_logger.warning(f"Row {row_num} - Pass 1: Missing critical event context for event with type '{row.get('EVENT_TYPE')}'. Marking row as failed.")
+                critical_event_failure = True
+                # Don't return immediately, continue processing to gather all potential errors
 
         # --- 6. Process Person (Example) ---
         # person_ind = process_person(row, context, property_mappings, all_created_individuals_by_uid, pass_num=1)
@@ -5448,6 +6449,10 @@ def process_single_data_row_pass1(
         # Clean up row dictionary by removing temporary row_num 
         if 'row_num' in row:
             del row['row_num']
+
+    # TKT-006: Final success check including critical event failures
+    if critical_event_failure:
+        success = False
 
     return success, created_inds_this_row, event_context, eq_class_info
 
@@ -5546,15 +6551,175 @@ def process_structural_relationships(
         "memberOfClass"                # Equipment -> EquipmentClass
     ]
     
-    # Process Equipment -> ProductionLine relationships
+    # --- Process Equipment -> EquipmentClass relationships ---
+    # CRITICAL FIX FOR TKT-002: Ensure correct memberOfClass links are established
     if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
-        log.info("Processing Equipment.isPartOfProductionLine structural relationships...")
+        log.info("Processing Equipment.memberOfClass structural relationships...")
         
-        # Get all Equipment individuals
+        # Get all Equipment individuals 
         equipment_individuals = [
             ind for uid, ind in all_created_individuals_by_uid.items() 
             if uid[0] == "Equipment"
         ]
+        log.info(f"Found {len(equipment_individuals)} Equipment individuals for class linking")
+        
+        # Get all EquipmentClass individuals
+        class_individuals = [
+            ind for uid, ind in all_created_individuals_by_uid.items() 
+            if uid[0] == "EquipmentClass"
+        ]
+        log.info(f"Found {len(class_individuals)} EquipmentClass individuals for linking")
+        
+        # Get the memberOfClass property mapping
+        eq_class_mapping = property_mappings["Equipment"]["object_properties"].get("memberOfClass")
+        
+        if eq_class_mapping and equipment_individuals and class_individuals:
+            # Check if the memberOfClass property exists
+            member_of_class_prop = context.get_prop("memberOfClass")
+            if not member_of_class_prop:
+                log.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to classes.")
+            else:
+                # Build a comprehensive lookup map for equipment classes by both ID and name
+                classes_by_identifier = {}
+                
+                # Key properties that might identify an EquipmentClass
+                identifiers = ["equipmentClassId", "equipmentClassName", "name"]
+                
+                # TKT-005: Log all EquipmentClass individuals with their identifiers for debugging
+                log.debug("TKT-005: EquipmentClass individuals available for linking:")
+                for class_ind in class_individuals:
+                    class_identifiers = []
+                    
+                    # TKT-005: Prioritize equipmentClassId property as the key identifier
+                    # This property should be explicitly set during EquipmentClass creation
+                    eq_class_id = None
+                    if hasattr(class_ind, "equipmentClassId"):
+                        eq_class_id = getattr(class_ind, "equipmentClassId")
+                        if eq_class_id:
+                            if isinstance(eq_class_id, list) and eq_class_id:
+                                eq_class_id = eq_class_id[0]  # Use first value if it's a list
+                            class_identifiers.append(str(eq_class_id))
+                            # Add to identifier map with high priority
+                            classes_by_identifier[str(eq_class_id)] = class_ind
+                            log.debug(f"  TKT-005: Class {class_ind.name} has explicit equipmentClassId: {eq_class_id}")
+                    
+                    # Collect all other identifiers from the class individual
+                    for id_prop in identifiers:
+                        if id_prop != "equipmentClassId" and hasattr(class_ind, id_prop):  # Skip equipmentClassId, already processed
+                            id_value = getattr(class_ind, id_prop)
+                            if id_value:
+                                if isinstance(id_value, list):
+                                    for val in id_value:
+                                        class_identifiers.append(str(val))
+                                else:
+                                    class_identifiers.append(str(id_value))
+                    
+                    # Extract base name from the class name if it has a prefix
+                    if hasattr(class_ind, "name"):
+                        name = class_ind.name
+                        if name.startswith("EquipmentClass_"):
+                            clean_name = name[len("EquipmentClass_"):]
+                            class_identifiers.append(clean_name)
+                    
+                    # Add all identifiers to the lookup map
+                    log.debug(f"  TKT-005: Class {class_ind.name} all identifiers: {class_identifiers}")
+                    for identifier in class_identifiers:
+                        if identifier not in classes_by_identifier:  # Don't overwrite equipmentClassId entries
+                            classes_by_identifier[identifier] = class_ind
+                
+                # Track linking results
+                equipment_linked = 0
+                equipment_already_linked = 0
+                equipment_not_linked = 0
+                
+                # TKT-005: Iterate through equipment individuals to establish memberOfClass relationships
+                log.info("TKT-005: Processing Equipment-EquipmentClass memberOfClass relationships...")
+                for eq_ind in equipment_individuals:
+                    # Check if this equipment already has a class link
+                    current_class = getattr(eq_ind, member_of_class_prop.python_name, None)
+                    if current_class:
+                        log.debug(f"TKT-005: Equipment {eq_ind.name} already linked to class {current_class.name}")
+                        equipment_already_linked += 1
+                        continue
+                    
+                    # Try multiple methods to determine the appropriate class
+                    
+                    # Method 1: Try to use column value from mapping
+                    matching_class_ind = None
+                    match_method = None
+                    
+                    # Get the column that contains the Class name/ID (if specified in mapping)
+                    class_id_column = eq_class_mapping.get("column")
+                    if class_id_column:
+                        # TKT-005: Use the get_individual_data method to retrieve stored data
+                        eq_data = context.get_individual_data(eq_ind) or {}
+                        class_value = eq_data.get(class_id_column)
+                        
+                        if class_value and str(class_value) in classes_by_identifier:
+                            matching_class_ind = classes_by_identifier[str(class_value)]
+                            match_method = f"Column '{class_id_column}'"
+                            log.info(f"TKT-005: Found matching class {matching_class_ind.name} via column value '{class_value}'")
+                    
+                    # Method 2: Try to parse class from equipment name if column value not found
+                    if not matching_class_ind:
+                        from .equipment import parse_equipment_class
+                        
+                        # Try various properties that might contain the equipment name
+                        name_props = ["equipmentName", "name"]
+                        eq_name = None
+                        
+                        for prop in name_props:
+                            if hasattr(eq_ind, prop):
+                                prop_value = getattr(eq_ind, prop)
+                                if prop_value:
+                                    if isinstance(prop_value, list) and prop_value:
+                                        eq_name = prop_value[0]
+                                    else:
+                                        eq_name = prop_value
+                                    break
+                        
+                        if eq_name:
+                            # TKT-005: Use parse_equipment_class to extract equipment class type string
+                            parsed_class = parse_equipment_class(equipment_name=eq_name)
+                            if parsed_class and str(parsed_class) in classes_by_identifier:
+                                matching_class_ind = classes_by_identifier[str(parsed_class)]
+                                match_method = f"Parsed from name '{eq_name}'"
+                                log.info(f"TKT-005: Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
+                    
+                    # Create the link if we found a matching class
+                    if matching_class_ind:
+                        try:
+                            # TKT-005: Use context.set_prop to link equipment to class via memberOfClass
+                            context.set_prop(eq_ind, "memberOfClass", matching_class_ind)
+                            links_created += 1
+                            equipment_linked += 1
+                            log.info(f"TKT-005: Linked Equipment {eq_ind.name} to EquipmentClass {matching_class_ind.name} via {match_method}")
+                            
+                            # Record the link type for statistics
+                            links_by_type["Equipment->Class"] = links_by_type.get("Equipment->Class", 0) + 1
+                        except Exception as e:
+                            log.error(f"TKT-005: Error linking Equipment {eq_ind.name} to Class {matching_class_ind.name}: {e}")
+                    else:
+                        equipment_not_linked += 1
+                        log.warning(f"TKT-005: Could not determine appropriate class for Equipment {eq_ind.name}")
+                
+                # Log summary of Equipment-Class linking
+                log.info(f"TKT-005: Equipment-Class linking summary:")
+                log.info(f"  • Equipment already linked: {equipment_already_linked}")
+                log.info(f"  • Equipment newly linked: {equipment_linked}")
+                log.info(f"  • Equipment not linked: {equipment_not_linked}")
+                log.info(f"  • Total equipment processed: {len(equipment_individuals)}")
+    
+    # Process Equipment -> ProductionLine relationships
+    if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
+        log.info("Processing Equipment.isPartOfProductionLine structural relationships...")
+        
+        # Get all Equipment individuals (if not already fetched)
+        if 'equipment_individuals' not in locals():
+            equipment_individuals = [
+                ind for uid, ind in all_created_individuals_by_uid.items() 
+                if uid[0] == "Equipment"
+            ]
         
         # Get all ProductionLine individuals
         line_individuals = [
@@ -5583,7 +6748,11 @@ def process_structural_relationships(
                         # Get the line's ID value from its properties
                         if hasattr(line_ind, line_id_prop) and getattr(line_ind, line_id_prop):
                             line_id = getattr(line_ind, line_id_prop)
-                            lines_by_id[str(line_id)] = line_ind
+                            if isinstance(line_id, list) and line_id:
+                                for lid in line_id:
+                                    lines_by_id[str(lid)] = line_ind
+                            else:
+                                lines_by_id[str(line_id)] = line_ind
                 
                 # Check for the isPartOfProductionLine and hasEquipmentPart properties
                 is_part_of_line_prop = context.get_prop("isPartOfProductionLine")
@@ -5594,9 +6763,12 @@ def process_structural_relationships(
                 elif not has_equipment_part_prop:
                     log.warning(f"Required property mapping 'hasEquipmentPart' not found. Cannot link lines to equipment.")
                 else:
+                    # Track link counts
+                    equipment_line_links = 0
+                    
                     # Link equipment to lines
                     for eq_ind in equipment_individuals:
-                        # Get data stored in the equipment individual
+                        # TKT-002: Use the get_individual_data method to retrieve stored data for equipment
                         eq_data = context.get_individual_data(eq_ind) or {}
                         
                         # Get the line ID this equipment is part of
@@ -5609,107 +6781,30 @@ def process_structural_relationships(
                             # Create bidirectional links if they don't exist
                             # Check if the equipment is already linked to this line
                             current_line = getattr(eq_ind, is_part_of_line_prop.python_name, None)
-                            if not current_line or line_ind not in current_line:
+                            equipment_already_linked = False
+                            
+                            if current_line:
+                                if isinstance(current_line, list):
+                                    equipment_already_linked = line_ind in current_line
+                                else:
+                                    equipment_already_linked = current_line == line_ind
+                            
+                            if not equipment_already_linked:
+                                # TKT-002: Use context.set_prop to ensure property usage is tracked
                                 context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
                                 context.set_prop(line_ind, "hasEquipmentPart", eq_ind)
                                 links_created += 1
+                                equipment_line_links += 1
                                 log.debug(f"Linked Equipment {eq_ind.name} to Line {line_ind.name} via isPartOfProductionLine/hasEquipmentPart")
                                 
                                 # Record the link type for statistics
                                 links_by_type["Equipment->Line"] = links_by_type.get("Equipment->Line", 0) + 1
+                    
+                    log.info(f"Created {equipment_line_links} Equipment-Line links")
     
-    # Process Equipment -> EquipmentClass relationships
-    if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
-        log.info("Processing Equipment.memberOfClass structural relationships...")
-        
-        # Get all Equipment individuals (if not already fetched)
-        if 'equipment_individuals' not in locals():
-            equipment_individuals = [
-                ind for uid, ind in all_created_individuals_by_uid.items() 
-                if uid[0] == "Equipment"
-            ]
-        
-        # Get all EquipmentClass individuals
-        class_individuals = [
-            ind for uid, ind in all_created_individuals_by_uid.items() 
-            if uid[0] == "EquipmentClass"
-        ]
-        
-        # Get the memberOfClass property mapping
-        eq_class_mapping = property_mappings["Equipment"]["object_properties"].get("memberOfClass")
-        
-        if eq_class_mapping and equipment_individuals and class_individuals:
-            # Check if the memberOfClass property exists
-            member_of_class_prop = context.get_prop("memberOfClass")
-            if not member_of_class_prop:
-                log.warning(f"Required property mapping 'memberOfClass' not found. Cannot link equipment to classes.")
-            else:
-                # The column that contains the Class name/ID for Equipment
-                class_id_column = eq_class_mapping.get("column")
-                if class_id_column:
-                    # Build a lookup map for equipment classes
-                    classes_by_name = {}
-                    class_id_prop = "equipmentClassId" # Property expected to hold the class ID value
-                    class_name_prop = "equipmentClassName" # Alternative property
-                    
-                    # Check if the class identifier properties exist
-                    class_id_obj_prop = context.get_prop(class_id_prop)
-                    class_name_obj_prop = context.get_prop(class_name_prop)
-                    
-                    if not class_id_obj_prop and not class_name_obj_prop:
-                        log.warning(f"Required property mappings '{class_id_prop}' and '{class_name_prop}' not found. Cannot create class lookup map.")
-                    else:
-                        primary_class_prop = class_id_obj_prop if class_id_obj_prop else class_name_obj_prop
-                        primary_prop_name = class_id_prop if class_id_obj_prop else class_name_prop
-                        
-                        # Build the class lookup map
-                        for class_ind in class_individuals:
-                            # Get the class ID/name from its properties
-                            if hasattr(class_ind, primary_prop_name) and getattr(class_ind, primary_prop_name):
-                                class_id = getattr(class_ind, primary_prop_name)
-                                if isinstance(class_id, list) and class_id:
-                                    class_id = class_id[0] # Take first item if it's a list
-                                classes_by_name[str(class_id)] = class_ind
-                            # Also try extracting from the individual name as fallback
-                            else:
-                                class_name = getattr(class_ind, "name", "").replace("EquipmentClass_", "")
-                                if class_name:
-                                    classes_by_name[class_name] = class_ind
-                        
-                        # Link equipment to classes
-                        for eq_ind in equipment_individuals:
-                            # Get data stored in the equipment individual
-                            eq_data = context.get_individual_data(eq_ind) or {}
-                            
-                            # Get the class this equipment belongs to
-                            class_value = eq_data.get(class_id_column)
-                            
-                            # Try different approaches to match with class
-                            matching_class_ind = None
-                            
-                            if class_value and str(class_value) in classes_by_name:
-                                # Direct match by ID/name
-                                matching_class_ind = classes_by_name[str(class_value)]
-                            else:
-                                # Try to extract class from equipment name if column value not found
-                                from .equipment import parse_equipment_class
-                                eq_name = getattr(eq_ind, "equipmentName", None) or getattr(eq_ind, "name", "")
-                                if eq_name:
-                                    parsed_class = parse_equipment_class(equipment_name=eq_name)
-                                    if parsed_class and str(parsed_class) in classes_by_name:
-                                        matching_class_ind = classes_by_name[str(parsed_class)]
-                                        log.debug(f"Parsed class '{parsed_class}' from equipment name '{eq_name}'")
-                            
-                            if matching_class_ind:
-                                # Create the link if it doesn't exist
-                                current_class = getattr(eq_ind, member_of_class_prop.python_name, None)
-                                if not current_class or matching_class_ind not in current_class:
-                                    context.set_prop(eq_ind, "memberOfClass", matching_class_ind)
-                                    links_created += 1
-                                    log.debug(f"Linked Equipment {eq_ind.name} to EquipmentClass {matching_class_ind.name} via memberOfClass")
-                                    
-                                    # Record the link type for statistics
-                                    links_by_type["Equipment->Class"] = links_by_type.get("Equipment->Class", 0) + 1
+    # TKT-002: Generate property usage report after all structural relationships are processed
+    log.info("TKT-002: Generating property usage report")
+    context.log_property_usage_report()
     
     # Log summary of links created
     for link_type, count in links_by_type.items():
@@ -5755,107 +6850,6 @@ def _safe_sort_by_position(items, default_position=999999):
         
     return sorted(items, key=get_safe_position)
 
-def setup_equipment_sequence_relationships(onto: Ontology,
-                                           equipment_class_positions: Dict[str, int],
-                                           defined_classes: Dict[str, ThingClass],
-                                           defined_properties: Dict[str, PropertyClass],
-                                           created_equipment_class_inds: Dict[str, Thing]):
-    """
-    Establish upstream/downstream relationships between equipment *classes* based on sequence positions.
-    """
-    pop_logger.info("Setting up CLASS-LEVEL equipment sequence relationships based on position...")
-
-    # Get context for properties/classes
-    context = PopulationContext(onto, defined_classes, defined_properties, {}) # is_functional map not needed here
-
-    # Get the CLASS-LEVEL properties
-    prop_classIsUpstreamOf = context.get_prop("classIsUpstreamOf")
-    prop_classIsDownstreamOf = context.get_prop("classIsDownstreamOf") # Optional for inverse
-
-    if not prop_classIsUpstreamOf:
-        pop_logger.error("Cannot establish CLASS-LEVEL sequence relationships: 'classIsUpstreamOf' property not defined.")
-        return
-    if not prop_classIsDownstreamOf:
-        pop_logger.warning("'classIsDownstreamOf' inverse property not found. Only forward class relationships will be set.")
-
-    cls_EquipmentClass = context.get_class("EquipmentClass")
-    if not cls_EquipmentClass: return # Should have been caught earlier, but safe check
-
-    # Verify domain/range compatibility (optional but good practice)
-    if cls_EquipmentClass not in prop_classIsUpstreamOf.domain:
-        pop_logger.warning(f"Property 'classIsUpstreamOf' ({prop_classIsUpstreamOf}) does not have EquipmentClass in its domain {prop_classIsUpstreamOf.domain}.")
-    # Range check assumes list of classes is expected
-    if not any(issubclass(cls_EquipmentClass, r_cls) for r_cls in (prop_classIsUpstreamOf.range if isinstance(prop_classIsUpstreamOf.range, list) else [prop_classIsUpstreamOf.range])):
-        pop_logger.warning(f"Property 'classIsUpstreamOf' ({prop_classIsUpstreamOf}) does not have EquipmentClass in its range {prop_classIsUpstreamOf.range}.")
-
-
-    if not created_equipment_class_inds:
-        pop_logger.warning("No created EquipmentClass individuals provided. Cannot establish class relationships.")
-        return
-    if not equipment_class_positions:
-        pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish class relationships.")
-        return
-
-    # Sort classes by their position number
-    sorted_classes = sorted(equipment_class_positions.items(), key=lambda item: item[1])
-
-    if len(sorted_classes) < 2:
-        pop_logger.warning("Not enough equipment classes with sequence positions (< 2) to establish relationships.")
-        return
-
-    # Create relationships based on sequence order
-    relationships_created = 0
-    with onto:
-        for i in range(len(sorted_classes) - 1):
-            upstream_class_name, up_pos = sorted_classes[i]
-            downstream_class_name, down_pos = sorted_classes[i + 1]
-
-            upstream_ind = created_equipment_class_inds.get(upstream_class_name)
-            downstream_ind = created_equipment_class_inds.get(downstream_class_name)
-
-            if not upstream_ind:
-                pop_logger.warning(f"Sequence setup: Upstream class individual '{upstream_class_name}' not found in provided dict.")
-                continue
-            if not downstream_ind:
-                pop_logger.warning(f"Sequence setup: Downstream class individual '{downstream_class_name}' not found in provided dict.")
-                continue
-
-            pop_logger.debug(f"Evaluating CLASS relationship: {upstream_ind.name} (Pos {up_pos}) -> {downstream_ind.name} (Pos {down_pos})")
-
-            # Set relationships (classIsUpstreamOf is NON-functional per spec)
-            try:
-                # Use helper to check if relationship already exists before appending
-                _set_property_value(upstream_ind, prop_classIsUpstreamOf, downstream_ind, is_functional=False)
-
-                # Explicitly set the inverse relationship if available and needed
-                if prop_classIsDownstreamOf:
-                    _set_property_value(downstream_ind, prop_classIsDownstreamOf, upstream_ind, is_functional=False)
-
-                # Check if the forward relationship was actually added (or already existed)
-                if downstream_ind in getattr(upstream_ind, prop_classIsUpstreamOf.python_name, []):
-                    relationships_created += 1 # Count successful links (new or existing is fine)
-                    pop_logger.debug(f"Confirmed CLASS relationship: {upstream_class_name} classIsUpstreamOf {downstream_class_name}")
-
-            except Exception as e:
-                pop_logger.error(f"Error setting class relationship {upstream_class_name} -> {downstream_class_name}: {e}")
-
-    pop_logger.info(f"Established/verified {relationships_created} CLASS-LEVEL upstream relationships.")
-
-    # Print relationship summary to stdout
-    print("\n=== EQUIPMENT CLASS SEQUENCE RELATIONSHIP REPORT ===")
-    if relationships_created > 0:
-        print(f"Established/verified {relationships_created} upstream relationships between Equipment Classes:")
-        # Re-iterate to print the established sequence
-        for i in range(len(sorted_classes) - 1):
-            upstream_class_name, _ = sorted_classes[i]
-            downstream_class_name, _ = sorted_classes[i + 1]
-            # Check if both individuals exist to avoid errors if one was missing during linking
-            if created_equipment_class_inds.get(upstream_class_name) and created_equipment_class_inds.get(downstream_class_name):
-                print(f"  {upstream_class_name} → {downstream_class_name}")
-    else:
-        print("No class-level sequence relationships were created or verified.")
-    print(f"Total classes with positions considered: {len(sorted_classes)}")
-
 def setup_equipment_instance_relationships(onto: Ontology,
                                           defined_classes: Dict[str, ThingClass],
                                           defined_properties: Dict[str, PropertyClass],
@@ -5880,6 +6874,14 @@ def setup_equipment_instance_relationships(onto: Ontology,
         equipment_class_positions: Dictionary mapping equipment class names to sequence positions
     """
     pop_logger.info("Setting up INSTANCE-LEVEL equipment relationships within production lines...")
+    
+    # Log about equipment class positions for diagnostics
+    if not equipment_class_positions:
+        pop_logger.warning("Equipment class positions dictionary is empty. We'll still process equipment instances that have sequence positions set directly.")
+    else:
+        pop_logger.info(f"Using {len(equipment_class_positions)} equipment class positions for processing.")
+        for class_name, position in sorted(equipment_class_positions.items(), key=lambda x: x[1]):
+            pop_logger.debug(f"  • Class '{class_name}' has position {position}")
 
     # Get context for properties/classes
     context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
@@ -5897,6 +6899,9 @@ def setup_equipment_instance_relationships(onto: Ontology,
     prop_sequencePosition = context.get_prop("sequencePosition")
     prop_isImmediatelyUpstreamOf = context.get_prop("isImmediatelyUpstreamOf")
     prop_isImmediatelyDownstreamOf = context.get_prop("isImmediatelyDownstreamOf")
+    
+    # TKT-007: Get isParallelWith property
+    prop_isParallelWith = context.get_prop("isParallelWith")
 
     # Check essentials
     required_components = [
@@ -5914,21 +6919,16 @@ def setup_equipment_instance_relationships(onto: Ontology,
     if missing_components:
         pop_logger.error(f"Missing required components for equipment sequencing: {', '.join(missing_components)}")
         return
+    
+    # TKT-007: Check if isParallelWith property exists
+    if not prop_isParallelWith:
+        pop_logger.warning("'isParallelWith' property not found. Parallel equipment relationships will not be established.")
 
     if not prop_isImmediatelyDownstreamOf:
         pop_logger.warning("'isImmediatelyDownstreamOf' inverse property not found. Only forward instance relationships will be set.")
 
-    if not equipment_class_positions:
-        pop_logger.warning("Equipment class positions dictionary is empty. Cannot establish instance relationships.")
-        return
-        
-    # Log the equipment class positions for better diagnostics
-    pop_logger.info(f"Equipment class positions from configuration (total: {len(equipment_class_positions)}):")
-    for class_name, position in sorted(equipment_class_positions.items(), key=lambda x: (x[1] if x[1] is not None else 999999)):
-        pop_logger.info(f"  • Class '{class_name}': Position {position}")
-
     # Group equipment instances by line
-    pop_logger.debug("Grouping equipment instances by production line...")
+    pop_logger.info("Grouping equipment instances by production line...")
     line_equipment_map: Dict[Thing, List[Thing]] = {}  # {line_individual: [equipment_instances]}
     
     # Track lines with equipment but no sequence
@@ -5938,6 +6938,7 @@ def setup_equipment_instance_relationships(onto: Ontology,
     total_equipment_processed = 0
     total_equipment_with_class = 0
     total_equipment_with_line = 0
+    total_equipment_with_sequence_position = 0  # Track how many have sequencePosition set
     
     # Step 1: Group all Equipment instances by ProductionLine
     for equipment_inst in onto.search(type=cls_Equipment):
@@ -5989,6 +6990,10 @@ def setup_equipment_instance_relationships(onto: Ontology,
     total_relationships = 0
     line_relationship_counts: Dict[str, int] = {}
     
+    # TKT-007: Track parallel relationships
+    total_parallel_relationships = 0
+    line_parallel_counts: Dict[str, int] = {}
+    
     def safe_get_equipment_id(equipment: Thing) -> str:
         """Helper to safely get equipmentId or fallback to name for sorting."""
         equipment_id = getattr(equipment, prop_equipmentId.python_name, None)
@@ -6005,73 +7010,62 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 pop_logger.debug(f"No equipment instances found for line: {line_id}")
                 continue
             
-            # Step 2: Get sequence configuration for this line
-            # Check for line-specific sequence configuration first
-            line_specific_sequence = LINE_SPECIFIC_EQUIPMENT_SEQUENCE.get(line_id)
-            
-            if line_specific_sequence:
-                pop_logger.info(f"Using line-specific sequence configuration for line {line_id}")
-                sequence_config = line_specific_sequence
-                # Log the line-specific sequence
-                pos_str = ", ".join([f"{cls}:{pos}" for cls, pos in sorted(sequence_config.items(), key=lambda x: x[1])])
-                pop_logger.info(f"Line-specific sequence for {line_id}: {pos_str}")
-            else:
-                # Use the default global sequence
-                pop_logger.info(f"Using default sequence configuration for line {line_id}")
-                sequence_config = DEFAULT_EQUIPMENT_SEQUENCE
-            
-            # Step 3: Assign sequencePosition to each Equipment instance based on its class position
+            # Get instances with sequencePosition values
             equipment_with_positions = []
             equipment_without_positions = []
             
+            # TKT-006: Enhanced collection of equipment with their sequence positions
             for equipment_inst in equipment_instances:
+                # Get the equipment ID for consistent reference
                 eq_id = safe_get_equipment_id(equipment_inst)
                 
-                # Get the EquipmentClass this equipment belongs to
-                equipment_class_ind = getattr(equipment_inst, prop_memberOfClass.python_name, None)
-                if not equipment_class_ind:
-                    pop_logger.warning(f"Equipment {eq_id} has no memberOfClass. Skipping sequence assignment.")
-                    equipment_without_positions.append((equipment_inst, "no_class_link"))
-                    continue
+                # TKT-006: Get sequencePosition value for this equipment
+                position = getattr(equipment_inst, prop_sequencePosition.python_name, None)
                 
-                # Get the class name string from the EquipmentClass individual
-                class_name = getattr(equipment_class_ind, prop_equipmentClassId.python_name, None)
-                if not class_name:
-                    # Try to get the name directly from the individual
-                    class_name = equipment_class_ind.name
-                    if class_name.startswith("EquipmentClass_"):
-                        class_name = class_name[len("EquipmentClass_"):]
-                    pop_logger.warning(f"EquipmentClass {equipment_class_ind.name} has no equipmentClassId. Using name {class_name} as fallback.")
-                
-                # If still no class name, skip this equipment
-                if not class_name:
-                    pop_logger.warning(f"Cannot determine class name for {eq_id}. Skipping sequence assignment.")
-                    equipment_without_positions.append((equipment_inst, "no_class_name"))
-                    continue
-                
-                # Find position from sequence configuration
-                position = sequence_config.get(class_name)
-                
-                if position is None:
-                    # Try fallback to global sequence if using line-specific but not found
-                    if line_specific_sequence and class_name in DEFAULT_EQUIPMENT_SEQUENCE:
-                        position = DEFAULT_EQUIPMENT_SEQUENCE.get(class_name)
-                        pop_logger.info(f"Using fallback global position {position} for class {class_name} on line {line_id}")
+                # Get the equipment class for logging
+                eq_class_ind = getattr(equipment_inst, prop_memberOfClass.python_name, None)
+                eq_class_id = "Unknown"
+                if eq_class_ind and prop_equipmentClassId:
+                    eq_class_id = getattr(eq_class_ind, prop_equipmentClassId.python_name, eq_class_ind.name)
                 
                 if position is not None:
-                    # Set the sequencePosition on the Equipment instance
-                    try:
-                        context.set_prop(equipment_inst, "sequencePosition", position)
-                        pop_logger.debug(f"Set sequencePosition={position} on Equipment {eq_id} (class: {class_name})")
-                        equipment_with_positions.append((equipment_inst, position, eq_id))
-                    except Exception as e:
-                        pop_logger.error(f"Error setting sequencePosition={position} on Equipment {eq_id}: {e}")
-                        equipment_without_positions.append((equipment_inst, "set_position_error"))
+                    # Store equipment with sequence position information
+                    equipment_with_positions.append((equipment_inst, position, eq_id))
+                    pop_logger.debug(f"TKT-006: Equipment {eq_id} (class: {eq_class_id}) has sequencePosition: {position}")
+                    total_equipment_with_sequence_position += 1
                 else:
-                    pop_logger.warning(f"No sequence position found for class {class_name} on line {line_id}")
-                    equipment_without_positions.append((equipment_inst, f"no_position_for_class_{class_name}"))
+                    # Try to look up the position from its class using the config
+                    if eq_class_ind and prop_equipmentClassId:
+                        # Get class ID to look up in configuration
+                        equipment_class_id = getattr(eq_class_ind, prop_equipmentClassId.python_name, eq_class_ind.name)
+                        
+                        # Try line-specific sequence first
+                        if line_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE and equipment_class_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id]:
+                            position = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(equipment_class_id)
+                            pop_logger.info(f"TKT-006: Found position {position} for {eq_id} using line-specific config for class {equipment_class_id}")
+                            
+                            # Set the position on the equipment individual
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            equipment_with_positions.append((equipment_inst, position, eq_id))
+                            total_equipment_with_sequence_position += 1
+                            continue
+                        
+                        # Try default sequence as fallback
+                        if equipment_class_id in DEFAULT_EQUIPMENT_SEQUENCE:
+                            position = DEFAULT_EQUIPMENT_SEQUENCE.get(equipment_class_id)
+                            pop_logger.info(f"TKT-006: Found position {position} for {eq_id} using default config for class {equipment_class_id}")
+                            
+                            # Set the position on the equipment individual
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            equipment_with_positions.append((equipment_inst, position, eq_id))
+                            total_equipment_with_sequence_position += 1
+                            continue
+                    
+                    # If we get here, we couldn't find or set a position
+                    equipment_without_positions.append((equipment_inst, eq_id))
+                    pop_logger.warning(f"TKT-006: Equipment {eq_id} (class: {eq_class_id}) on line {line_id} has no sequencePosition and none could be determined.")
             
-            # Step 4: Sort equipment instances by position, then by equipmentId
+            # Step 2: Sort equipment instances by sequencePosition, then by equipmentId
             sorted_equipment = sorted(equipment_with_positions, key=lambda x: (x[1], x[2]))
             
             if not sorted_equipment:
@@ -6080,15 +7074,15 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 continue
             
             # Log the sorted equipment for verification
-            pop_logger.info(f"Sorted equipment on line {line_id} (format: id [position]):")
+            pop_logger.info(f"TKT-006: Sorted equipment on line {line_id} (format: id [position]):")
             for i, (eq, pos, eq_id) in enumerate(sorted_equipment):
                 pop_logger.info(f"  {i+1}. {eq_id} [{pos}]")
             
-            # Step 5: Link equipment instances with isImmediatelyUpstreamOf/isImmediatelyDownstreamOf
+            # Step 3: Link equipment instances with isImmediatelyUpstreamOf/isImmediatelyDownstreamOf
             relationships_created = 0
             for i in range(len(sorted_equipment) - 1):
-                upstream_eq, _, up_id = sorted_equipment[i]
-                downstream_eq, _, down_id = sorted_equipment[i + 1]
+                upstream_eq, upstream_pos, up_id = sorted_equipment[i]
+                downstream_eq, downstream_pos, down_id = sorted_equipment[i + 1]
                 
                 # Validate to ensure we're not creating self-references
                 if upstream_eq is downstream_eq:
@@ -6096,29 +7090,14 @@ def setup_equipment_instance_relationships(onto: Ontology,
                     continue
                 
                 try:
-                    # Check if the relationship already exists to avoid duplicates
-                    downstream_list = getattr(upstream_eq, prop_isImmediatelyUpstreamOf.python_name, [])
-                    if not isinstance(downstream_list, list):
-                        downstream_list = [downstream_list] if downstream_list else []
+                    # Create forward relationship (isImmediatelyUpstreamOf)
+                    _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False)
+                    pop_logger.debug(f"TKT-006: Created relationship: {up_id} (pos {upstream_pos}) isImmediatelyUpstreamOf {down_id} (pos {downstream_pos})")
                     
-                    if downstream_eq in downstream_list:
-                        pop_logger.debug(f"Relationship already exists: {up_id} isImmediatelyUpstreamOf {down_id}")
-                    else:
-                        # Create forward relationship
-                        _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False)
-                        pop_logger.debug(f"Created forward relationship: {up_id} isImmediatelyUpstreamOf {down_id}")
-                    
-                    # Create inverse relationship if property exists
+                    # Create inverse relationship (isImmediatelyDownstreamOf) if property exists
                     if prop_isImmediatelyDownstreamOf:
-                        upstream_list = getattr(downstream_eq, prop_isImmediatelyDownstreamOf.python_name, [])
-                        if not isinstance(upstream_list, list):
-                            upstream_list = [upstream_list] if upstream_list else []
-                        
-                        if upstream_eq in upstream_list:
-                            pop_logger.debug(f"Inverse relationship already exists: {down_id} isImmediatelyDownstreamOf {up_id}")
-                        else:
-                            _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False)
-                            pop_logger.debug(f"Created inverse relationship: {down_id} isImmediatelyDownstreamOf {up_id}")
+                        _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False)
+                        pop_logger.debug(f"TKT-006: Created inverse relationship: {down_id} isImmediatelyDownstreamOf {up_id}")
                     
                     relationships_created += 1
                 except Exception as e:
@@ -6130,50 +7109,107 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 total_relationships += relationships_created
                 pop_logger.info(f"Established {relationships_created} instance relationships for line {line_id}.")
             
+            # TKT-007: Step 4: Identify and link parallel equipment (equipment with same sequence position)
+            if prop_isParallelWith:
+                # Group equipment by sequence position
+                position_equipment_map = {}
+                for eq, pos, eq_id in sorted_equipment:
+                    if pos not in position_equipment_map:
+                        position_equipment_map[pos] = []
+                    position_equipment_map[pos].append((eq, eq_id))
+                
+                # Process each position group that has multiple equipment
+                parallel_relationships = 0
+                for pos, equipment_list in position_equipment_map.items():
+                    if len(equipment_list) > 1:
+                        pop_logger.info(f"TKT-007: Found {len(equipment_list)} parallel equipment at position {pos} on line {line_id}")
+                        
+                        # Link all equipment at this position with isParallelWith relationships
+                        for i in range(len(equipment_list)):
+                            for j in range(i+1, len(equipment_list)):
+                                eq1, eq1_id = equipment_list[i]
+                                eq2, eq2_id = equipment_list[j]
+                                
+                                # Validate to ensure we're not creating self-references
+                                if eq1 is eq2:
+                                    pop_logger.error(f"TKT-007: Detected self-reference attempt for parallel equipment {eq1_id} on line {line_id}. Skipping this link.")
+                                    continue
+                                
+                                try:
+                                    # Since isParallelWith is symmetric, we only need to set it in one direction
+                                    # The OWL reasoner will infer the other direction
+                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False)
+                                    pop_logger.debug(f"TKT-007: Created parallel relationship: {eq1_id} isParallelWith {eq2_id} (position {pos})")
+                                    parallel_relationships += 1
+                                except Exception as e:
+                                    pop_logger.error(f"TKT-007: Error creating parallel relationship between {eq1_id} and {eq2_id}: {e}")
+                
+                if parallel_relationships > 0:
+                    line_parallel_counts[line_id] = parallel_relationships
+                    total_parallel_relationships += parallel_relationships
+                    pop_logger.info(f"TKT-007: Established {parallel_relationships} parallel equipment relationships for line {line_id}.")
+            
             # Log info about equipment without positions
             if equipment_without_positions:
-                # Group by reason for diagnostic purposes
-                reason_groups = {}
-                for eq, reason in equipment_without_positions:
-                    if reason not in reason_groups:
-                        reason_groups[reason] = []
-                    reason_groups[reason].append(safe_get_equipment_id(eq))
-                
-                # Log the grouped reasons
-                pop_logger.warning(f"Line {line_id} has {len(equipment_without_positions)} equipment without positions:")
-                for reason, ids in reason_groups.items():
-                    pop_logger.warning(f"  • Reason '{reason}': {len(ids)} equipment - {', '.join(ids[:5])}" + 
-                                       (f" and {len(ids)-5} more" if len(ids) > 5 else ""))
+                pop_logger.warning(f"Line {line_id} has {len(equipment_without_positions)} equipment without sequence positions.")
+                if len(equipment_without_positions) <= 10:
+                    for eq_id in [eq_id for _, eq_id in equipment_without_positions]:
+                        pop_logger.warning(f"  • Equipment without position: {eq_id}")
+                else:
+                    sample_ids = [eq_id for _, eq_id in equipment_without_positions[:5]]
+                    pop_logger.warning(f"  • First 5 equipment without positions: {', '.join(sample_ids)}...")
 
     # Print summary report
     print("\n=== EQUIPMENT INSTANCE RELATIONSHIP REPORT ===")
+    print(f"Found {total_equipment_with_sequence_position} equipment instances with sequencePosition")
+    
     if total_relationships > 0:
         pop_logger.info(f"Established {total_relationships} equipment instance relationships across {len(line_relationship_counts)} production lines.")
         print(f"Established {total_relationships} equipment instance relationships on {len(line_relationship_counts)} lines:")
         for line_id, count in sorted(line_relationship_counts.items()):
-            print(f"  Line {line_id}: {count} relationships")
+            print(f"  • Line {line_id}: {count} relationships")
 
         # Print info about the sequencing approach
         print("\nInstance sequencing approach:")
-        print("  • Each Equipment instance is assigned a sequencePosition based on its EquipmentClass")
         print("  • Equipment instances are sorted by sequencePosition, then by equipmentId")
-        print("  • Sorted instances are linked via isImmediatelyUpstreamOf/isImmediatelyDownstreamOf")
-        print("  • Sequence configuration is determined by:")
-        print("    - Line-specific configuration (if available in LINE_SPECIFIC_EQUIPMENT_SEQUENCE)")
-        print("    - Global DEFAULT_EQUIPMENT_SEQUENCE configuration (fallback)")
+        print("  • Sorted instances on the same line are linked via isImmediatelyUpstreamOf/isImmediatelyDownstreamOf")
     else:
         pop_logger.warning("No equipment instance relationships were established.")
         print("No equipment instance relationships could be established.")
         print("Possible reasons:")
         print("  • Equipment not linked to lines/classes")
-        print("  • Missing sequence positions for equipment classes")
+        print("  • Missing sequencePosition values (check TKT-010 implementation)")
         print("  • No equipment found on the same line")
+    
+    # TKT-007: Print parallel relationship summary
+    if prop_isParallelWith and total_parallel_relationships > 0:
+        pop_logger.info(f"TKT-007: Established {total_parallel_relationships} parallel equipment relationships across {len(line_parallel_counts)} production lines.")
+        print(f"\nEstablished {total_parallel_relationships} parallel equipment relationships on {len(line_parallel_counts)} lines:")
+        for line_id, count in sorted(line_parallel_counts.items()):
+            print(f"  • Line {line_id}: {count} parallel relationships")
         
+        print("\nParallel equipment identification approach:")
+        print("  • Equipment instances with the same sequencePosition on the same line are considered parallel")
+        print("  • Parallel instances are linked via the symmetric isParallelWith relationship")
+    elif prop_isParallelWith:
+        pop_logger.info("TKT-007: No parallel equipment relationships were established.")
+        print("\nNo parallel equipment relationships could be established.")
+        print("Possible reasons:")
+        print("  • No equipment instances with the same sequence position on the same line")
+        print("  • Equipment lacking sequence position information")
+    
     # Log lines without sequence
     if lines_without_sequence:
         print("\nProduction lines without sequence relationships:")
         for line_id in sorted(lines_without_sequence):
             print(f"  • {line_id}")
+    
+    # TKT-006: Add a summary log for the relationships created
+    pop_logger.info(f"TKT-006: Successfully established {total_relationships} instance-level equipment relationships")
+    
+    # TKT-007: Add a summary log for the parallel relationships created
+    if prop_isParallelWith:
+        pop_logger.info(f"TKT-007: Successfully established {total_parallel_relationships} parallel equipment relationships")
 
     return total_relationships  # Return count of created relationships for tracking
 
@@ -6572,6 +7608,7 @@ def sanitize_name(name: Any) -> str:
     if not safe_name:
         fallback_hash = abs(hash(name_str))  # Hash the original string
         safe_name = f"UnnamedData_{fallback_hash}"
+        pop_logger.warning(f"Sanitized name for '{name_str}' became empty or invalid. Using fallback hash: {safe_name}")
         
     return safe_name
 
