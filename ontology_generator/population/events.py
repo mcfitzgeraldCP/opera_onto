@@ -34,21 +34,29 @@ def process_shift(
     if not property_mappings or "Shift" not in property_mappings:
         pop_logger.debug("Property mappings for 'Shift' not provided. Skipping shift processing.")
         return None
-    if all_created_individuals_by_uid is None: return None # Error logged upstream
+    if all_created_individuals_by_uid is None:
+        pop_logger.error("Individual registry not provided to process_shift. Skipping.")
+        return None
 
     cls_Shift = context.get_class("Shift")
-    if not cls_Shift: return None
+    if not cls_Shift:
+        pop_logger.error("Shift class not found in ontology. Skipping shift processing.")
+        return None
 
+    # Check for required property mappings
     shift_id_map = property_mappings['Shift'].get('data_properties', {}).get('shiftId')
     start_time_map = property_mappings['Shift'].get('data_properties', {}).get('shiftStartTime')
     end_time_map = property_mappings['Shift'].get('data_properties', {}).get('shiftEndTime')
 
     if not shift_id_map or not shift_id_map.get('column'):
-        pop_logger.warning("Mapping for Shift.shiftId column not found. Skipping shift.")
+        pop_logger.warning("Required property mapping 'shiftId' not found. Skipping shift creation.")
         return None
     # Start/end times are crucial for identification/labeling if ID isn't unique
-    if not start_time_map or not start_time_map.get('column') or not end_time_map or not end_time_map.get('column'):
-         pop_logger.warning("Mapping for Shift start/end time columns not found. Skipping shift.")
+    if not start_time_map or not start_time_map.get('column'):
+         pop_logger.warning("Required property mapping 'shiftStartTime' not found. Skipping shift creation.")
+         return None
+    if not end_time_map or not end_time_map.get('column'):
+         pop_logger.warning("Required property mapping 'shiftEndTime' not found. Skipping shift creation.")
          return None
 
     shift_id_col = shift_id_map['column']
@@ -56,8 +64,11 @@ def process_shift(
     start_time_str = safe_cast(row.get(start_time_map['column']), str)
     end_time_str = safe_cast(row.get(end_time_map['column']), str)
 
-    if not shift_id or not start_time_str:
-        pop_logger.debug(f"Missing shift ID ('{shift_id_col}') or start time ('{start_time_map['column']}') in row. Skipping shift.")
+    if not shift_id:
+        pop_logger.debug(f"Missing shift ID in column '{shift_id_col}'. Skipping shift creation.")
+        return None
+    if not start_time_str:
+        pop_logger.debug(f"Missing shift start time in column '{start_time_map['column']}'. Skipping shift creation.")
         return None
 
     # Create a unique base name, e.g., ShiftID_StartTime
@@ -68,9 +79,6 @@ def process_shift(
 
     if shift_ind and pass_num == 1:
         apply_data_property_mappings(shift_ind, property_mappings["Shift"], row, context, "Shift", pop_logger)
-        # Potential: Calculate duration if mapping exists? Or leave to reasoner/post-processing?
-        # duration_map = property_mappings['Shift'].get('data_properties', {}).get('shiftDurationMinutes')
-        # if duration_map ... calculate ... context.set_prop(...)
 
     return shift_ind
 
@@ -88,20 +96,25 @@ def process_state(
     if not property_mappings or "OperationalState" not in property_mappings:
         pop_logger.debug("Property mappings for 'OperationalState' not provided. Skipping state processing.")
         return None
-    if all_created_individuals_by_uid is None: return None
+    if all_created_individuals_by_uid is None:
+        pop_logger.error("Individual registry not provided to process_state. Skipping.")
+        return None
 
     cls_State = context.get_class("OperationalState")
-    if not cls_State: return None
+    if not cls_State:
+        pop_logger.error("OperationalState class not found in ontology. Skipping state processing.")
+        return None
 
+    # Check for required property mapping: stateDescription
     state_desc_map = property_mappings['OperationalState'].get('data_properties', {}).get('stateDescription')
     if not state_desc_map or not state_desc_map.get('column'):
-        pop_logger.warning("Mapping for OperationalState.stateDescription column not found. Skipping state.")
+        pop_logger.warning("Required property mapping 'stateDescription' not found. Skipping state creation.")
         return None
 
     state_desc_col = state_desc_map['column']
     state_desc = safe_cast(row.get(state_desc_col), str)
     if not state_desc:
-        pop_logger.debug(f"No State Description found in column '{state_desc_col}'. Skipping state.")
+        pop_logger.debug(f"Missing state description in column '{state_desc_col}'. Skipping state creation.")
         return None
 
     # Use description as the base name (assuming descriptions are reasonably unique states)
@@ -129,11 +142,16 @@ def process_reason(
     if not property_mappings or "OperationalReason" not in property_mappings:
         pop_logger.debug("Property mappings for 'OperationalReason' not provided. Skipping reason processing.")
         return None
-    if all_created_individuals_by_uid is None: return None
+    if all_created_individuals_by_uid is None:
+        pop_logger.error("Individual registry not provided to process_reason. Skipping.")
+        return None
 
     cls_Reason = context.get_class("OperationalReason")
-    if not cls_Reason: return None
+    if not cls_Reason:
+        pop_logger.error("OperationalReason class not found in ontology. Skipping reason processing.")
+        return None
 
+    # Check for required property mappings: reasonDescription or altReasonDescription
     reason_desc_map = property_mappings['OperationalReason'].get('data_properties', {}).get('reasonDescription')
     alt_reason_desc_map = property_mappings['OperationalReason'].get('data_properties', {}).get('altReasonDescription')
 
@@ -148,11 +166,11 @@ def process_reason(
         reason_desc = safe_cast(row.get(reason_desc_col), str)
         pop_logger.debug(f"Using altReasonDescription column '{reason_desc_col}' for reason.")
     else:
-        pop_logger.warning("Mapping for OperationalReason description column (reasonDescription or altReasonDescription) not found. Skipping reason.")
+        pop_logger.warning("Required property mapping for reason description (reasonDescription or altReasonDescription) not found. Skipping reason creation.")
         return None
 
     if not reason_desc:
-        pop_logger.debug(f"No Reason Description found in column '{reason_desc_col}'. Skipping reason.")
+        pop_logger.debug(f"Missing reason description in column '{reason_desc_col}'. Skipping reason creation.")
         return None
 
     # Use description as the base name
@@ -201,16 +219,21 @@ def process_time_interval(
     if not property_mappings or "TimeInterval" not in property_mappings:
         pop_logger.debug("Property mappings for 'TimeInterval' not provided. Skipping interval processing.")
         return None
-    if all_created_individuals_by_uid is None: return None
+    if all_created_individuals_by_uid is None:
+        pop_logger.error("Individual registry not provided to process_time_interval. Skipping.")
+        return None
 
     cls_Interval = context.get_class("TimeInterval")
-    if not cls_Interval: return None
+    if not cls_Interval:
+        pop_logger.error("TimeInterval class not found in ontology. Skipping interval processing.")
+        return None
 
+    # Check for required property mappings: startTime (required) and endTime (optional but important)
     start_map = property_mappings['TimeInterval'].get('data_properties', {}).get('startTime')
     end_map = property_mappings['TimeInterval'].get('data_properties', {}).get('endTime')
 
     if not start_map or not start_map.get('column'):
-        pop_logger.warning("Mapping for TimeInterval.startTime column not found. Using fallback naming scheme.")
+        pop_logger.warning("Required property mapping 'startTime' not found. Using fallback naming scheme.")
         has_start_mapping = False
     else:
         has_start_mapping = True
@@ -239,6 +262,10 @@ def process_time_interval(
             valid_end_time = True
         else:
             pop_logger.debug(f"Row {row_num}: No endTime value in column '{end_col}'.")
+            if infer_missing_end_time and valid_start_time:
+                # Logic to infer end time would go here if we needed it
+                # For now, we're just focusing on property checks
+                pass
 
     # Create a robust unique base name
     if valid_start_time:
@@ -248,54 +275,16 @@ def process_time_interval(
         end_label_part = f"to {end_time_str}" if valid_end_time else "(No End Time)"
         interval_labels = [f"Interval for {resource_base_id} starting {start_time_str} {end_label_part}"]
     else:
-        # Robust fallback naming when no valid start time exists
+        # Fallback when no valid start time, use row-based approach only
         interval_unique_base = f"Interval_{resource_base_id}_Row{row_num}"
-        interval_labels = [f"Interval for {resource_base_id} (Row {row_num}, StartTime Missing)"]
-        pop_logger.warning(f"Row {row_num}: Using fallback naming scheme for TimeInterval: '{interval_unique_base}' due to missing startTime")
+        interval_labels = [f"Interval for {resource_base_id} (Row {row_num})"]
+        pop_logger.warning(f"Using fallback naming for time interval '{interval_unique_base}' due to missing start time.")
 
-    # Create the TimeInterval individual with the determined name
+    # Create or retrieve the interval individual
     interval_ind = get_or_create_individual(cls_Interval, interval_unique_base, context.onto, all_created_individuals_by_uid, add_labels=interval_labels)
 
     if interval_ind and pass_num == 1:
-        # Apply all data properties from mappings (will include startTime/endTime if they exist)
         apply_data_property_mappings(interval_ind, property_mappings["TimeInterval"], row, context, "TimeInterval", pop_logger)
-        
-        # Verify the startTime property was actually set
-        has_start_prop = hasattr(interval_ind, 'startTime') and interval_ind.startTime
-        if not has_start_prop:
-            pop_logger.warning(f"Row {row_num}: TimeInterval {interval_ind.name} created but startTime property not set. This may cause linking issues.")
-        
-        # Check if endTime is missing and infer it if requested
-        if infer_missing_end_time and has_start_prop:
-            has_end_prop = hasattr(interval_ind, 'endTime') and interval_ind.endTime
-            
-            if not has_end_prop:
-                from datetime import timedelta
-                # Infer endTime based on startTime + default duration
-                start_time = interval_ind.startTime
-                if isinstance(start_time, datetime):
-                    inferred_end_time = start_time + timedelta(hours=default_duration_hours)
-                    
-                    # Set the inferred end time
-                    prop_endTime = context.get_prop("endTime")
-                    if prop_endTime:
-                        context.set_prop(interval_ind, "endTime", inferred_end_time)
-                        pop_logger.info(f"Row {row_num}: Inferred missing endTime for {interval_ind.name}: {inferred_end_time} "
-                                        f"(startTime + {default_duration_hours} hours)")
-                        
-                        # Add a flag to indicate this is an inferred end time
-                        # Store as a comment if available
-                        if hasattr(interval_ind, 'comment'):
-                            if isinstance(interval_ind.comment, list):
-                                interval_ind.comment.append(f"Inferred endTime: startTime + {default_duration_hours} hours")
-                            else:
-                                interval_ind.comment = [interval_ind.comment, f"Inferred endTime: startTime + {default_duration_hours} hours"]
-                        else:
-                            interval_ind.comment = [f"Inferred endTime: startTime + {default_duration_hours} hours"]
-                    else:
-                        pop_logger.warning(f"Row {row_num}: Cannot infer endTime - 'endTime' property not found in ontology")
-                else:
-                    pop_logger.warning(f"Row {row_num}: Cannot infer endTime - startTime is not a valid datetime")
 
     return interval_ind
 
@@ -317,164 +306,201 @@ def process_event_record(
     row_num: int = -1
 ) -> Tuple[Optional[Thing], Optional[Tuple]]:
     """
-    Processes EventRecord from a row (Pass 1: Create/Data Props).
-    Links to other entities (State, Reason, Shift, Resource, etc.) are deferred to Pass 2.
-
-    Uses EQUIPMENT_TYPE column as the authoritative source to determine if it's a line or equipment event.
-    Requires mappings for startTime, endTime (to identify interval).
+    Processes EventRecord from a row (Pass 1: Create/Data Props and critical links).
+    
+    Critical context for individual creation comes from relationships with other individuals:
+    - time_interval_ind: When the event occurred
+    - equipment_ind OR line_ind: Resource involved (at least one should be present)
+    - state_ind: The operational state of the resource
+    - reason_ind: Optional reason for the state
 
     Returns:
-        Tuple: (event_individual, event_context_for_linking)
-               event_context_for_linking: (event_ind, primary_resource_ind, time_interval_ind, line_ind_for_context)
+        Tuple: (event_ind, event_tuple)
+               - event_ind: The created event individual
+               - event_tuple: Context tuple for post-processing if needed
     """
     if not property_mappings or "EventRecord" not in property_mappings:
-        pop_logger.debug("Property mappings for 'EventRecord' not provided. Skipping event record processing.")
+        pop_logger.debug("Property mappings for 'EventRecord' not provided. Skipping event processing.")
         return None, None
-    if all_created_individuals_by_uid is None: return None, None
+    if all_created_individuals_by_uid is None:
+        pop_logger.error("Individual registry not provided to process_event_record. Skipping.")
+        return None, None
 
     cls_Event = context.get_class("EventRecord")
-    if not cls_Event: return None, None
-
-    # --- Determine Primary Resource Based on EQUIPMENT_TYPE ---
-    # EQUIPMENT_TYPE is the authoritative source for the type of resource involved
-    equipment_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
-    primary_resource_ind = None
-    resource_id_for_name = None
-    resource_type_name = "unknown"  # For logging purposes
-
-    # Clear decision based on EQUIPMENT_TYPE
-    if equipment_type == 'Line':
-        if line_ind:
-            primary_resource_ind = line_ind
-            resource_type_name = "ProductionLine"
-            # Try to get a stable ID for the name
-            line_id = getattr(line_ind, "lineId", None)
-            if isinstance(line_id, list) and line_id:
-                resource_id_for_name = line_id[0]
-            else:
-                resource_id_for_name = str(line_id) if line_id else line_ind.name
-            pop_logger.debug(f"Identified event for Line: {resource_id_for_name} based on EQUIPMENT_TYPE='{equipment_type}'")
-        else:
-            pop_logger.warning(f"Row indicates a Line event (EQUIPMENT_TYPE='{equipment_type}'), but no Line individual found. Skipping event.")
-            return None, None
-    elif equipment_type == 'Equipment':
-        if equipment_ind:
-            primary_resource_ind = equipment_ind
-            resource_type_name = "Equipment"
-            # Try to get a stable ID for the name
-            equipment_id = getattr(equipment_ind, "equipmentId", None)
-            if isinstance(equipment_id, list) and equipment_id:
-                resource_id_for_name = equipment_id[0]
-            else:
-                resource_id_for_name = str(equipment_id) if equipment_id else equipment_ind.name
-            pop_logger.debug(f"Identified event for Equipment: {resource_id_for_name} based on EQUIPMENT_TYPE='{equipment_type}'")
-        else:
-            pop_logger.warning(f"Row indicates an Equipment event (EQUIPMENT_TYPE='{equipment_type}'), but no Equipment individual found. Skipping event.")
-            return None, None
-    else:
-        # Unknown equipment type, log warning and try to make a reasonable decision
-        pop_logger.warning(f"Unknown EQUIPMENT_TYPE value: '{equipment_type}'. Trying to determine resource type.")
-        
-        # Fallback logic - check which resources are available
-        if equipment_ind:
-            primary_resource_ind = equipment_ind
-            resource_type_name = "Equipment"
-            equipment_id = getattr(equipment_ind, "equipmentId", None)
-            if isinstance(equipment_id, list) and equipment_id:
-                resource_id_for_name = equipment_id[0]
-            else:
-                resource_id_for_name = str(equipment_id) if equipment_id else equipment_ind.name
-            pop_logger.debug(f"Defaulting to Equipment: {resource_id_for_name} (unknown EQUIPMENT_TYPE='{equipment_type}')")
-        elif line_ind:
-            primary_resource_ind = line_ind
-            resource_type_name = "ProductionLine"
-            line_id = getattr(line_ind, "lineId", None)
-            if isinstance(line_id, list) and line_id:
-                resource_id_for_name = line_id[0]
-            else:
-                resource_id_for_name = str(line_id) if line_id else line_ind.name
-            pop_logger.debug(f"Defaulting to Line: {resource_id_for_name} (unknown EQUIPMENT_TYPE='{equipment_type}')")
-        else:
-            pop_logger.warning(f"Cannot determine primary resource for event (EQUIPMENT_TYPE='{equipment_type}'). Skipping event.")
-            return None, None
-
-    # Validate that the resource was correctly identified
-    if not primary_resource_ind:
-        pop_logger.error(f"Failed to identify valid primary resource for event. EQUIPMENT_TYPE='{equipment_type}'. Skipping event.")
+    if not cls_Event:
+        pop_logger.error("EventRecord class not found in ontology. Skipping event processing.")
         return None, None
 
-    # --- Check Dependencies (Time Interval) --- 
+    # Validate required context individuals for creating meaningful events
     if not time_interval_ind:
-         pop_logger.warning("TimeInterval individual not provided for event record. Skipping event.")
-         return None, None
+        pop_logger.warning(f"Row {row_num}: Missing time interval individual for event. Skipping event creation.")
+        return None, None
+    if not state_ind:
+        pop_logger.warning(f"Row {row_num}: Missing state individual for event. Skipping event creation.")
+        return None, None
+    if not (equipment_ind or line_ind):
+        pop_logger.warning(f"Row {row_num}: Missing both equipment and line individuals for event. Need at least one resource. Skipping event creation.")
+        return None, None
 
-    # Extract start time from the interval for the unique name
-    start_time_str = None
-    # Retrieve start time value directly from the interval individual for naming consistency
-    start_time_val = getattr(time_interval_ind, 'startTime', None)
-    if isinstance(start_time_val, datetime):
-        start_time_str = start_time_val.isoformat()
-    elif start_time_val: # Handle if it's stored as string or other type
-         start_time_str = str(start_time_val)
-    # Fallback if startTime property is missing on the interval
-    elif interval_ind := all_created_individuals_by_uid.get(("TimeInterval", time_interval_ind.name)): # Check registry
-         start_time_val = getattr(interval_ind, 'startTime', None)
-         if isinstance(start_time_val, datetime): start_time_str = start_time_val.isoformat()
-         elif start_time_val: start_time_str = str(start_time_val)
+    # Check EQUIPMENT_TYPE column to determine the correct resource to link
+    equipment_type = row.get('EQUIPMENT_TYPE', '').strip()
+    
+    # Determine the main resource involved based on EQUIPMENT_TYPE
+    if equipment_type == 'Line':
+        if not line_ind:
+            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Line' but no line_ind was provided. Cannot link event to line resource.")
+            return None, None
+        resource_ind = line_ind
+        resource_type = "Line"
+    elif equipment_type == 'Equipment':
+        if not equipment_ind:
+            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Equipment' but no equipment_ind was provided. Cannot link event to equipment resource.")
+            return None, None
+        resource_ind = equipment_ind
+        resource_type = "Equipment"
+    else:
+        # Fallback to previous logic for backwards compatibility
+        pop_logger.warning(f"Row {row_num}: Unknown EQUIPMENT_TYPE '{equipment_type}'. Falling back to equipment_ind if available, otherwise line_ind.")
+        resource_ind = equipment_ind if equipment_ind else line_ind
+        resource_type = "Equipment" if equipment_ind else "Line"
+    
+    resource_id = None
+    
+    # Extract resource ID with property existence check
+    if resource_type == "Equipment":
+        # Check for equipmentId property on the individual
+        equipment_id_prop = context.get_prop("equipmentId")
+        if equipment_id_prop and hasattr(resource_ind, "equipmentId"):
+            resource_id = resource_ind.equipmentId
+        else:
+            # Fall back to name-based extraction
+            if hasattr(resource_ind, "name"):
+                resource_id = resource_ind.name.split("_")[-1]  # Extract from individual name
+            else:
+                resource_id = f"Unknown{row_num}"
+                pop_logger.warning(f"Row {row_num}: Could not determine equipment ID for event. Using fallback ID '{resource_id}'.")
+    else:  # Line
+        # Check for lineId property on the individual
+        line_id_prop = context.get_prop("lineId")
+        if line_id_prop and hasattr(resource_ind, "lineId"):
+            resource_id = resource_ind.lineId
+        else:
+            # Fall back to name-based extraction
+            if hasattr(resource_ind, "name"):
+                resource_id = resource_ind.name.split("_")[-1]  # Extract from individual name
+            else:
+                resource_id = f"UnknownLine{row_num}"
+                pop_logger.warning(f"Row {row_num}: Could not determine line ID for event. Using fallback ID '{resource_id}'.")
 
-    # If start_time_str is *still* None after checks, we cannot reliably name the event
-    if start_time_str is None:
-        pop_logger.warning(f"Cannot find startTime property value on TimeInterval {time_interval_ind.name}. Using fallback event naming based on interval name.")
-        # Use the interval's name itself as part of the event name base
-        start_time_str = time_interval_ind.name # Fallback to interval name
-
-    # --- Create Unique ID & Labels --- 
-    # Ensure resource_id_for_name was set
-    if not resource_id_for_name:
-         pop_logger.error(f"Could not determine a valid ID for the primary resource ('{equipment_type}'). Skipping event.")
-         return None, None
-
-    # Use row_num in the unique base name for robustness
-    event_unique_base = f"Event_{resource_id_for_name}_{start_time_str}_{row_num}"
-    event_labels = [f"Event for {resource_type_name} '{resource_id_for_name}' at {start_time_str} (Row: {row_num})"]
-    # Add state/reason descriptions to label if available?
-    if state_ind and hasattr(state_ind, 'stateDescription') and state_ind.stateDescription:
-        # Handle potential locstr or list
-        state_desc = state_ind.stateDescription[0] if isinstance(state_ind.stateDescription, list) else state_ind.stateDescription
-        event_labels.append(f"State: {state_desc}")
-    if reason_ind and hasattr(reason_ind, 'reasonDescription') and reason_ind.reasonDescription:
-        reason_desc = reason_ind.reasonDescription[0] if isinstance(reason_ind.reasonDescription, list) else reason_ind.reasonDescription
-        event_labels.append(f"Reason: {reason_desc}")
-
-    # --- Create Individual --- 
+    # Extract start time for uniqueness if available
+    start_time_str = "Unknown"
+    start_time_prop = context.get_prop("startTime")
+    if start_time_prop and hasattr(time_interval_ind, "startTime"):
+        start_time_val = time_interval_ind.startTime
+        start_time_str = str(start_time_val).replace(":", "").replace(" ", "T").replace("+", "plus")
+    
+    # Extract state description for labeling if available
+    state_desc = "Unknown State"
+    state_desc_prop = context.get_prop("stateDescription")
+    if state_desc_prop and hasattr(state_ind, "stateDescription"):
+        state_desc = state_ind.stateDescription
+    
+    # Create a unique ID for the event
+    event_unique_base = f"Event_{resource_id}_{start_time_str}_Row{row_num}"
+    
+    # Create descriptive labels
+    event_labels = []
+    # Primary user-friendly label based on resource and state
+    event_labels.append(f"{resource_type} {resource_id} {state_desc} at {start_time_str}")
+    
+    # Add reason if available with property existence check
+    if reason_ind:
+        reason_desc_prop = context.get_prop("reasonDescription")
+        reason_desc = None
+        if reason_desc_prop and hasattr(reason_ind, "reasonDescription"):
+            reason_desc = reason_ind.reasonDescription
+            if reason_desc:
+                event_labels.append(f"Reason: {reason_desc}")
+        
+        alt_reason_desc_prop = context.get_prop("altReasonDescription")
+        if not reason_desc and alt_reason_desc_prop and hasattr(reason_ind, "altReasonDescription"):
+            alt_reason_desc = reason_ind.altReasonDescription
+            if alt_reason_desc:
+                event_labels.append(f"Reason: {alt_reason_desc}")
+    
+    # Create or retrieve EventRecord individual
     event_ind = get_or_create_individual(cls_Event, event_unique_base, context.onto, all_created_individuals_by_uid, add_labels=event_labels)
 
-    # --- Apply Data Properties & Prepare Context --- 
-    event_context_out = None
     if event_ind and pass_num == 1:
-        # Apply data properties
+        # Apply standard data property mappings
         apply_data_property_mappings(event_ind, property_mappings["EventRecord"], row, context, "EventRecord", pop_logger)
-
-        # ALWAYS link the primary resource in Pass 1 - this is critical for ProductionLineOrEquipment union
+        
+        # --- CRITICAL OBJECT PROPERTY LINKING FOR EVENT CONTEXT ---
+        
+        # 1. Link to TimeInterval (when the event occurred) - critical
+        # Check for occursDuring property existence
+        occurs_during_prop = context.get_prop("occursDuring")
+        if occurs_during_prop:
+            context.set_prop(event_ind, "occursDuring", time_interval_ind)
+        else:
+            pop_logger.warning(f"Row {row_num}: Required property 'occursDuring' not found. Cannot link event to time interval.")
+        
+        # 2. Link to OperationalState - critical
+        # Check for hasOperationalState property existence
+        has_state_prop = context.get_prop("eventHasState")
+        if has_state_prop:
+            context.set_prop(event_ind, "eventHasState", state_ind)
+        else:
+            pop_logger.warning(f"Row {row_num}: Required property 'eventHasState' not found. Cannot link event to state.")
+        
+        # 3. Link to OperationalReason if available
+        if reason_ind:
+            # Check for hasOperationalReason property existence
+            has_reason_prop = context.get_prop("eventHasReason")
+            if has_reason_prop:
+                context.set_prop(event_ind, "eventHasReason", reason_ind)
+            else:
+                pop_logger.warning(f"Row {row_num}: Required property 'eventHasReason' not found. Cannot link event to reason.")
+        
+        # 4. Link to primary resource (Equipment or ProductionLine) - critical
+        # Check for involvesResource property existence
         involves_resource_prop = context.get_prop("involvesResource")
         if involves_resource_prop:
-            # Check if already linked to avoid duplicate relationships
-            current_resource = getattr(event_ind, involves_resource_prop.python_name, None)
-            if current_resource is None:
-                # Link to the determined primary resource (either Line or Equipment)
-                context.set_prop(event_ind, "involvesResource", primary_resource_ind)
-                pop_logger.info(f"Linked event {event_ind.name} to {resource_type_name} '{resource_id_for_name}' via involvesResource")
-            else:
-                pop_logger.debug(f"Event {event_ind.name} already linked to resource {getattr(current_resource, '_name', str(current_resource))}, not changing")
+            context.set_prop(event_ind, "involvesResource", resource_ind)
         else:
-            pop_logger.error(f"Cannot find involvesResource property in ontology. Event {event_ind.name} resource link not set.")
-
-        # Prepare context for later linking steps
-        # The 4th element (line_ind) provides context for where equipment events occurred
-        event_context_out = (event_ind, primary_resource_ind, time_interval_ind, line_ind)
-
-    return event_ind, event_context_out
-
+            pop_logger.warning(f"Row {row_num}: Required property 'involvesResource' not found. Cannot link event to resource.")
+        
+        # 5. Link to Shift if available
+        if shift_ind:
+            # Check for occursInShift property existence
+            occurs_in_shift_prop = context.get_prop("duringShift")
+            if occurs_in_shift_prop:
+                context.set_prop(event_ind, "duringShift", shift_ind)
+            else:
+                pop_logger.warning(f"Row {row_num}: Property 'duringShift' not found. Cannot link event to shift.")
+        
+        # 6. Link to Material if available and context equipment/line supports it
+        if material_ind:
+            # Check for involvesMaterial property existence
+            involves_material_prop = context.get_prop("usesMaterial")
+            if involves_material_prop:
+                context.set_prop(event_ind, "usesMaterial", material_ind)
+            else:
+                pop_logger.warning(f"Row {row_num}: Property 'usesMaterial' not found. Cannot link event to material.")
+        
+        # 7. Link to ProductionRequest if available
+        if request_ind:
+            # Check for involvesRequest property existence
+            involves_request_prop = context.get_prop("forRequest")
+            if involves_request_prop:
+                context.set_prop(event_ind, "forRequest", request_ind)
+            else:
+                pop_logger.warning(f"Row {row_num}: Property 'forRequest' not found. Cannot link event to production request.")
+    
+    # Create event context tuple for post-processing
+    event_context = (event_ind, resource_ind, resource_type) if event_ind else None
+    
+    return event_ind, event_context
 
 def process_event_related(
     row: Dict[str, Any],
@@ -534,6 +560,12 @@ def process_event_related(
     resource_base_id = None
     resource_type_hint = row.get('EQUIPMENT_TYPE', 'Equipment').strip()
 
+    # Verify that both the required individuals (line_ind or equipment_ind) are available based on EQUIPMENT_TYPE
+    if resource_type_hint == 'Line' and not line_ind:
+        pop_logger.warning(f"Row {actual_row_num}: EQUIPMENT_TYPE is 'Line' but no line_ind was provided. Event processing may fail.")
+    elif resource_type_hint == 'Equipment' and not equipment_ind:
+        pop_logger.warning(f"Row {actual_row_num}: EQUIPMENT_TYPE is 'Equipment' but no equipment_ind was provided. Event processing may fail.")
+        
     if resource_type_hint == 'Line':
         if line_ind:
             resource_base_id = line_ind.lineId[0] if hasattr(line_ind, 'lineId') and line_ind.lineId else line_ind.name

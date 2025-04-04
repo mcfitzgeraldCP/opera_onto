@@ -64,6 +64,7 @@ def process_asset_hierarchy(
     line_ind: Optional[Thing] = None
 
     # --- Plant ---
+    # Check for plantId property mapping
     plant_id_map = property_mappings.get('Plant', {}).get('data_properties', {}).get('plantId')
     if not plant_id_map or not plant_id_map.get('column'):
         pop_logger.error("Cannot determine the column for Plant.plantId from property mappings. Skipping Plant creation.")
@@ -80,7 +81,7 @@ def process_asset_hierarchy(
     # Primary label: Plant ID (required)
     plant_labels.append(plant_id)
     
-    # Add descriptive label if available
+    # Add descriptive label if available - with property existence check
     plant_name_map = property_mappings.get('Plant', {}).get('data_properties', {}).get('plantName')
     if plant_name_map and plant_name_map.get('column'):
         plant_name = safe_cast(row.get(plant_name_map.get('column')), str)
@@ -97,6 +98,7 @@ def process_asset_hierarchy(
          return None, None, None, None
 
     # --- Area ---
+    # Check for areaId property mapping
     area_id_map = property_mappings.get('Area', {}).get('data_properties', {}).get('areaId')
     if not area_id_map or not area_id_map.get('column'):
         pop_logger.warning("Cannot determine the column for Area.areaId from property mappings. Skipping Area/ProcessCell/Line creation.")
@@ -131,6 +133,7 @@ def process_asset_hierarchy(
          return plant_ind, None, None, None
 
     # --- ProcessCell ---
+    # Check for processCellId property mapping
     pcell_id_map = property_mappings.get('ProcessCell', {}).get('data_properties', {}).get('processCellId')
     if not pcell_id_map or not pcell_id_map.get('column'):
         pop_logger.warning("Cannot determine the column for ProcessCell.processCellId from property mappings. Skipping ProcessCell/Line creation.")
@@ -165,6 +168,7 @@ def process_asset_hierarchy(
         return plant_ind, area_ind, None, None
 
     # --- ProductionLine ---
+    # Check for lineId property mapping
     line_id_map = property_mappings.get('ProductionLine', {}).get('data_properties', {}).get('lineId')
     if not line_id_map or not line_id_map.get('column'):
         pop_logger.warning("Cannot determine the column for ProductionLine.lineId from property mappings. Skipping Line creation.")
@@ -206,14 +210,6 @@ def process_asset_hierarchy(
              pop_logger.warning(f"Failed to create/retrieve ProductionLine individual for base '{line_unique_base}'.")
              # Return what we have (line_ind will be None)
              return plant_ind, area_ind, pcell_ind, None
-        # elif pass_num == 1: # Mappings missing or wrong pass
-        #     pop_logger.warning(f"No property mappings found for ProductionLine '{line_id}' or wrong pass ({pass_num}). Only basic individual created/retrieved.")
-            # Ensure ID is set and link to process cell if possible (DEFER LINKING)
-            # if not getattr(line_ind, "lineId", None):
-            #     context.set_prop(line_ind, "lineId", line_id)
-            # if pcell_ind and not getattr(line_ind, "locatedInProcessCell", None):
-            #     pop_logger.warning(f"Manually linking Line '{line_id}' to ProcessCell '{pcell_id}' due to missing mapping.") # DEFER/REMOVE
-            #     context.set_prop(line_ind, "locatedInProcessCell", pcell_ind) # DEFER/REMOVE
 
     # Return all individuals created/retrieved in this hierarchy for this row
     return plant_ind, area_ind, pcell_ind, line_ind
@@ -248,48 +244,42 @@ def process_material(
 
     cls_Material = context.get_class("Material")
     if not cls_Material:
-        # Error logged by get_class
+        pop_logger.error("Material class not found in ontology. Skipping material processing.")
         return None
 
-    mat_id_map = property_mappings['Material'].get('data_properties', {}).get('materialId')
-    if not mat_id_map or not mat_id_map.get('column'):
-        pop_logger.warning("Cannot determine the column for Material.materialId from property mappings. Skipping material creation.")
+    # Check for materialId property mapping
+    material_id_map = property_mappings["Material"].get("data_properties", {}).get("materialId")
+    if not material_id_map or not material_id_map.get("column"):
+        pop_logger.warning("Required property mapping 'materialId' not found. Skipping material creation.")
         return None
-    mat_id_col = mat_id_map['column']
-    mat_id = safe_cast(row.get(mat_id_col), str)
-    if not mat_id:
-        pop_logger.debug(f"No Material ID found in column '{mat_id_col}', skipping material creation.")
+
+    material_id_col = material_id_map["column"]
+    material_id = safe_cast(row.get(material_id_col), str)
+    if not material_id:
+        pop_logger.warning(f"Missing or invalid Material ID in column '{material_id_col}'. Skipping material creation.")
         return None
 
     # Create descriptive labels for Material
-    mat_labels = []
+    material_labels = []
     
-    # Try to get description for primary label
-    mat_desc_map = property_mappings['Material'].get('data_properties', {}).get('materialDescription')
-    mat_desc = None
-    if mat_desc_map and mat_desc_map.get('column'):
-        mat_desc = safe_cast(row.get(mat_desc_map['column']), str)
+    # Primary label: Material ID (required)
+    material_labels.append(material_id)
     
-    # Primary label: Material description if available, otherwise ID
-    if mat_desc:
-        mat_labels.append(mat_desc)
-    mat_labels.append(f"Material {mat_id}")
+    # Add descriptive name label if available - with property existence check
+    material_name_map = property_mappings["Material"].get("data_properties", {}).get("materialName")
+    if material_name_map and material_name_map.get("column"):
+        material_name_col = material_name_map["column"]
+        material_name = safe_cast(row.get(material_name_col), str)
+        if material_name and material_name != material_id:
+            material_labels.append(f"{material_name}")
     
-    # Always ensure the ID is in the labels
-    if mat_id and f"ID:{mat_id}" not in mat_labels:
-        mat_labels.append(f"ID:{mat_id}")
+    # Create or retrieve Material individual using material_id as the base identifier
+    material_ind = get_or_create_individual(cls_Material, material_id, context.onto, all_created_individuals_by_uid, add_labels=material_labels)
 
-    # Create or retrieve Material individual using mat_id as the base identifier
-    mat_ind = get_or_create_individual(cls_Material, mat_id, context.onto, all_created_individuals_by_uid, add_labels=mat_labels)
-    if not mat_ind:
-        pop_logger.error(f"Failed to create/retrieve Material individual for ID '{mat_id}'.")
-        return None
-
-    # Apply data properties in Pass 1
-    if pass_num == 1:
-        apply_data_property_mappings(mat_ind, property_mappings["Material"], row, context, "Material", pop_logger)
-
-    return mat_ind
+    if material_ind and pass_num == 1:
+        apply_data_property_mappings(material_ind, property_mappings["Material"], row, context, "Material", pop_logger)
+    
+    return material_ind
 
 
 def process_production_request(
@@ -300,7 +290,7 @@ def process_production_request(
     pass_num: int = 1 # Add pass number
     ) -> Optional[Thing]:
     """
-    Processes ProductionRequest from a row (Pass 1: Create/Data Props).
+    Processes ProductionRequest from a row using property mappings (Pass 1: Create/Data Props).
 
     Args:
         row: The data row
@@ -313,56 +303,54 @@ def process_production_request(
         The ProductionRequest individual or None
     """
     if not property_mappings or "ProductionRequest" not in property_mappings:
-        pop_logger.warning("Property mappings for 'ProductionRequest' not provided or empty. Skipping request processing.")
+        pop_logger.debug("Property mappings for 'ProductionRequest' not provided. Skipping request processing.")
         return None
     if all_created_individuals_by_uid is None:
-         pop_logger.error("Individual registry not provided to process_production_request. Skipping.")
-         return None
-
-    cls_ProductionRequest = context.get_class("ProductionRequest")
-    if not cls_ProductionRequest:
-        # Error logged by get_class
+        pop_logger.error("Individual registry not provided to process_production_request. Skipping.")
         return None
 
-    req_id_map = property_mappings['ProductionRequest'].get('data_properties', {}).get('requestId')
-    if not req_id_map or not req_id_map.get('column'):
-        pop_logger.warning("Cannot determine the column for ProductionRequest.requestId from property mappings. Skipping request creation.")
-        return None
-    req_id_col = req_id_map['column']
-
-    req_id = safe_cast(row.get(req_id_col), str)
-    if not req_id:
-        pop_logger.debug(f"No Production Request ID in column '{req_id_col}', skipping request creation.")
+    cls_Request = context.get_class("ProductionRequest")
+    if not cls_Request:
+        pop_logger.error("ProductionRequest class not found in ontology. Skipping request processing.")
         return None
 
-    # Create descriptive labels for ProductionRequest
-    req_labels = []
-    
-    # Try to get description for primary label
-    req_desc_map = property_mappings['ProductionRequest'].get('data_properties', {}).get('requestDescription')
-    req_desc = None
-    if req_desc_map and req_desc_map.get('column'):
-        req_desc = safe_cast(row.get(req_desc_map['column']), str)
-    
-    # Primary label: request description if available
-    if req_desc:
-        req_labels.append(req_desc)
-    
-    # Add request ID-based label
-    req_labels.append(f"Production Request {req_id}")
-    
-    # Always ensure ID is in the labels
-    if f"ID:{req_id}" not in req_labels:
-        req_labels.append(f"ID:{req_id}")
-    
-    # Create or retrieve ProductionRequest individual using req_id as the base identifier
-    req_ind = get_or_create_individual(cls_ProductionRequest, req_id, context.onto, all_created_individuals_by_uid, add_labels=req_labels)
-    if not req_ind:
-        pop_logger.error(f"Failed to create/retrieve ProductionRequest individual for ID '{req_id}'.")
+    # Check for requestId property mapping - critical for creating the request
+    request_id_map = property_mappings["ProductionRequest"].get("data_properties", {}).get("requestId")
+    if not request_id_map or not request_id_map.get("column"):
+        pop_logger.warning("Required property mapping 'requestId' not found. Skipping production request creation.")
         return None
 
-    # Apply data properties in Pass 1
-    if pass_num == 1:
-        apply_data_property_mappings(req_ind, property_mappings["ProductionRequest"], row, context, "ProductionRequest", pop_logger)
+    request_id_col = request_id_map["column"]
+    request_id = safe_cast(row.get(request_id_col), str)
+    if not request_id:
+        pop_logger.debug(f"Missing or invalid Request ID in column '{request_id_col}'. Skipping request creation.")
+        return None
 
-    return req_ind
+    # Check for batch property mapping - may be optional but useful for identification
+    batch_id_map = property_mappings["ProductionRequest"].get("data_properties", {}).get("batchId")
+    batch_id = None
+    if batch_id_map and batch_id_map.get("column"):
+        batch_id_col = batch_id_map["column"]
+        batch_id = safe_cast(row.get(batch_id_col), str)
+
+    # Create a unique base name, potentially incorporating batch ID
+    request_unique_base = request_id
+    if batch_id:
+        request_unique_base = f"{request_id}_{batch_id}"
+
+    # Create descriptive labels for request
+    request_labels = []
+    
+    # Primary label: Request ID (required)
+    if batch_id:
+        request_labels.append(f"Request {request_id} (Batch {batch_id})")
+    else:
+        request_labels.append(f"Request {request_id}")
+    
+    # Create or retrieve the individual
+    request_ind = get_or_create_individual(cls_Request, request_unique_base, context.onto, all_created_individuals_by_uid, add_labels=request_labels)
+
+    if request_ind and pass_num == 1:
+        apply_data_property_mappings(request_ind, property_mappings["ProductionRequest"], row, context, "ProductionRequest", pop_logger)
+    
+    return request_ind

@@ -11,7 +11,7 @@ from .core import PopulationContext
 # Assuming processing functions are available
 from .asset import process_asset_hierarchy, process_material, process_production_request
 from .equipment import process_equipment
-from .events import process_shift, process_state_reason, process_time_interval, process_event_record
+from .events import process_shift, process_state, process_reason, process_time_interval, process_event_record
 
 # Use a logger specific to this module
 proc_logger = logging.getLogger(__name__)
@@ -97,35 +97,78 @@ def process_single_data_row(row: Dict[str, Any],
         request_ind = process_production_request(row, context, property_mappings)
 
         # 5. Process Shift
-        shift_ind = process_shift(row, context, property_mappings)
+        shift_ind = process_shift(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=None,  # We don't have this in this context
+            pass_num=1
+        )
 
-        # 6. Process State & Reason
-        state_ind, reason_ind = process_state_reason(row, context, property_mappings)
+        # 6. Process State & Reason (now as separate functions)
+        state_ind = process_state(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=None,  # We don't have this in this context
+            pass_num=1
+        )
+        reason_ind = process_reason(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=None,  # We don't have this in this context
+            pass_num=1
+        )
 
         # 7. Process Time Interval
-        time_interval_ind = process_time_interval(row, context, resource_base_id, row_num, property_mappings)
+        time_interval_ind = process_time_interval(
+            row=row, 
+            context=context, 
+            resource_base_id=resource_base_id, 
+            row_num=row_num, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=None,  # We don't have this in this context
+            pass_num=1
+        )
 
         # 8. Process Event Record and Links
         event_ind: Optional[Thing] = None
         event_context_result: Optional[Tuple[Thing, Thing, Thing, Thing]] = None
         if resource_individual and time_interval_ind: # Need resource and interval for meaningful event
-            event_ind = process_event_record(row, context, resource_individual, resource_base_id, row_num,
-                                             request_ind, material_ind, time_interval_ind,
-                                             shift_ind, state_ind, reason_ind, property_mappings)
+            event_ind, event_context_tuple = process_event_record(
+                row=row,
+                context=context,
+                property_mappings=property_mappings,
+                all_created_individuals_by_uid=None,  # We don't have this in this context
+                time_interval_ind=time_interval_ind,
+                shift_ind=shift_ind,
+                state_ind=state_ind,
+                reason_ind=reason_ind,
+                equipment_ind=equipment_ind,
+                line_ind=line_ind,
+                material_ind=material_ind,
+                request_ind=request_ind,
+                pass_num=1,
+                row_num=row_num
+            )
             if not event_ind:
                 raise ValueError("Failed to create EventRecord individual.")
             else:
+                # Extract resource_ind from the event context tuple returned by process_event_record
+                resource_ind_from_tuple = event_context_tuple[1] if event_context_tuple and len(event_context_tuple) > 1 else resource_individual
+                
                 # Determine associated line for linking context
                 associated_line_ind: Optional[Thing] = None
                 prod_line_class = context.get_class("ProductionLine")
                 equipment_class = context.get_class("Equipment")
                 part_of_prop = context.get_prop("isPartOfProductionLine")
 
-                if prod_line_class and isinstance(resource_individual, prod_line_class):
-                    associated_line_ind = resource_individual
-                elif equipment_class and part_of_prop and isinstance(resource_individual, equipment_class):
+                if prod_line_class and isinstance(resource_ind_from_tuple, prod_line_class):
+                    associated_line_ind = resource_ind_from_tuple
+                elif equipment_class and part_of_prop and isinstance(resource_ind_from_tuple, equipment_class):
                     # Safely access potentially multi-valued property
-                    line_val = getattr(resource_individual, part_of_prop.python_name, None)
+                    line_val = getattr(resource_ind_from_tuple, part_of_prop.python_name, None)
                     if isinstance(line_val, list) and line_val:
                         associated_line_ind = line_val[0] # Take first if multiple
                     elif line_val and not isinstance(line_val, list):
@@ -133,10 +176,10 @@ def process_single_data_row(row: Dict[str, Any],
 
                 # Check if associated_line_ind is indeed a ProductionLine instance
                 if prod_line_class and isinstance(associated_line_ind, prod_line_class):
-                    event_context_result = (event_ind, resource_individual, time_interval_ind, associated_line_ind)
-                    proc_logger.debug(f"Row {row_num}: Stored context for Event {event_ind.name} (Resource: {resource_individual.name}, Line: {associated_line_ind.name})")
+                    event_context_result = (event_ind, resource_ind_from_tuple, time_interval_ind, associated_line_ind)
+                    proc_logger.debug(f"Row {row_num}: Stored context for Event {event_ind.name} (Resource: {resource_ind_from_tuple.name}, Line: {associated_line_ind.name})")
                 else:
-                    proc_logger.warning(f"Row {row_num}: Could not determine associated ProductionLine for Event {event_ind.name} (Resource: {resource_individual.name}). Skipping context for isPartOfLineEvent linking.")
+                    proc_logger.warning(f"Row {row_num}: Could not determine associated ProductionLine for Event {event_ind.name} (Resource: {resource_ind_from_tuple.name}). Skipping context for isPartOfLineEvent linking.")
         elif not resource_individual:
              proc_logger.warning(f"Row {row_num}: Skipping EventRecord creation as no valid resource individual was found.")
         elif not time_interval_ind:

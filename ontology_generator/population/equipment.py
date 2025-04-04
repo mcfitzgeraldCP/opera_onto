@@ -2,6 +2,27 @@
 Equipment population module for the ontology generator.
 
 This module provides functions for processing equipment data.
+
+Equipment Class Identification
+-----------------------------
+The ontology generator supports multiple strategies for identifying the correct equipment class 
+from equipment data. Configuration options are available in config.py:
+
+1. EQUIPMENT_NAME_TO_CLASS_MAP: A dictionary mapping patterns found in equipment names to their 
+   corresponding equipment class. This is the highest priority matching method.
+   Example: {"_Filler": "Filler", "TFS30": "TubeFillingSealer30"}
+
+2. KNOWN_EQUIPMENT_CLASSES: A list of all known equipment classes used for fallback matching 
+   when direct mapping fails.
+   
+The parse_equipment_class function uses the following priority order:
+1. Direct pattern match using EQUIPMENT_NAME_TO_CLASS_MAP
+2. Parse from underscore format (e.g., "FIPCO009_Filler" → "Filler")
+3. Match against KNOWN_EQUIPMENT_CLASSES (exact match, prefix match, or substring)
+4. Equipment model inspection (if available)
+5. Generic string extraction (last resort)
+
+When the function identifies a class, it logs which method was used for traceability.
 """
 import re
 from typing import Dict, Any, Optional, Tuple
@@ -14,7 +35,7 @@ from ontology_generator.population.core import (
     PopulationContext, get_or_create_individual, 
     apply_data_property_mappings, apply_object_property_mappings
 )
-from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
+from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE, KNOWN_EQUIPMENT_CLASSES, EQUIPMENT_NAME_TO_CLASS_MAP
 
 def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optional[str] = None, 
                       equipment_model: Optional[str] = None, model: Optional[str] = None,
@@ -23,14 +44,16 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
     Parses the EquipmentClass from equipment name.
     
     Priority logic for determining equipment class:
-    1. Parse from EQUIPMENT_NAME if contains underscore (FIPCO009_Filler)
-    2. Check if name matches or contains a known class name
+    1. Check for match in EQUIPMENT_NAME_TO_CLASS_MAP
+    2. Parse from EQUIPMENT_NAME if contains underscore (FIPCO009_Filler)
+    3. Check if name matches or contains a known class name from KNOWN_EQUIPMENT_CLASSES
+    4. Generic string parsing as fallback
     
     Args:
         equipment_name: The equipment name to parse (primary source)
         equipment_type: Used to validate if it's a Line or Equipment
-        equipment_model: Ignored (maintained for backwards compatibility)
-        model: Ignored (maintained for backwards compatibility)
+        equipment_model: Can provide additional clues for equipment class if name is unclear
+        model: Alias for equipment_model (maintained for backwards compatibility)
         complexity: Ignored (maintained for backwards compatibility)
         
     Returns:
@@ -46,96 +69,136 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
     - LINE_CLASS# (FIPCO009_Filler2) -> Filler
     - CLASS# (Filler2) -> Filler
     """
-    from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
+    from ontology_generator.config import KNOWN_EQUIPMENT_CLASSES, EQUIPMENT_NAME_TO_CLASS_MAP
     
     # Skip processing immediately if equipment_type is 'Line'
     if equipment_type and equipment_type.lower() == 'line':
         pop_logger.warning(f"'{equipment_name}' is a Line type - not a valid equipment class")
         return None
         
-    # Get known equipment class patterns from config for consistency
-    # This ensures we're using the same list that's used for sequencing
-    known_equipment_classes = list(DEFAULT_EQUIPMENT_SEQUENCE.keys())
+    # Initialize match method tracking (for logging)
+    match_method = "None"
+    matched_class = None
     
-    # --- Parse from EQUIPMENT_NAME ---
-    if equipment_name and isinstance(equipment_name, str):
-        # Case 1: Names with underscores (LINE_CLASS format: FIPCO009_Filler)
-        if '_' in equipment_name:
-            parts = equipment_name.split('_')
-            class_part = parts[-1]  # Take the part after the last underscore
-
-            # Try to extract base class name by removing trailing digits
-            base_class = re.sub(r'\d+$', '', class_part)
-
-            # Validate the base class name
-            if base_class and re.search(r'[a-zA-Z]', base_class):
-                # Further validate that this looks like an equipment class and not a line ID
-                if not base_class.startswith("FIPCO"):
-                    # Check if this matches or is a substring of a known class
-                    for known_class in known_equipment_classes:
-                        if base_class == known_class or known_class.startswith(base_class):
-                            pop_logger.debug(f"Parsed equipment class '{known_class}' from '{equipment_name}'")
-                            return known_class
-                    
-                    # If we get here, we found a valid class name that's not in the known list
-                    pop_logger.debug(f"Parsed equipment class '{base_class}' from '{equipment_name}'")
-                    return base_class
-                else:
-                    pop_logger.warning(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
+    # --- Process inputs --- 
+    if not equipment_name:
+        pop_logger.warning("Equipment name is empty or None, cannot parse equipment class")
+        return None
         
-        # Case 2: Direct CLASS or CLASS# format - check against known classes first (exact match or with trailing numbers)
-        # Attempt an exact match with known classes (case-insensitive)
-        for known_class in known_equipment_classes:
+    # --- Method 1: Direct match from configuration map ---
+    if equipment_name and isinstance(equipment_name, str):
+        # Check for matches in the equipment name-to-class mapping
+        for pattern, class_name in EQUIPMENT_NAME_TO_CLASS_MAP.items():
+            if pattern in equipment_name:
+                match_method = "Config Map"
+                matched_class = class_name
+                pop_logger.debug(f"Found equipment class '{matched_class}' via pattern '{pattern}' in config map")
+                break
+                
+    # --- Method 2: Parse from EQUIPMENT_NAME with underscore ---
+    if not matched_class and equipment_name and isinstance(equipment_name, str) and '_' in equipment_name:
+        parts = equipment_name.split('_')
+        class_part = parts[-1]  # Take the part after the last underscore
+
+        # Try to extract base class name by removing trailing digits
+        base_class = re.sub(r'\d+$', '', class_part)
+
+        # Validate the base class name
+        if base_class and re.search(r'[a-zA-Z]', base_class):
+            # Further validate that this looks like an equipment class and not a line ID
+            if not base_class.startswith("FIPCO"):
+                # Check if this matches or is a substring of a known class
+                match_found = False
+                for known_class in KNOWN_EQUIPMENT_CLASSES:
+                    if base_class == known_class or known_class.startswith(base_class):
+                        match_method = "Name Underscore Parsing"
+                        matched_class = known_class
+                        match_found = True
+                        pop_logger.debug(f"Parsed equipment class '{matched_class}' from underscore format '{equipment_name}'")
+                        break
+                
+                # If we didn't find a match in known classes but have a valid class name
+                if not match_found and len(base_class) >= 3:
+                    match_method = "Name Underscore Parsing (New Class)"
+                    matched_class = base_class
+                    pop_logger.debug(f"Parsed potential new equipment class '{matched_class}' from '{equipment_name}'")
+            else:
+                pop_logger.debug(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
+    
+    # --- Method 3: Known Class Matching ---
+    if not matched_class and equipment_name and isinstance(equipment_name, str):
+        # Attempt exact match with known classes (case-insensitive)
+        for known_class in KNOWN_EQUIPMENT_CLASSES:
             # Check if the equipment name IS the class name (with optional trailing digits)
             class_pattern = re.compile(f"^{known_class}\\d*$", re.IGNORECASE)
             if class_pattern.match(equipment_name):
-                pop_logger.debug(f"Matched equipment name '{equipment_name}' to class '{known_class}'")
-                return known_class
+                match_method = "Known Class Exact Match"
+                matched_class = known_class
+                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}'")
+                break
             
-            # Alternatively check if name starts with known class followed by numbers
+            # Check if name starts with known class followed by numbers
             if equipment_name.startswith(known_class):
                 # Check if what follows is just digits
                 remainder = equipment_name[len(known_class):]
                 if not remainder or remainder.isdigit() or remainder[0].isdigit():
-                    pop_logger.debug(f"Extracted equipment class '{known_class}' from '{equipment_name}'")
-                    return known_class
-        
-        # Case 3: Check for known class patterns embedded within the name
-        # This is a more permissive check, only used if the more specific checks above fail
-        for known_class in known_equipment_classes:
+                    match_method = "Known Class Prefix Match"
+                    matched_class = known_class
+                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix")
+                    break
+            
+            # Check if a known class is embedded within the name
             if known_class in equipment_name:
-                # Extract the position of the class name
-                start_pos = equipment_name.find(known_class)
-                end_pos = start_pos + len(known_class)
-                
-                # Check if the class name is followed by digits
-                if end_pos < len(equipment_name) and equipment_name[end_pos].isdigit():
-                    # We found a CLASS# pattern
-                    pop_logger.debug(f"Found equipment class '{known_class}' with trailing digits in '{equipment_name}'")
-                    return known_class
-                
-                # If no trailing digits, treat as embedded class name
-                pop_logger.debug(f"Found equipment class '{known_class}' within '{equipment_name}'")
-                return known_class
+                match_method = "Known Class Substring Match"
+                matched_class = known_class
+                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}'")
+                break
+    
+    # --- Method 4: Equipment Model Inspection (if available) ---
+    if not matched_class and equipment_model and isinstance(equipment_model, str):
+        model_to_use = equipment_model
         
-        # Case 4: Generic extraction for unknown class patterns
-        # Try to extract a class-like string if it starts with capital letter and has no spaces
-        # Only do this if we couldn't find any match with known classes
+        # Look for known classes in the model information
+        for known_class in KNOWN_EQUIPMENT_CLASSES:
+            if known_class in model_to_use:
+                match_method = "Model-Based Match"
+                matched_class = known_class
+                pop_logger.debug(f"Extracted equipment class '{matched_class}' from model '{model_to_use}'")
+                break
+    
+    # --- Method 5: Generic Extraction (most permissive, last resort) ---
+    if not matched_class and equipment_name and isinstance(equipment_name, str):
+        # Enhanced string extraction with more thorough validation
+        # Try to extract a class-like string if it has proper capitalization
         words = re.findall(r'[A-Z][a-zA-Z]*', equipment_name)
         if words:
+            candidate_classes = []
             for word in words:
-                # Look for words that might be equipment classes (proper noun-like)
-                if len(word) > 3 and word not in ['LINE', 'FIPCO']:
+                # Identify potential equipment class names (proper noun-like with meaningful length)
+                if len(word) > 3 and word not in ['LINE', 'FIPCO', 'TEST', 'TEMP', 'UNIT']:
                     base_class = re.sub(r'\d+$', '', word)
-                    pop_logger.debug(f"Extracted potential equipment class '{base_class}' from '{equipment_name}'")
-                    return base_class
-        
-        # Log that we couldn't extract a class
-        pop_logger.debug(f"Could not extract valid equipment class from EQUIPMENT_NAME '{equipment_name}'")
+                    candidate_classes.append((base_class, len(base_class)))
+            
+            # Sort candidates by length (prefer longer class names as they're typically more specific)
+            if candidate_classes:
+                # Sort by length in descending order
+                sorted_candidates = sorted(candidate_classes, key=lambda x: x[1], reverse=True)
+                best_candidate = sorted_candidates[0][0]
+                match_method = "Generic String Extraction"
+                matched_class = best_candidate
+                pop_logger.debug(f"Extracted potential equipment class '{matched_class}' via generic parsing from candidates: {[c[0] for c in candidate_classes]}")
     
-    # If we reach here, no valid equipment class could be extracted
-    pop_logger.warning(f"Could not extract valid equipment class from EQUIPMENT_NAME='{equipment_name}'")
-    return None
+    # Log the result with enhanced information
+    if matched_class:
+        pop_logger.info(f"Parsed equipment class '{matched_class}' from '{equipment_name}' using method: {match_method}")
+        return matched_class
+    else:
+        # More detailed logging for troubleshooting
+        if equipment_type and equipment_type.lower() == 'equipment':
+            pop_logger.warning(f"CRITICAL: Could not extract valid equipment class from EQUIPMENT_NAME='{equipment_name}' with type 'Equipment'")
+        else:
+            pop_logger.warning(f"Could not extract valid equipment class from EQUIPMENT_NAME='{equipment_name}'")
+        return None
 
 def process_equipment_and_class(
     row: Dict[str, Any],
@@ -162,6 +225,14 @@ def process_equipment_and_class(
                - equipment_class_ind: Created/retrieved EquipmentClass individual (or None)
                - equipment_class_info: (Optional) Tuple with class name, individual, and sequence info
     """
+    # Validate essential inputs
+    if not property_mappings:
+        pop_logger.warning("Property mappings not provided to process_equipment_and_class. Skipping.")
+        return None, None, None
+    if all_created_individuals_by_uid is None:
+        pop_logger.error("Individual registry not provided to process_equipment_and_class. Skipping.")
+        return None, None, None
+    
     # Get required classes
     cls_Equipment = context.get_class("Equipment")
     cls_EquipmentClass = context.get_class("EquipmentClass")
@@ -173,30 +244,47 @@ def process_equipment_and_class(
     # Initialize result
     eq_class_ind, eq_ind, eq_class_info_out = None, None, None
     
-    # Skip if row doesn't have the minimum equipment data
-    eq_name = row.get('EQUIPMENT_NAME', '').strip() if 'EQUIPMENT_NAME' in row else None
+    # Check for equipment name property - critical for identification
+    eq_name = None
+    eq_name_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentName')
+    if eq_name_map and eq_name_map.get('column') and eq_name_map['column'] in row:
+        eq_name = row.get(eq_name_map['column'], '').strip()
+    else:
+        # Fall back to direct column lookup
+        eq_name = row.get('EQUIPMENT_NAME', '').strip() if 'EQUIPMENT_NAME' in row else None
+    
     if not eq_name:
+        pop_logger.warning("Missing equipment name. Cannot create equipment instance.")
         return None, None, None
     
     # Check EQUIPMENT_TYPE to determine if we should process equipment or skip
-    eq_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
+    eq_type = None
+    eq_type_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentType')
+    if eq_type_map and eq_type_map.get('column') and eq_type_map['column'] in row:
+        eq_type = row.get(eq_type_map['column'], '').strip()
+    else:
+        # Fall back to direct column lookup
+        eq_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
     
     # If this is a Line type entry, don't create Equipment - it's handled by ProductionLine processing
     if eq_type.lower() == 'line':
         pop_logger.debug(f"EQUIPMENT_TYPE is 'Line' for '{eq_name}' - skipping Equipment instance creation.")
         return None, None, None
     
-    # Get equipment identifiers - EQUIPMENT_ID is critical for uniquely identifying the equipment instance
-    eq_id = row.get('EQUIPMENT_ID', '').strip() if 'EQUIPMENT_ID' in row else None
+    # Get equipment ID - critical for uniquely identifying the equipment instance
+    # Check for equipmentId property mapping
+    eq_id = None
+    eq_id_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentId')
+    if eq_id_map and eq_id_map.get('column') and eq_id_map['column'] in row:
+        eq_id = row.get(eq_id_map['column'], '').strip()
+    else:
+        # Fall back to direct column lookup
+        eq_id = row.get('EQUIPMENT_ID', '').strip() if 'EQUIPMENT_ID' in row else None
+    
     if not eq_id:
-        pop_logger.warning(f"Missing EQUIPMENT_ID for equipment named '{eq_name}'. Cannot create unique Equipment instance.")
+        pop_logger.warning(f"Missing equipment ID for equipment named '{eq_name}'. Cannot create unique Equipment instance.")
         return None, None, None
 
-    # Get equipment ID mappings if defined, otherwise default to EQUIPMENT_ID
-    eq_id_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentId')
-    eq_id_col = eq_id_map.get('column') if eq_id_map else 'EQUIPMENT_ID'
-    eq_id_value = row.get(eq_id_col, eq_id).strip() if eq_id_col in row else eq_id
-    
     # --- EQUIPMENT CLASS IDENTIFICATION ---
     
     # Create/retrieve equipment class from equipment name/type
@@ -219,7 +307,8 @@ def process_equipment_and_class(
     if not eq_class_base_name:
         parsed_class = parse_equipment_class(
             equipment_name=eq_name,
-            equipment_type=eq_type
+            equipment_type=eq_type,
+            equipment_model=row.get('EQUIPMENT_MODEL', '') # Add potential model information
         )
         if parsed_class:
             eq_class_base_name = parsed_class
@@ -243,118 +332,125 @@ def process_equipment_and_class(
     
     # --- EQUIPMENT CLASS INDIVIDUAL CREATION ---
     
-    # Create the EquipmentClass individual using a stable identifier
+    # CRITICAL FIX: Use the class base name as the unique identifier
+    # This ensures only one EquipmentClass individual per type (e.g., one :Filler)
     try:
+        # Key modification for TKT-002-2b: Use eq_class_base_name directly as unique ID 
+        # rather than creating a new base with "EquipmentClass_" prefix
+        eq_class_unique_id = eq_class_base_name
+        
+        pop_logger.debug(f"Creating/retrieving EquipmentClass individual with unique ID: '{eq_class_unique_id}'")
+        
         eq_class_ind = get_or_create_individual(
             cls_EquipmentClass, 
-            eq_class_base_name, 
+            eq_class_unique_id, 
             context.onto, 
             all_created_individuals_by_uid, 
             add_labels=eq_class_labels
         )
         
-        if not eq_class_ind:
-            pop_logger.error(f"Failed to create/retrieve EquipmentClass individual for '{eq_class_base_name}'")
+        # Set the sequence position property during population, if available
+        eq_class_sequence_map = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('classSequencePosition')
+        if eq_class_ind and pass_num == 1:
+            # Check if the sequence is from the DEFAULT_EQUIPMENT_SEQUENCE or from a column
+            sequence_position = None
             
-        # Ensure the equipmentClassId data property is set with the correct base name
-        prop_equipmentClassId = context.get_prop("equipmentClassId")
-        if eq_class_ind and prop_equipmentClassId:
+            # Try to get from config first
+            if eq_class_base_name in KNOWN_EQUIPMENT_CLASSES:
+                sequence_position = KNOWN_EQUIPMENT_CLASSES.index(eq_class_base_name) + 1
+                pop_logger.debug(f"Retrieved sequence position {sequence_position} for {eq_class_base_name} from KNOWN_EQUIPMENT_CLASSES")
+            
+            # Apply equipmentClassId data property to ensure it matches the base name
+            # This is important for consistent identification
             context.set_prop(eq_class_ind, "equipmentClassId", eq_class_base_name)
-            pop_logger.debug(f"Explicitly set equipmentClassId='{eq_class_base_name}' on individual {eq_class_ind.name}")
-        
+            
+            # Apply data property mappings for EquipmentClass
+            if "EquipmentClass" in property_mappings:
+                apply_data_property_mappings(eq_class_ind, property_mappings["EquipmentClass"], row, context, "EquipmentClass", pop_logger)
+            
+            # Create tuple with equipment class info for return
+            eq_class_info_out = (eq_class_base_name, eq_class_ind, sequence_position)
     except Exception as e:
-        pop_logger.error(f"Error creating EquipmentClass individual for '{eq_class_base_name}': {e}")
-        eq_class_ind = None
+        pop_logger.error(f"Error creating EquipmentClass '{eq_class_base_name}': {e}")
+        # Return meaningful error details
+        if not eq_class_base_name:
+            pop_logger.error("Failed due to missing class base name")
+        elif not cls_EquipmentClass:
+            pop_logger.error("Failed due to missing EquipmentClass class in ontology")
     
     # --- EQUIPMENT INDIVIDUAL CREATION ---
     
-    # Create descriptive labels for Equipment individual
-    equipment_labels = []
-    
-    # Get line information for more descriptive labels
-    line_id = None
-    if line_ind:
-        line_id = getattr(line_ind, "lineId", None)
-        if not line_id and hasattr(line_ind, "name"):
-            # Extract from name if attribute not set
-            line_name = line_ind.name
-            if "ProductionLine_" in line_name:
-                line_id = line_name.replace("ProductionLine_", "")
-    
-    # Build the primary descriptive label
-    if eq_id_value and eq_class_base_name and line_id:
-        equipment_labels.append(f"Equipment {eq_id_value} ({eq_class_base_name}) on Line {line_id}")
-    elif eq_id_value and eq_class_base_name:
-        equipment_labels.append(f"Equipment {eq_id_value} ({eq_class_base_name})")
-    elif eq_id_value:
-        equipment_labels.append(f"Equipment {eq_id_value}")
-    
-    # Add equipment name as secondary label if available and different from ID
-    if eq_name and eq_name != eq_id_value:
-        equipment_labels.append(eq_name)
-    
-    # Always append the ID as a label for easy reference
-    if eq_id_value not in equipment_labels:
-        equipment_labels.append(eq_id_value)
-
-    # Create equipment individual using ID as the base identifier
-    # This ensures uniqueness even when multiple equipment of the same class exist
-    try:
-        eq_ind = get_or_create_individual(
-            cls_Equipment, 
-            eq_id_value, 
-            context.onto, 
-            all_created_individuals_by_uid, 
-            add_labels=equipment_labels
-        )
+    # CRITICAL FIX: Ensure we use the equipment ID as the unique identifier
+    if eq_id:
+        # Create descriptive labels for Equipment
+        eq_labels = []
         
-        if not eq_ind:
-            pop_logger.error(f"Failed to create/retrieve Equipment individual for '{eq_id_value}'")
-            return None, None, None
+        # Primary label: Full equipment name if available (most descriptive)
+        eq_labels.append(eq_name)
+        
+        # Ensure equipment ID is in labels if not the same as name
+        if eq_id != eq_name:
+            eq_labels.append(f"ID: {eq_id}")
+        
+        # Add class information if available
+        if eq_class_base_name:
+            eq_labels.append(f"Type: {eq_class_base_name}")
             
-        # Set the equipmentId data property
-        prop_equipmentId = context.get_prop("equipmentId")
-        if eq_ind and prop_equipmentId:
-            context.set_prop(eq_ind, "equipmentId", eq_id_value)
-            pop_logger.debug(f"Set equipmentId='{eq_id_value}' on individual {eq_ind.name}")
-        
-        # Set the equipmentName data property
-        prop_equipmentName = context.get_prop("equipmentName")
-        if eq_ind and prop_equipmentName and eq_name:
-            context.set_prop(eq_ind, "equipmentName", eq_name)
-            pop_logger.debug(f"Set equipmentName='{eq_name}' on individual {eq_ind.name}")
-        
-        # Link Equipment to EquipmentClass via memberOfClass (only in pass 1)
-        if pass_num == 1 and eq_ind and eq_class_ind:
-            prop_memberOfClass = context.get_prop("memberOfClass")
-            if prop_memberOfClass:
-                # Set the memberOfClass relationship
-                context.set_prop(eq_ind, "memberOfClass", eq_class_ind)
-                pop_logger.debug(f"Linked Equipment {eq_ind.name} to EquipmentClass {eq_class_ind.name} via memberOfClass")
-            else:
-                pop_logger.error(f"Cannot link Equipment to EquipmentClass: memberOfClass property not found")
-        
-        # Link Equipment to ProductionLine via isPartOfProductionLine (only in pass 1)
-        if pass_num == 1 and eq_ind and line_ind:
-            prop_isPartOfProductionLine = context.get_prop("isPartOfProductionLine")
-            if prop_isPartOfProductionLine:
-                context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
-                pop_logger.debug(f"Linked Equipment {eq_ind.name} to ProductionLine {line_ind.name} via isPartOfProductionLine")
+        # Create the Equipment individual using equipment ID as the unique identifier
+        try:
+            # Key modification for TKT-002-2c: Explicitly use EQUIPMENT_ID for unique identification
+            eq_unique_id = eq_id
+            
+            pop_logger.debug(f"Creating/retrieving Equipment individual with unique ID: '{eq_unique_id}'")
+            
+            eq_ind = get_or_create_individual(
+                cls_Equipment,
+                eq_unique_id,  # Use equipment ID as base for stable identifier
+                context.onto,
+                all_created_individuals_by_uid,
+                add_labels=eq_labels
+            )
+            
+            if eq_ind and pass_num == 1:
+                # Apply data properties for Equipment
+                if "Equipment" in property_mappings:
+                    apply_data_property_mappings(eq_ind, property_mappings["Equipment"], row, context, "Equipment", pop_logger)
                 
-                # Also set the associatedLineId data property for easy reference
-                prop_associatedLineId = context.get_prop("associatedLineId")
-                if prop_associatedLineId and line_id:
-                    context.set_prop(eq_ind, "associatedLineId", line_id)
-                    pop_logger.debug(f"Set associatedLineId='{line_id}' on Equipment {eq_ind.name}")
-    
-    except Exception as e:
-        pop_logger.error(f"Error creating Equipment individual for '{eq_id_value}': {e}")
-        eq_ind = None
-    
-    # Prepare info for tracking - we don't need to track defaultSequencePosition anymore
-    if eq_class_base_name and eq_class_ind:
-        eq_class_info_out = (eq_class_base_name, eq_class_ind, None)
-    else:
-        eq_class_info_out = None
+                # --- CRITICAL EQUIPMENT TO CLASS LINKING ---
+                
+                # Key modification for TKT-002-2d: Ensure memberOfClass relationship is established
+                # between the Equipment instance and the EquipmentClass individual
+                if eq_ind and eq_class_ind:
+                    # Check if the memberOfClass property is available before attempting to set it
+                    member_of_class_prop = context.get_prop("memberOfClass")
+                    if member_of_class_prop:
+                        # Set the memberOfClass relationship
+                        context.set_prop(eq_ind, "memberOfClass", eq_class_ind)
+                        pop_logger.info(f"Linked equipment '{eq_id}' to its class '{eq_class_base_name}'")
+                    else:
+                        pop_logger.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to class.")
+                elif not eq_class_ind:
+                    pop_logger.error(f"CRITICAL: Failed to establish memberOfClass link - missing class individual for '{eq_class_base_name}'")
+                
+                # 2. Link equipment to its production line if available
+                if eq_ind and line_ind:
+                    # Check for existence of isPartOfProductionLine property before attempting to set it
+                    part_of_line_prop = context.get_prop("isPartOfProductionLine")
+                    if part_of_line_prop:
+                        # Set bidirectional links
+                        context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
+                        
+                        # Check for existence of hasEquipmentPart property before attempting to set it
+                        has_part_prop = context.get_prop("hasEquipmentPart")
+                        if has_part_prop:
+                            context.set_prop(line_ind, "hasEquipmentPart", eq_ind)
+                            pop_logger.debug(f"Linked equipment '{eq_name}' to production line")
+                        else:
+                            pop_logger.warning(f"Required property mapping 'hasEquipmentPart' not found. Cannot link line to equipment.")
+                    else:
+                        pop_logger.warning(f"Required property mapping 'isPartOfProductionLine' not found. Cannot link equipment to line.")
+                    
+        except Exception as e:
+            pop_logger.error(f"Error creating Equipment '{eq_id}': {e}")
     
     return eq_ind, eq_class_ind, eq_class_info_out

@@ -109,7 +109,7 @@ def populate_ontology_from_data(onto: Ontology,
     individuals_by_row = {} # {row_index: {entity_type: individual_obj, ...}}
     created_equipment_class_inds = {}  # {eq_class_name_str: eq_class_ind_obj}
     equipment_class_positions = {}  # {eq_class_name_str: position_int}
-    created_events_context = []  # List to store tuples for later linking: (event_ind, resource_ind, time_interval_ind, line_ind_associated)
+    created_events_context = []  # List to store tuples for later linking: (event_ind, resource_ind, resource_type)
     pass1_successful_rows = 0
     pass1_failed_rows = 0
 

@@ -15,7 +15,13 @@ from owlready2 import (
 )
 
 from ontology_generator.utils.logging import logger
-from ontology_generator.config import SPEC_PARENT_CLASS_COLUMN, XSD_TYPE_MAP
+from ontology_generator.config import (
+    SPEC_PARENT_CLASS_COLUMN, XSD_TYPE_MAP,
+    SPEC_COL_ENTITY, SPEC_COL_PROPERTY, SPEC_COL_PROP_TYPE,
+    SPEC_COL_RAW_DATA, SPEC_COL_TARGET_RANGE, SPEC_COL_PROP_CHARACTERISTICS,
+    SPEC_COL_INVERSE_PROPERTY, SPEC_COL_DOMAIN, SPEC_COL_TARGET_LINK_CONTEXT,
+    SPEC_COL_PROGRAMMATIC, SPEC_COL_NOTES, SPEC_COL_ISA95_CONCEPT
+)
 
 def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]]) -> Tuple[Dict[str, ThingClass], Dict[str, PropertyClass], Dict[str, bool]]:
     """
@@ -42,14 +48,14 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
     all_class_names: Set[str] = set()
     class_parents: Dict[str, str] = {} # {child_name: parent_name}
     for i, row in enumerate(specification):
-        class_name = row.get('Proposed OWL Entity', '').strip()
+        class_name = row.get(SPEC_COL_ENTITY, '').strip()
         if class_name:
             all_class_names.add(class_name)
             # Store metadata (using first encountered row for simplicity, could collect all)
             if class_name not in class_metadata:
                     class_metadata[class_name] = {
-                        'notes': row.get('Notes/Considerations', ''),
-                        'isa95': row.get('ISA-95 Concept', ''),
+                        'notes': row.get(SPEC_COL_NOTES, ''),
+                        'isa95': row.get(SPEC_COL_ISA95_CONCEPT, ''),
                         'row_index': i # For reference if needed
                     }
             # Store parent class info if column exists
@@ -131,7 +137,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
 
     # --- Pass 2: Define Properties ---
     logger.debug("--- Defining Properties ---")
-    properties_to_process = [row for row in specification if row.get('Proposed OWL Property')]
+    properties_to_process = [row for row in specification if row.get(SPEC_COL_PROPERTY)]
     temp_inverse_map: Dict[str, str] = {} # Stores {prop_name: inverse_name}
 
     # Define instance-level equipment sequence properties if not in specification
@@ -203,7 +209,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
     with onto:
         # Define properties first without inverse, handle inverse in a second pass
         for row in properties_to_process:
-            prop_name = row.get('Proposed OWL Property','').strip()
+            prop_name = row.get(SPEC_COL_PROPERTY,'').strip()
             if not prop_name or prop_name in defined_properties:
                 continue # Skip empty or already defined properties
                 
@@ -216,11 +222,11 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf", "isParallelWith"]:
                 logger.info(f"Creating instance-level equipment property: {prop_name}")
                 
-            prop_type_str = row.get('OWL Property Type', '').strip()
-            domain_str = row.get('Domain', '').strip()
-            range_str = row.get('Target/Range (xsd:) / Target Class', '').strip()
-            characteristics_str = row.get('OWL Property Characteristics', '').strip().lower() # Normalize
-            inverse_prop_name = row.get('Inverse Property', '').strip()
+            prop_type_str = row.get(SPEC_COL_PROP_TYPE, '').strip()
+            domain_str = row.get(SPEC_COL_DOMAIN, '').strip()
+            range_str = row.get(SPEC_COL_TARGET_RANGE, '').strip()
+            characteristics_str = row.get(SPEC_COL_PROP_CHARACTERISTICS, '').strip().lower() # Normalize
+            inverse_prop_name = row.get(SPEC_COL_INVERSE_PROPERTY, '').strip()
 
             if not prop_type_str or not domain_str or not range_str:
                 logger.warning(f"Skipping property '{prop_name}' due to missing type, domain, or range in spec.")
@@ -305,8 +311,8 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                         logger.warning(f"Unknown XSD type '{range_str}' for property '{prop_name}'. Skipping range assignment.")
 
                 # Add annotations
-                notes = row.get('Notes/Considerations', '')
-                isa95 = row.get('ISA-95 Concept', '')
+                notes = row.get(SPEC_COL_NOTES, '')
+                isa95 = row.get(SPEC_COL_ISA95_CONCEPT, '')
                 comments = []
                 if notes: comments.append(f"Notes: {notes}")
                 if isa95: comments.append(f"ISA-95 Concept: {isa95}")
@@ -382,7 +388,7 @@ def create_selective_classes(onto: Ontology,
     
     for row in specification:
         # Get class names
-        class_name = row.get('Proposed OWL Entity', '').strip()
+        class_name = row.get(SPEC_COL_ENTITY, '').strip()
         if class_name:
             spec_classes.add(class_name)
             parent_name = row.get(SPEC_PARENT_CLASS_COLUMN, '').strip()
@@ -391,18 +397,18 @@ def create_selective_classes(onto: Ontology,
                 spec_classes.add(parent_name)  # Ensure parent is in spec classes
         
         # Get property domains and ranges
-        prop_name = row.get('Proposed OWL Property', '').strip()
+        prop_name = row.get(SPEC_COL_PROPERTY, '').strip()
         if prop_name:
             # Get domains
-            domain_str = row.get('Domain', '').strip()
+            domain_str = row.get(SPEC_COL_DOMAIN, '').strip()
             if domain_str:
                 domains = [d.strip() for d in domain_str.split('|')]
                 property_domains.update(domains)
             
             # Get ranges for object properties
-            prop_type = row.get('OWL Property Type', '').strip()
+            prop_type = row.get(SPEC_COL_PROP_TYPE, '').strip()
             if prop_type == 'ObjectProperty':
-                range_str = row.get('Target/Range (xsd:) / Target Class', '').strip()
+                range_str = row.get(SPEC_COL_TARGET_RANGE, '').strip()
                 if range_str:
                     ranges = [r.strip() for r in range_str.split('|')]
                     property_ranges.update(ranges)

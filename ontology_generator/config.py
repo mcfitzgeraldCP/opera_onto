@@ -2,18 +2,46 @@
 Ontology Generator Configuration
 
 This module contains constants, mappings, and configuration settings for the ontology generator.
+It defines column names, equipment sequences, language mappings, and various other configuration
+parameters used throughout the ontology generation process.
 """
 from typing import Dict, Any, Type, Optional
 from datetime import datetime, date, time
 import logging
 
-# --- General Configuration ---
+# -----------------------------------------------------------------------------
+# GENERAL CONFIGURATION
+# -----------------------------------------------------------------------------
 DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-SPEC_PARENT_CLASS_COLUMN = 'Parent Class'  # Assumed column name for hierarchy
+SPEC_PARENT_CLASS_COLUMN = 'Parent Class'  # Column name for hierarchy definition
 
-# --- Warnings Suppression Configuration ---
-# List of warning message substrings that should be suppressed in logs
+# -----------------------------------------------------------------------------
+# SPECIFICATION COLUMN NAMES
+# -----------------------------------------------------------------------------
+# Entity and property identification
+SPEC_COL_ENTITY = "Proposed OWL Entity"
+SPEC_COL_PROPERTY = "Proposed OWL Property"
+SPEC_COL_PROP_TYPE = "OWL Property Type"
+
+# Property details
+SPEC_COL_RAW_DATA = "Raw Data Column Name"
+SPEC_COL_TARGET_RANGE = "Target/Range (xsd:) / Target Class"
+SPEC_COL_PROP_CHARACTERISTICS = "OWL Property Characteristics"
+SPEC_COL_INVERSE_PROPERTY = "Inverse Property"
+SPEC_COL_DOMAIN = "Domain"
+SPEC_COL_TARGET_LINK_CONTEXT = "Target Link Context"
+SPEC_COL_PROGRAMMATIC = "Programmatic"
+
+# Classification and documentation
+SPEC_COL_LOGICAL_GROUP = "Logical Group"
+SPEC_COL_NOTES = "Notes/Considerations"
+SPEC_COL_ISA95_CONCEPT = "ISA-95 Concept"
+
+# -----------------------------------------------------------------------------
+# LOGGING CONFIGURATION
+# -----------------------------------------------------------------------------
+# Warning messages to suppress in logs
 SUPPRESSED_WARNINGS = [
     "Equipment.actualSequencePosition is missing 'column'",
     "EquipmentClass.defaultSequencePosition is missing 'column'",
@@ -34,7 +62,6 @@ SUPPRESSED_WARNINGS = [
     "Linked (Start-Time Containment):"
 ]
 
-# --- Log Filter Class ---
 class MessageFilter(logging.Filter):
     """
     A logging filter that suppresses specific log messages at any level
@@ -58,27 +85,25 @@ def setup_logging_filters():
     # Create the message filter with our suppressed warnings
     message_filter = MessageFilter(SUPPRESSED_WARNINGS)
     
-    # Get the root logger
+    # Get the root logger and add the filter
     root_logger = logging.getLogger()
-    
-    # Add the filter to the root logger
     root_logger.addFilter(message_filter)
     
-    # Also add the filter directly to specific loggers that we know generate these messages
-    pop_logger = logging.getLogger("ontology_generator.population")
-    pop_logger.addFilter(message_filter)
+    # Add filters to specific logger instances
+    loggers = [
+        "ontology_generator.population",
+        "ontology_generator.population.row_processor",
+        "ontology_generator.population.core",
+        "event_linking"
+    ]
     
-    row_proc_logger = logging.getLogger("ontology_generator.population.row_processor")
-    row_proc_logger.addFilter(message_filter)
-    
-    core_logger = logging.getLogger("ontology_generator.population.core")
-    core_logger.addFilter(message_filter)
-    
-    # Add filter to event_linking logger
-    event_linking_logger = logging.getLogger("event_linking")
-    event_linking_logger.addFilter(message_filter)
+    for logger_name in loggers:
+        logger = logging.getLogger(logger_name)
+        logger.addFilter(message_filter)
 
-# --- Language Mapping for Alternative Reason Descriptions ---
+# -----------------------------------------------------------------------------
+# LANGUAGE CONFIGURATION
+# -----------------------------------------------------------------------------
 # Mapping from country descriptions to BCP 47 language tags
 COUNTRY_TO_LANGUAGE: Dict[str, str] = {
     "Mexico": "es",
@@ -89,57 +114,55 @@ COUNTRY_TO_LANGUAGE: Dict[str, str] = {
     "Italy": "it",
     "Spain": "es",
     "Japan": "ja",
-    "China": "zh",
-    # Add more mappings as needed based on your data
+    "China": "zh"
 }
 DEFAULT_LANGUAGE = "en"  # Default language if country not found in mapping
 
-
-# --- Default Equipment Class Sequencing ---
-# Defines a default linear sequence for common equipment types
-# NOTE: This is a restricted list for safety during the proof of concept phase.
-# TODO: In the future, this will be expanded to support additional equipment classes
-# and potentially be loaded from an external configuration source.
+# -----------------------------------------------------------------------------
+# EQUIPMENT CONFIGURATION
+# -----------------------------------------------------------------------------
+# Default equipment sequence represents typical physical order on manufacturing line
 DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
-    # Standard equipment classes with their sequence positions
-    "Filler": 1,
-    "Cartoner": 2,
-    "Bundler": 3,
-    "CaseFormer": 4,
-    "CasePacker": 5,
-    "CaseSealer": 6,
-    "Palletizer": 7
-    # Add any other standard equipment classes with default positions as needed
+    "Filler": 1,        # First in typical sequence
+    "Cartoner": 2,      # Second in typical sequence
+    "Bundler": 3,       # Third in typical sequence
+    "CaseFormer": 4,    # Fourth in typical sequence
+    "CasePacker": 5,    # Fifth in typical sequence
+    "CaseSealer": 6,    # Sixth in typical sequence
+    "Palletizer": 7     # Last in typical sequence
 }
 
-# --- Line-Specific Equipment Sequencing ---
-# Defines line-specific sequences that override the default sequence
-# Each line ID maps to a dictionary of equipment classes with their sequence positions
+# Known equipment classes for identification and matching
+KNOWN_EQUIPMENT_CLASSES = list(DEFAULT_EQUIPMENT_SEQUENCE.keys())
+
+# Maps specific patterns in equipment names to their classes
+EQUIPMENT_NAME_TO_CLASS_MAP = {
+    "_Filler": "Filler",
+    "_Cartoner": "Cartoner",
+    "_Bundler": "Bundler",
+    "_CaseFormer": "CaseFormer",
+    "_CasePacker": "CasePacker",
+    "_CaseSealer": "CaseSealer",
+    "_Palletizer": "Palletizer"
+}
+
+# Line-specific equipment sequences that override the default
 LINE_SPECIFIC_EQUIPMENT_SEQUENCE: Dict[str, Dict[str, int]] = {
-    # Example for filling line
     "Line1": {
-        "Unscrambler": 1,
-        "RinseDryInvert": 2,
-        "BottleInspector": 3,
-        "Filler": 4,
-        "Capper": 5,
-        "Labeler": 6
-    },
-    # Example for packaging line
-    "Line2": {
-        "Cartoner": 1,
-        "Bundler": 2,
-        "CaseFormer": 3,
-        "CasePacker": 4,
-        "CaseSealer": 5,
-        "Palletizer": 6
-    },
-    # Add line-specific sequences as needed
+        "Filler": 1,        # First position
+        "Cartoner": 2,      # Second position
+        "Bundler": 3,       # Third position
+        "CaseFormer": 4,    # Fourth position
+        "CasePacker": 5,    # Fifth position
+        "CaseSealer": 6,    # Sixth position
+        "Palletizer": 7     # Seventh position
+    }
 }
 
-# --- XSD Type Mapping ---
-# This will be initialized when importing the required modules to avoid
-# circular imports with owlready2 types
+# -----------------------------------------------------------------------------
+# XSD TYPE MAPPING
+# -----------------------------------------------------------------------------
+# Initialized when importing required modules to avoid circular imports
 XSD_TYPE_MAP: Dict[str, Type] = {}
 
 def init_xsd_type_map(locstr_type: Any) -> None:
@@ -175,5 +198,5 @@ def init_xsd_type_map(locstr_type: Any) -> None:
         "xsd:time": time,
         "xsd:boolean": bool,
         "xsd:anyURI": str,
-        "xsd:string (with lang tag)": locstr_type,
+        "xsd:string (with lang tag)": locstr_type
     })

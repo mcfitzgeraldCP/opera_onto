@@ -8,6 +8,12 @@ from collections import defaultdict
 from typing import List, Dict, Any, Optional
 
 from ontology_generator.utils.logging import logger
+from ontology_generator.config import (
+    SPEC_COL_ENTITY, SPEC_COL_PROPERTY, SPEC_COL_PROP_TYPE,
+    SPEC_COL_RAW_DATA, SPEC_COL_TARGET_RANGE, SPEC_COL_PROP_CHARACTERISTICS,
+    SPEC_COL_INVERSE_PROPERTY, SPEC_COL_DOMAIN, SPEC_COL_TARGET_LINK_CONTEXT,
+    SPEC_COL_PROGRAMMATIC, SPEC_COL_NOTES
+)
 
 def parse_specification(spec_file_path: str) -> List[Dict[str, str]]:
     """
@@ -83,19 +89,19 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
         if specification:
              fieldnames = list(specification[0].keys())
              
-    has_target_link_context_col = 'Target Link Context' in fieldnames
+    has_target_link_context_col = SPEC_COL_TARGET_LINK_CONTEXT in fieldnames
     if not has_target_link_context_col:
-        logger.warning("Specification file does not contain the 'Target Link Context' column. Context-based object property links may not be parsed.")
+        logger.warning(f"Specification file does not contain the '{SPEC_COL_TARGET_LINK_CONTEXT}' column. Context-based object property links may not be parsed.")
         
-    has_programmatic_col = 'Programmatic' in fieldnames
+    has_programmatic_col = SPEC_COL_PROGRAMMATIC in fieldnames
     if not has_programmatic_col:
-        logger.warning("Specification file does not contain the 'Programmatic' column. Programmatically-populated properties may not validate correctly.")
+        logger.warning(f"Specification file does not contain the '{SPEC_COL_PROGRAMMATIC}' column. Programmatically-populated properties may not validate correctly.")
 
     for row_num, row in enumerate(specification):
-        entity = row.get('Proposed OWL Entity', '').strip()
-        property_name = row.get('Proposed OWL Property', '').strip()
-        property_type = row.get('OWL Property Type', '').strip()
-        raw_data_col = row.get('Raw Data Column Name', '').strip()
+        entity = row.get(SPEC_COL_ENTITY, '').strip()
+        property_name = row.get(SPEC_COL_PROPERTY, '').strip()
+        property_type = row.get(SPEC_COL_PROP_TYPE, '').strip()
+        raw_data_col = row.get(SPEC_COL_RAW_DATA, '').strip()
         
         # Add source file path if not already present (useful for validation/debugging)
         if '_source_file_path_' not in row and hasattr(specification, '_source_file_path_'): 
@@ -114,17 +120,17 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
         raw_data_col_is_na = not raw_data_col or raw_data_col.upper() == 'N/A'
         
         # Determine if the property is functional
-        is_functional = 'Functional' in row.get('OWL Property Characteristics', '')
+        is_functional = 'Functional' in row.get(SPEC_COL_PROP_CHARACTERISTICS, '')
         
         # Determine if the property is populated programmatically - Fix for None issue
-        programmatic_value = row.get('Programmatic', '')
+        programmatic_value = row.get(SPEC_COL_PROGRAMMATIC, '')
         is_programmatic = False
         if programmatic_value is not None and str(programmatic_value).strip().lower() == 'true':
             is_programmatic = True
         
         # Process data properties
         if property_type == 'DatatypeProperty':
-            data_type = row.get('Target/Range (xsd:) / Target Class', '').strip()
+            data_type = row.get(SPEC_COL_TARGET_RANGE, '').strip()
             # Create mapping info dictionary
             map_info = {
                 'data_type': data_type,
@@ -144,8 +150,8 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
             
         # Process object properties
         elif property_type == 'ObjectProperty':
-            target_class = row.get('Target/Range (xsd:) / Target Class', '').strip()
-            target_link_context = row.get('Target Link Context', '').strip() if has_target_link_context_col else ''
+            target_class = row.get(SPEC_COL_TARGET_RANGE, '').strip()
+            target_link_context = row.get(SPEC_COL_TARGET_LINK_CONTEXT, '').strip() if has_target_link_context_col else ''
             
             # Initialize mapping info
             map_info = {
@@ -163,7 +169,7 @@ def parse_property_mappings(specification: List[Dict[str, str]]) -> Dict[str, Di
                 logger.debug(f"Mapped {entity}.{property_name} (ObjectProperty) to column '{raw_data_col}', target '{target_class}'")
                 # Warn if context is also provided but will be ignored
                 if target_link_context:
-                    logger.warning(f"Row {row_num+1}: Both 'Raw Data Column Name' ('{raw_data_col}') and 'Target Link Context' ('{target_link_context}') provided for {entity}.{property_name}. Prioritizing column lookup.")
+                    logger.warning(f"Row {row_num+1}: Both '{SPEC_COL_RAW_DATA}' ('{raw_data_col}') and '{SPEC_COL_TARGET_LINK_CONTEXT}' ('{target_link_context}') provided for {entity}.{property_name}. Prioritizing column lookup.")
             elif target_link_context:
                 # Use context mapping if column is not available
                 map_info['target_link_context'] = target_link_context

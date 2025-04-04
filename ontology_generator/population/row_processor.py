@@ -216,15 +216,180 @@ def process_structural_relationships(
         "memberOfClass"                # Equipment -> EquipmentClass
     ]
     
-    # Process Equipment -> ProductionLine relationships
+    # --- Process Equipment -> EquipmentClass relationships ---
+    # CRITICAL FIX FOR TKT-002: Ensure correct memberOfClass links are established
     if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
-        log.info("Processing Equipment.isPartOfProductionLine structural relationships...")
+        log.info("Processing Equipment.memberOfClass structural relationships...")
         
-        # Get all Equipment individuals
+        # Get all Equipment individuals 
         equipment_individuals = [
             ind for uid, ind in all_created_individuals_by_uid.items() 
             if uid[0] == "Equipment"
         ]
+        log.info(f"Found {len(equipment_individuals)} Equipment individuals for class linking")
+        
+        # Get all EquipmentClass individuals
+        class_individuals = [
+            ind for uid, ind in all_created_individuals_by_uid.items() 
+            if uid[0] == "EquipmentClass"
+        ]
+        log.info(f"Found {len(class_individuals)} EquipmentClass individuals for linking")
+        
+        # Get the memberOfClass property mapping
+        eq_class_mapping = property_mappings["Equipment"]["object_properties"].get("memberOfClass")
+        
+        if eq_class_mapping and equipment_individuals and class_individuals:
+            # Check if the memberOfClass property exists
+            member_of_class_prop = context.get_prop("memberOfClass")
+            if not member_of_class_prop:
+                log.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to classes.")
+            else:
+                # Build a comprehensive lookup map for equipment classes by both ID and name
+                classes_by_identifier = {}
+                
+                # Key properties that might identify an EquipmentClass
+                identifiers = ["equipmentClassId", "equipmentClassName", "name"]
+                
+                # Log all EquipmentClass individuals with their identifiers for debugging
+                log.debug("EquipmentClass individuals available for linking:")
+                for class_ind in class_individuals:
+                    class_identifiers = []
+                    
+                    # Collect all identifiers from the class individual
+                    for id_prop in identifiers:
+                        if hasattr(class_ind, id_prop):
+                            id_value = getattr(class_ind, id_prop)
+                            if id_value:
+                                if isinstance(id_value, list):
+                                    for val in id_value:
+                                        class_identifiers.append(str(val))
+                                else:
+                                    class_identifiers.append(str(id_value))
+                    
+                    # Extract base name from the class name if it has a prefix
+                    if hasattr(class_ind, "name"):
+                        name = class_ind.name
+                        if name.startswith("EquipmentClass_"):
+                            class_identifiers.append(name[len("EquipmentClass_"):])
+                    
+                    # Add all identifiers to the lookup map
+                    log.debug(f"  Class {class_ind.name} identifiers: {class_identifiers}")
+                    for identifier in class_identifiers:
+                        classes_by_identifier[identifier] = class_ind
+                
+                # Track linking results
+                equipment_linked = 0
+                equipment_already_linked = 0
+                equipment_not_linked = 0
+                
+                # Iterate through equipment individuals
+                for eq_ind in equipment_individuals:
+                    # Check if this equipment already has a class link
+                    current_class = getattr(eq_ind, member_of_class_prop.python_name, None)
+                    if current_class:
+                        log.debug(f"Equipment {eq_ind.name} already linked to class {current_class.name}")
+                        equipment_already_linked += 1
+                        continue
+                    
+                    # Try multiple methods to determine the appropriate class
+                    
+                    # Method 1: Try to use column value from mapping
+                    matching_class_ind = None
+                    match_method = None
+                    
+                    # Get the column that contains the Class name/ID (if specified in mapping)
+                    class_id_column = eq_class_mapping.get("column")
+                    if class_id_column:
+                        # Get data stored in the equipment individual
+                        eq_data = context.get_individual_data(eq_ind) or {}
+                        class_value = eq_data.get(class_id_column)
+                        
+                        if class_value and str(class_value) in classes_by_identifier:
+                            matching_class_ind = classes_by_identifier[str(class_value)]
+                            match_method = f"Column '{class_id_column}'"
+                    
+                    # Method 2: Try to parse class from equipment name if column value not found
+                    if not matching_class_ind:
+                        from .equipment import parse_equipment_class
+                        
+                        # Try various properties that might contain the equipment name
+                        name_props = ["equipmentName", "name"]
+                        eq_name = None
+                        
+                        for prop in name_props:
+                            if hasattr(eq_ind, prop):
+                                prop_value = getattr(eq_ind, prop)
+                                if prop_value:
+                                    if isinstance(prop_value, list) and prop_value:
+                                        eq_name = prop_value[0]
+                                    else:
+                                        eq_name = prop_value
+                                    break
+                        
+                        if eq_name:
+                            parsed_class = parse_equipment_class(equipment_name=eq_name)
+                            if parsed_class and str(parsed_class) in classes_by_identifier:
+                                matching_class_ind = classes_by_identifier[str(parsed_class)]
+                                match_method = f"Parsed from name '{eq_name}'"
+                    
+                    # Method 3: Try direct name matching for any remaining unlinked equipment
+                    if not matching_class_ind and hasattr(eq_ind, "name"):
+                        eq_name = eq_ind.name
+                        # Extract potential class name patterns from equipment name
+                        from .equipment import parse_equipment_class
+                        import re
+                        
+                        # Try to match with known patterns like "_ClassType"
+                        if "_" in eq_name:
+                            parts = eq_name.split("_")
+                            for part in parts:
+                                if part and part in classes_by_identifier:
+                                    matching_class_ind = classes_by_identifier[part]
+                                    match_method = f"Direct part match from '{eq_name}'"
+                                    break
+                        
+                        # Try extracting capital word sequences that might be class names
+                        if not matching_class_ind:
+                            words = re.findall(r'[A-Z][a-zA-Z]*', eq_name)
+                            for word in words:
+                                if word and word in classes_by_identifier:
+                                    matching_class_ind = classes_by_identifier[word]
+                                    match_method = f"Capital word match from '{eq_name}'"
+                                    break
+                    
+                    # Create the link if we found a matching class
+                    if matching_class_ind:
+                        try:
+                            context.set_prop(eq_ind, "memberOfClass", matching_class_ind)
+                            links_created += 1
+                            equipment_linked += 1
+                            log.info(f"Linked Equipment {eq_ind.name} to EquipmentClass {matching_class_ind.name} via {match_method}")
+                            
+                            # Record the link type for statistics
+                            links_by_type["Equipment->Class"] = links_by_type.get("Equipment->Class", 0) + 1
+                        except Exception as e:
+                            log.error(f"Error linking Equipment {eq_ind.name} to Class {matching_class_ind.name}: {e}")
+                    else:
+                        equipment_not_linked += 1
+                        log.warning(f"Could not determine appropriate class for Equipment {eq_ind.name}")
+                
+                # Log summary of Equipment-Class linking
+                log.info(f"Equipment-Class linking summary:")
+                log.info(f"  • Equipment already linked: {equipment_already_linked}")
+                log.info(f"  • Equipment newly linked: {equipment_linked}")
+                log.info(f"  • Equipment not linked: {equipment_not_linked}")
+                log.info(f"  • Total equipment processed: {len(equipment_individuals)}")
+    
+    # Process Equipment -> ProductionLine relationships
+    if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
+        log.info("Processing Equipment.isPartOfProductionLine structural relationships...")
+        
+        # Get all Equipment individuals (if not already fetched)
+        if 'equipment_individuals' not in locals():
+            equipment_individuals = [
+                ind for uid, ind in all_created_individuals_by_uid.items() 
+                if uid[0] == "Equipment"
+            ]
         
         # Get all ProductionLine individuals
         line_individuals = [
@@ -243,142 +408,72 @@ def process_structural_relationships(
                 # First, build a lookup map for lines by their ID
                 lines_by_id = {}
                 line_id_prop = "lineId" # Property name expected to hold the ID value
-                for line_ind in line_individuals:
-                    # Get the line's ID value from its properties
-                    if hasattr(line_ind, line_id_prop) and getattr(line_ind, line_id_prop):
-                        line_id = getattr(line_ind, line_id_prop)
-                        lines_by_id[str(line_id)] = line_ind
                 
-                log.info(f"Found {len(lines_by_id)} ProductionLine individuals with IDs")
+                # Check if the lineId property exists
+                line_id_obj_prop = context.get_prop(line_id_prop)
+                if not line_id_obj_prop:
+                    log.warning(f"Required property mapping '{line_id_prop}' not found. Cannot create line lookup map for structural relationships.")
+                else:
+                    for line_ind in line_individuals:
+                        # Get the line's ID value from its properties
+                        if hasattr(line_ind, line_id_prop) and getattr(line_ind, line_id_prop):
+                            line_id = getattr(line_ind, line_id_prop)
+                            if isinstance(line_id, list) and line_id:
+                                for lid in line_id:
+                                    lines_by_id[str(lid)] = line_ind
+                            else:
+                                lines_by_id[str(line_id)] = line_ind
                 
-                # Track Equipment individuals that need linking
-                equipment_to_link = []
-                for eq_ind in equipment_individuals:
-                    # Check if this Equipment already has a line link
-                    if hasattr(eq_ind, "isPartOfProductionLine") and eq_ind.isPartOfProductionLine:
-                        continue  # Already linked
-                    
-                    # We need to determine which line this equipment should be linked to
-                    # This requires knowing the line_id value from when the Equipment was created
-                    # Ideally this would be stored in a property in the Equipment
-                    equipment_to_link.append(eq_ind)
+                # Check for the isPartOfProductionLine and hasEquipmentPart properties
+                is_part_of_line_prop = context.get_prop("isPartOfProductionLine")
+                has_equipment_part_prop = context.get_prop("hasEquipmentPart")
                 
-                log.info(f"Found {len(equipment_to_link)} Equipment individuals needing line links")
-                
-                # To find the line ID for an equipment, we could:
-                # 1. Look for a property like "associatedLineId" in the Equipment (if it was added in Pass 1)
-                # 2. Use a naming convention in the Equipment name/ID
-                # 3. Use a more complex attribute analysis based on your data
-                
-                # For this simplified implementation, we'll try:
-                # 1. Check if Equipment has a property holding the line ID
-                # 2. Extract from Equipment name if it follows the naming pattern
-                for eq_ind in equipment_to_link:
-                    line_ind = None
-                    line_id = None
+                if not is_part_of_line_prop:
+                    log.warning(f"Required property mapping 'isPartOfProductionLine' not found. Cannot link equipment to lines.")
+                elif not has_equipment_part_prop:
+                    log.warning(f"Required property mapping 'hasEquipmentPart' not found. Cannot link lines to equipment.")
+                else:
+                    # Track link counts
+                    equipment_line_links = 0
                     
-                    # Try method 1: Check if Equipment has a property like "associatedLineId"
-                    if hasattr(eq_ind, "associatedLineId") and getattr(eq_ind, "associatedLineId"):
-                        line_id = str(getattr(eq_ind, "associatedLineId"))
-                        line_ind = lines_by_id.get(line_id)
+                    # Link equipment to lines
+                    for eq_ind in equipment_individuals:
+                        # Get data stored in the equipment individual
+                        eq_data = context.get_individual_data(eq_ind) or {}
+                        
+                        # Get the line ID this equipment is part of
+                        line_id_value = eq_data.get(line_id_column)
+                        
+                        if line_id_value and str(line_id_value) in lines_by_id:
+                            # Get the corresponding line individual
+                            line_ind = lines_by_id[str(line_id_value)]
+                            
+                            # Create bidirectional links if they don't exist
+                            # Check if the equipment is already linked to this line
+                            current_line = getattr(eq_ind, is_part_of_line_prop.python_name, None)
+                            equipment_already_linked = False
+                            
+                            if current_line:
+                                if isinstance(current_line, list):
+                                    equipment_already_linked = line_ind in current_line
+                                else:
+                                    equipment_already_linked = current_line == line_ind
+                            
+                            if not equipment_already_linked:
+                                context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
+                                context.set_prop(line_ind, "hasEquipmentPart", eq_ind)
+                                links_created += 1
+                                equipment_line_links += 1
+                                log.debug(f"Linked Equipment {eq_ind.name} to Line {line_ind.name} via isPartOfProductionLine/hasEquipmentPart")
+                                
+                                # Record the link type for statistics
+                                links_by_type["Equipment->Line"] = links_by_type.get("Equipment->Line", 0) + 1
                     
-                    # Try method 2: Check if we can extract line ID from Equipment name/ID
-                    if not line_ind and hasattr(eq_ind, "equipmentId"):
-                        eq_id = getattr(eq_ind, "equipmentId")
-                        # Try matching line IDs against equipment ID (assuming naming like "LINE1-EQ123")
-                        for line_id, line in lines_by_id.items():
-                            if line_id in str(eq_id):
-                                line_ind = line
-                                break
-                    
-                    # Try method 3: Look for most likely line based on other attributes
-                    # (Custom logic based on your specific data model)
-                    
-                    # Set the bidirectional relationship if we found a match
-                    if line_ind:
-                        context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
-                        context.set_prop(line_ind, "hasEquipmentPart", eq_ind)
-                        links_created += 1
-                        links_by_type["Equipment.isPartOfProductionLine"] = links_by_type.get("Equipment.isPartOfProductionLine", 0) + 1
-                        log.debug(f"Linked Equipment {eq_ind.name} to ProductionLine {line_ind.name}")
+                    log.info(f"Created {equipment_line_links} Equipment-Line links")
     
-    # Process Equipment -> EquipmentClass relationships
-    if "Equipment" in property_mappings and "object_properties" in property_mappings["Equipment"]:
-        log.info("Processing Equipment.memberOfClass structural relationships...")
-        
-        # Get all Equipment individuals
-        equipment_individuals = [
-            ind for uid, ind in all_created_individuals_by_uid.items() 
-            if uid[0] == "Equipment"
-        ]
-        
-        # Get all EquipmentClass individuals
-        class_individuals = [
-            ind for uid, ind in all_created_individuals_by_uid.items() 
-            if uid[0] == "EquipmentClass"
-        ]
-        
-        # Get the memberOfClass property mapping  
-        member_class_mapping = property_mappings["Equipment"]["object_properties"].get("memberOfClass")
-        
-        if member_class_mapping and equipment_individuals and class_individuals:
-            # Build a lookup map for equipment classes by their ID or name
-            classes_by_id = {}
-            classes_by_name = {}
-            
-            for class_ind in class_individuals:
-                # By ID
-                if hasattr(class_ind, "equipmentClassId") and getattr(class_ind, "equipmentClassId"):
-                    class_id = str(getattr(class_ind, "equipmentClassId"))
-                    classes_by_id[class_id] = class_ind
-                
-                # By name (from property or from individual name)
-                if hasattr(class_ind, "equipmentClassName") and getattr(class_ind, "equipmentClassName"):
-                    class_name = str(getattr(class_ind, "equipmentClassName"))
-                    classes_by_name[class_name] = class_ind
-                elif hasattr(class_ind, "name"):
-                    name_parts = class_ind.name.split('_')
-                    if len(name_parts) > 1:
-                        classes_by_name[name_parts[-1]] = class_ind
-            
-            log.info(f"Found {len(classes_by_id)} EquipmentClass individuals with IDs and {len(classes_by_name)} with names")
-            
-            # Track Equipment individuals that need class linking
-            equipment_to_link = []
-            for eq_ind in equipment_individuals:
-                # Check if this Equipment already has a class link
-                if hasattr(eq_ind, "memberOfClass") and eq_ind.memberOfClass:
-                    continue  # Already linked
-                equipment_to_link.append(eq_ind)
-            
-            log.info(f"Found {len(equipment_to_link)} Equipment individuals needing class links")
-            
-            for eq_ind in equipment_to_link:
-                class_ind = None
-                
-                # Try to determine class from Equipment properties or name
-                if hasattr(eq_ind, "equipmentType") and getattr(eq_ind, "equipmentType"):
-                    eq_type = str(getattr(eq_ind, "equipmentType"))
-                    # Try exact match on ID then name
-                    class_ind = classes_by_id.get(eq_type) or classes_by_name.get(eq_type)
-                    
-                    # Try fuzzy matching if needed
-                    if not class_ind:
-                        for cls_name, cls_ind in classes_by_name.items():
-                            if cls_name.lower() in eq_type.lower() or eq_type.lower() in cls_name.lower():
-                                class_ind = cls_ind
-                                break
-                
-                # Set the relationship if we found a match
-                if class_ind:
-                    context.set_prop(eq_ind, "memberOfClass", class_ind)
-                    links_created += 1
-                    links_by_type["Equipment.memberOfClass"] = links_by_type.get("Equipment.memberOfClass", 0) + 1
-                    log.debug(f"Linked Equipment {eq_ind.name} to EquipmentClass {class_ind.name}")
+    # Log summary of links created
+    for link_type, count in links_by_type.items():
+        log.info(f"Created {count} {link_type} structural links")
     
-    # Log summary of created links
-    log.info(f"Structural relationship post-processing complete. Created {links_created} links.")
-    for rel_type, count in links_by_type.items():
-        log.info(f"  • {rel_type}: {count} links")
-    
+    log.info(f"Post-processing complete: Created {links_created} structural links in total")
     return links_created 
