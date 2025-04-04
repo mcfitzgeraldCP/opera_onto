@@ -334,11 +334,11 @@ def _safe_sort_by_attribute(items, attr_name, default_value='Unknown'):
 def get_equipment_sequence_for_line(onto: Ontology, line_individual: Thing) -> List[Thing]:
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == 'equipmentIsUpstreamOf':
+        if prop.name == 'isImmediatelyUpstreamOf':
             equipment_is_upstream_of = prop
             break
     if not equipment_is_upstream_of:
-        analysis_logger.warning("Property 'equipmentIsUpstreamOf' not found in ontology")
+        analysis_logger.warning("Property 'isImmediatelyUpstreamOf' not found in ontology")
         return []
     equipment_on_line = []
     for ind in onto.individuals():
@@ -471,7 +471,7 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
         return ({}, {'error': 'Equipment class not found'})
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == 'equipmentIsUpstreamOf':
+        if prop.name == 'isImmediatelyUpstreamOf':
             equipment_is_upstream_of = prop
             break
     sequences = {}
@@ -2227,7 +2227,7 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
         class_part = parts[-1]
         base_class = re.sub('\\d+$', '', class_part)
         if base_class and re.search('[a-zA-Z]', base_class):
-            if not base_class.startswith('FIPCO'):
+            if not re.match('^(FIPCO|LINE)\\d*$', base_class, re.IGNORECASE):
                 match_found = False
                 for known_class in KNOWN_EQUIPMENT_CLASSES:
                     if base_class == known_class or known_class.startswith(base_class):
@@ -2243,35 +2243,37 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
             else:
                 pop_logger.debug(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
     if not matched_class and equipment_name and isinstance(equipment_name, str):
+        cleaned_name = re.sub('^(FIPCO|LINE)\\d*_?', '', equipment_name)
+        base_name = re.sub('\\d+$', '', cleaned_name)
         for known_class in KNOWN_EQUIPMENT_CLASSES:
-            class_pattern = re.compile(f'^{known_class}\\d*$', re.IGNORECASE)
-            if class_pattern.match(equipment_name):
+            if base_name.lower() == known_class.lower():
                 match_method = 'Known Class Exact Match'
                 matched_class = known_class
-                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}'")
+                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}' after cleaning")
                 break
-            if equipment_name.startswith(known_class):
-                remainder = equipment_name[len(known_class):]
-                if not remainder or remainder.isdigit() or remainder[0].isdigit():
+            if base_name.lower().startswith(known_class.lower()):
+                remainder = base_name[len(known_class):].strip()
+                if not remainder or not re.search('[a-zA-Z]', remainder):
                     match_method = 'Known Class Prefix Match'
                     matched_class = known_class
-                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix")
+                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix after cleaning")
                     break
-            if known_class in equipment_name:
+            if known_class.lower() in base_name.lower():
                 match_method = 'Known Class Substring Match'
                 matched_class = known_class
-                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}'")
+                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}' after cleaning")
                 break
     if not matched_class and equipment_model and isinstance(equipment_model, str):
         model_to_use = equipment_model
         for known_class in KNOWN_EQUIPMENT_CLASSES:
-            if known_class in model_to_use:
+            if known_class.lower() in model_to_use.lower():
                 match_method = 'Model-Based Match'
                 matched_class = known_class
                 pop_logger.debug(f"Extracted equipment class '{matched_class}' from model '{model_to_use}'")
                 break
     if not matched_class and equipment_name and isinstance(equipment_name, str):
-        words = re.findall('[A-Z][a-zA-Z]*', equipment_name)
+        cleaned_name = re.sub('^(FIPCO|LINE)\\d*_?', '', equipment_name)
+        words = re.findall('[A-Z][a-zA-Z]*', cleaned_name)
         if words:
             candidate_classes = []
             for word in words:
@@ -2402,6 +2404,30 @@ def process_equipment_and_class(row: Dict[str, Any], context: PopulationContext,
                         pop_logger.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to class.")
                 elif not eq_class_ind:
                     pop_logger.error(f"CRITICAL: Failed to establish memberOfClass link - missing class individual for '{eq_class_base_name}'")
+                sequence_position_prop = context.get_prop('sequencePosition')
+                if sequence_position_prop:
+                    position_value = None
+                    line_id = None
+                    if line_ind:
+                        line_id_prop = context.get_prop('lineId')
+                        if line_id_prop:
+                            line_id = getattr(line_ind, line_id_prop.python_name, None)
+                    from ontology_generator.config import LINE_SPECIFIC_EQUIPMENT_SEQUENCE
+                    if line_id and line_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE and (eq_class_base_name in LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id]):
+                        position_value = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(eq_class_base_name)
+                        pop_logger.debug(f'Using line-specific sequence position {position_value} for {eq_class_base_name} on line {line_id}')
+                    if position_value is None:
+                        from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
+                        position_value = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
+                        if position_value:
+                            pop_logger.debug(f'Using default sequence position {position_value} for {eq_class_base_name}')
+                    if position_value is not None:
+                        context.set_prop(eq_ind, 'sequencePosition', position_value)
+                        pop_logger.debug(f'Set sequencePosition={position_value} for equipment {eq_id} of class {eq_class_base_name}')
+                    else:
+                        pop_logger.warning(f'No sequence position found for equipment class {eq_class_base_name}')
+                else:
+                    pop_logger.warning(f"Required property 'sequencePosition' not found. Cannot set sequence position.")
                 if eq_ind and line_ind:
                     part_of_line_prop = context.get_prop('isPartOfProductionLine')
                     if part_of_line_prop:
@@ -3316,23 +3342,25 @@ def process_structural_relationships(context: PopulationContext, property_mappin
                             if parsed_class and str(parsed_class) in classes_by_identifier:
                                 matching_class_ind = classes_by_identifier[str(parsed_class)]
                                 match_method = f"Parsed from name '{eq_name}'"
+                                log.info(f"[TKT-001] Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
                     if not matching_class_ind and hasattr(eq_ind, 'name'):
                         eq_name = eq_ind.name
                         from .equipment import parse_equipment_class
                         import re
-                        if '_' in eq_name:
+                        cleaned_name = re.sub('^(FIPCO|LINE)\\d*_?', '', eq_name)
+                        base_name = re.sub('\\d+$', '', cleaned_name)
+                        if base_name in classes_by_identifier:
+                            matching_class_ind = classes_by_identifier[base_name]
+                            match_method = f"Cleaned name match from '{eq_name}' -> '{base_name}'"
+                            log.info(f"[TKT-001] Matched cleaned name '{base_name}' to equipment class from '{eq_name}'")
+                        if not matching_class_ind and '_' in eq_name:
                             parts = eq_name.split('_')
                             for part in parts:
-                                if part and part in classes_by_identifier:
-                                    matching_class_ind = classes_by_identifier[part]
-                                    match_method = f"Direct part match from '{eq_name}'"
-                                    break
-                        if not matching_class_ind:
-                            words = re.findall('[A-Z][a-zA-Z]*', eq_name)
-                            for word in words:
-                                if word and word in classes_by_identifier:
-                                    matching_class_ind = classes_by_identifier[word]
-                                    match_method = f"Capital word match from '{eq_name}'"
+                                base_part = re.sub('\\d+$', '', part)
+                                if base_part and base_part in classes_by_identifier:
+                                    matching_class_ind = classes_by_identifier[base_part]
+                                    match_method = f"Direct part match from '{eq_name}' (part: '{base_part}')"
+                                    log.info(f"[TKT-001] Found equipment class '{base_part}' in parts of '{eq_name}'")
                                     break
                     if matching_class_ind:
                         try:

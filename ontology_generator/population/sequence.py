@@ -80,6 +80,9 @@ def setup_equipment_instance_relationships(onto: Ontology,
     prop_sequencePosition = context.get_prop("sequencePosition")
     prop_isImmediatelyUpstreamOf = context.get_prop("isImmediatelyUpstreamOf")
     prop_isImmediatelyDownstreamOf = context.get_prop("isImmediatelyDownstreamOf")
+    
+    # TKT-007: Get isParallelWith property
+    prop_isParallelWith = context.get_prop("isParallelWith")
 
     # Check essentials
     required_components = [
@@ -97,6 +100,10 @@ def setup_equipment_instance_relationships(onto: Ontology,
     if missing_components:
         pop_logger.error(f"Missing required components for equipment sequencing: {', '.join(missing_components)}")
         return
+    
+    # TKT-007: Check if isParallelWith property exists
+    if not prop_isParallelWith:
+        pop_logger.warning("'isParallelWith' property not found. Parallel equipment relationships will not be established.")
 
     if not prop_isImmediatelyDownstreamOf:
         pop_logger.warning("'isImmediatelyDownstreamOf' inverse property not found. Only forward instance relationships will be set.")
@@ -164,6 +171,10 @@ def setup_equipment_instance_relationships(onto: Ontology,
     total_relationships = 0
     line_relationship_counts: Dict[str, int] = {}
     
+    # TKT-007: Track parallel relationships
+    total_parallel_relationships = 0
+    line_parallel_counts: Dict[str, int] = {}
+    
     def safe_get_equipment_id(equipment: Thing) -> str:
         """Helper to safely get equipmentId or fallback to name for sorting."""
         equipment_id = getattr(equipment, prop_equipmentId.python_name, None)
@@ -184,17 +195,56 @@ def setup_equipment_instance_relationships(onto: Ontology,
             equipment_with_positions = []
             equipment_without_positions = []
             
+            # TKT-006: Enhanced collection of equipment with their sequence positions
             for equipment_inst in equipment_instances:
-                # Get the position value
-                position = getattr(equipment_inst, prop_sequencePosition.python_name, None)
+                # Get the equipment ID for consistent reference
                 eq_id = safe_get_equipment_id(equipment_inst)
                 
+                # TKT-006: Get sequencePosition value for this equipment
+                position = getattr(equipment_inst, prop_sequencePosition.python_name, None)
+                
+                # Get the equipment class for logging
+                eq_class_ind = getattr(equipment_inst, prop_memberOfClass.python_name, None)
+                eq_class_id = "Unknown"
+                if eq_class_ind and prop_equipmentClassId:
+                    eq_class_id = getattr(eq_class_ind, prop_equipmentClassId.python_name, eq_class_ind.name)
+                
                 if position is not None:
+                    # Store equipment with sequence position information
                     equipment_with_positions.append((equipment_inst, position, eq_id))
+                    pop_logger.debug(f"TKT-006: Equipment {eq_id} (class: {eq_class_id}) has sequencePosition: {position}")
                     total_equipment_with_sequence_position += 1
                 else:
+                    # Try to look up the position from its class using the config
+                    if eq_class_ind and prop_equipmentClassId:
+                        # Get class ID to look up in configuration
+                        equipment_class_id = getattr(eq_class_ind, prop_equipmentClassId.python_name, eq_class_ind.name)
+                        
+                        # Try line-specific sequence first
+                        if line_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE and equipment_class_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id]:
+                            position = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(equipment_class_id)
+                            pop_logger.info(f"TKT-006: Found position {position} for {eq_id} using line-specific config for class {equipment_class_id}")
+                            
+                            # Set the position on the equipment individual
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            equipment_with_positions.append((equipment_inst, position, eq_id))
+                            total_equipment_with_sequence_position += 1
+                            continue
+                        
+                        # Try default sequence as fallback
+                        if equipment_class_id in DEFAULT_EQUIPMENT_SEQUENCE:
+                            position = DEFAULT_EQUIPMENT_SEQUENCE.get(equipment_class_id)
+                            pop_logger.info(f"TKT-006: Found position {position} for {eq_id} using default config for class {equipment_class_id}")
+                            
+                            # Set the position on the equipment individual
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            equipment_with_positions.append((equipment_inst, position, eq_id))
+                            total_equipment_with_sequence_position += 1
+                            continue
+                    
+                    # If we get here, we couldn't find or set a position
                     equipment_without_positions.append((equipment_inst, eq_id))
-                    pop_logger.warning(f"Equipment {eq_id} on line {line_id} has no sequencePosition. Skipping for relationship setup.")
+                    pop_logger.warning(f"TKT-006: Equipment {eq_id} (class: {eq_class_id}) on line {line_id} has no sequencePosition and none could be determined.")
             
             # Step 2: Sort equipment instances by sequencePosition, then by equipmentId
             sorted_equipment = sorted(equipment_with_positions, key=lambda x: (x[1], x[2]))
@@ -205,7 +255,7 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 continue
             
             # Log the sorted equipment for verification
-            pop_logger.info(f"Sorted equipment on line {line_id} (format: id [position]):")
+            pop_logger.info(f"TKT-006: Sorted equipment on line {line_id} (format: id [position]):")
             for i, (eq, pos, eq_id) in enumerate(sorted_equipment):
                 pop_logger.info(f"  {i+1}. {eq_id} [{pos}]")
             
@@ -223,12 +273,12 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 try:
                     # Create forward relationship (isImmediatelyUpstreamOf)
                     _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False)
-                    pop_logger.debug(f"Created relationship: {up_id} (pos {upstream_pos}) isImmediatelyUpstreamOf {down_id} (pos {downstream_pos})")
+                    pop_logger.debug(f"TKT-006: Created relationship: {up_id} (pos {upstream_pos}) isImmediatelyUpstreamOf {down_id} (pos {downstream_pos})")
                     
                     # Create inverse relationship (isImmediatelyDownstreamOf) if property exists
                     if prop_isImmediatelyDownstreamOf:
                         _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False)
-                        pop_logger.debug(f"Created inverse relationship: {down_id} isImmediatelyDownstreamOf {up_id}")
+                        pop_logger.debug(f"TKT-006: Created inverse relationship: {down_id} isImmediatelyDownstreamOf {up_id}")
                     
                     relationships_created += 1
                 except Exception as e:
@@ -239,6 +289,46 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 line_relationship_counts[line_id] = relationships_created
                 total_relationships += relationships_created
                 pop_logger.info(f"Established {relationships_created} instance relationships for line {line_id}.")
+            
+            # TKT-007: Step 4: Identify and link parallel equipment (equipment with same sequence position)
+            if prop_isParallelWith:
+                # Group equipment by sequence position
+                position_equipment_map = {}
+                for eq, pos, eq_id in sorted_equipment:
+                    if pos not in position_equipment_map:
+                        position_equipment_map[pos] = []
+                    position_equipment_map[pos].append((eq, eq_id))
+                
+                # Process each position group that has multiple equipment
+                parallel_relationships = 0
+                for pos, equipment_list in position_equipment_map.items():
+                    if len(equipment_list) > 1:
+                        pop_logger.info(f"TKT-007: Found {len(equipment_list)} parallel equipment at position {pos} on line {line_id}")
+                        
+                        # Link all equipment at this position with isParallelWith relationships
+                        for i in range(len(equipment_list)):
+                            for j in range(i+1, len(equipment_list)):
+                                eq1, eq1_id = equipment_list[i]
+                                eq2, eq2_id = equipment_list[j]
+                                
+                                # Validate to ensure we're not creating self-references
+                                if eq1 is eq2:
+                                    pop_logger.error(f"TKT-007: Detected self-reference attempt for parallel equipment {eq1_id} on line {line_id}. Skipping this link.")
+                                    continue
+                                
+                                try:
+                                    # Since isParallelWith is symmetric, we only need to set it in one direction
+                                    # The OWL reasoner will infer the other direction
+                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False)
+                                    pop_logger.debug(f"TKT-007: Created parallel relationship: {eq1_id} isParallelWith {eq2_id} (position {pos})")
+                                    parallel_relationships += 1
+                                except Exception as e:
+                                    pop_logger.error(f"TKT-007: Error creating parallel relationship between {eq1_id} and {eq2_id}: {e}")
+                
+                if parallel_relationships > 0:
+                    line_parallel_counts[line_id] = parallel_relationships
+                    total_parallel_relationships += parallel_relationships
+                    pop_logger.info(f"TKT-007: Established {parallel_relationships} parallel equipment relationships for line {line_id}.")
             
             # Log info about equipment without positions
             if equipment_without_positions:
@@ -271,11 +361,35 @@ def setup_equipment_instance_relationships(onto: Ontology,
         print("  • Equipment not linked to lines/classes")
         print("  • Missing sequencePosition values (check TKT-010 implementation)")
         print("  • No equipment found on the same line")
+    
+    # TKT-007: Print parallel relationship summary
+    if prop_isParallelWith and total_parallel_relationships > 0:
+        pop_logger.info(f"TKT-007: Established {total_parallel_relationships} parallel equipment relationships across {len(line_parallel_counts)} production lines.")
+        print(f"\nEstablished {total_parallel_relationships} parallel equipment relationships on {len(line_parallel_counts)} lines:")
+        for line_id, count in sorted(line_parallel_counts.items()):
+            print(f"  • Line {line_id}: {count} parallel relationships")
         
+        print("\nParallel equipment identification approach:")
+        print("  • Equipment instances with the same sequencePosition on the same line are considered parallel")
+        print("  • Parallel instances are linked via the symmetric isParallelWith relationship")
+    elif prop_isParallelWith:
+        pop_logger.info("TKT-007: No parallel equipment relationships were established.")
+        print("\nNo parallel equipment relationships could be established.")
+        print("Possible reasons:")
+        print("  • No equipment instances with the same sequence position on the same line")
+        print("  • Equipment lacking sequence position information")
+    
     # Log lines without sequence
     if lines_without_sequence:
         print("\nProduction lines without sequence relationships:")
         for line_id in sorted(lines_without_sequence):
             print(f"  • {line_id}")
+    
+    # TKT-006: Add a summary log for the relationships created
+    pop_logger.info(f"TKT-006: Successfully established {total_relationships} instance-level equipment relationships")
+    
+    # TKT-007: Add a summary log for the parallel relationships created
+    if prop_isParallelWith:
+        pop_logger.info(f"TKT-007: Successfully established {total_parallel_relationships} parallel equipment relationships")
 
     return total_relationships  # Return count of created relationships for tracking

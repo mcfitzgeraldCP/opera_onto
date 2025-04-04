@@ -72,6 +72,11 @@ def link_equipment_events_to_line_events(onto: Ontology,
     line_events_by_line: Dict[Thing, List[Tuple[Thing, Optional[datetime], Optional[datetime]]]] = defaultdict(list)
     equipment_events_to_link: List[Tuple[Thing, Thing, Optional[datetime], Optional[datetime]]] = []  # (eq_event, line_ind, start, end)
 
+    # TKT-003: Ensure we're only processing events with the correct resource type
+    line_events_count = 0
+    equipment_events_count = 0
+    skipped_wrong_type_count = 0
+    
     # Create tracking for statistics and diagnostics
     missing_start_count = 0
     missing_end_count = 0
@@ -89,13 +94,25 @@ def link_equipment_events_to_line_events(onto: Ontology,
     line_event_ids = {}       # Map event ind to human-readable event ID
     
     for event_ind, resource_ind, resource_type in created_events_context:
+        # TKT-003: Verify that resource_type accurately reflects the actual resource
+        if resource_type == "Line" and not isinstance(resource_ind, cls_ProductionLine):
+            link_logger.warning(f"Event {event_ind.name} has resource_type 'Line' but the resource is not a ProductionLine. Skipping.")
+            skipped_wrong_type_count += 1
+            continue
+        elif resource_type == "Equipment" and not isinstance(resource_ind, cls_Equipment):
+            link_logger.warning(f"Event {event_ind.name} has resource_type 'Equipment' but the resource is not an Equipment. Skipping.")
+            skipped_wrong_type_count += 1
+            continue
+            
         # Capture event ID for better logging (if eventId property exists)
         if prop_eventId:
             event_id = getattr(event_ind, prop_eventId.python_name, event_ind.name)
             if resource_type == "Equipment":
                 equipment_event_ids[event_ind] = event_id
+                equipment_events_count += 1
             else:
                 line_event_ids[event_ind] = event_id
+                line_events_count += 1
         
         # Get time interval using the occursDuring property
         time_interval_ind = None
@@ -142,7 +159,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
             skipped_intervals += 1
             continue  # Skip this event for linking if start time is bad
 
-        # Check if it's a line event or equipment event
+        # TKT-003: Check if it's a line event or equipment event strictly by resource_type
         if resource_type == "Line":
             # It's a line event
             line_events_by_line[resource_ind].append((event_ind, start_time, end_time))
@@ -164,6 +181,11 @@ def link_equipment_events_to_line_events(onto: Ontology,
                 equipment_without_line.append((event_id, resource_ind.name))
                 link_logger.warning(f"Equipment event {event_id} for equipment {resource_ind.name} has no associated line. Cannot link.")
 
+    # TKT-003: Log the counts of events by type for verification
+    link_logger.info(f"TKT-003: Event type counts - Line events: {line_events_count}, Equipment events: {equipment_events_count}")
+    if skipped_wrong_type_count > 0:
+        link_logger.warning(f"TKT-003: Skipped {skipped_wrong_type_count} events due to resource type mismatch")
+    
     # Log lines with no events
     lines_with_no_events = set()
     all_lines = onto.search(type=cls_ProductionLine)
@@ -303,19 +325,40 @@ def link_equipment_events_to_line_events(onto: Ontology,
                         "end_time": line_end
                     }
 
+                # TKT-003: Improved temporal containment logic, prioritizing overlap detection
+                
                 # 1. Check for Strict Containment (requires valid start/end for both)
                 if isinstance(eq_end, datetime) and isinstance(line_end, datetime):
-                    # Apply time buffer for start comparison (equipment can start slightly before line)
-                    strict_cond1 = (line_start - time_buffer <= eq_start <= line_end)
-                    # Apply time buffer for end comparison (equipment can end slightly after line)
-                    strict_cond2 = (line_start <= eq_end <= line_end + time_buffer)
+                    # Equipment event is fully contained within line event (with buffer)
+                    strict_contained = (
+                        line_start - time_buffer <= eq_start <= line_end + time_buffer and
+                        line_start - time_buffer <= eq_end <= line_end + time_buffer
+                    )
                     
-                    if strict_cond1 and strict_cond2:
+                    if strict_contained:
                         link = True
                         link_method = "Strict Containment"
                         link_logger.debug(f"Match via strict containment: Equipment event {eq_interval_str} within Line event {line_interval_str}")
                 
-                # 2. Check for Start Containment (if strict containment failed or missing end times)
+                # 2. Check for Significant Overlap (at least 50% of equipment event overlaps with line event)
+                if not link and (isinstance(eq_end, datetime) or inferred_eq_end) and isinstance(line_end, datetime):
+                    actual_eq_end = eq_end if isinstance(eq_end, datetime) else inferred_eq_end
+                    
+                    # Calculate overlap duration
+                    overlap_start = max(eq_start, line_start)
+                    overlap_end = min(actual_eq_end, line_end)
+                    
+                    if overlap_start <= overlap_end:  # There is some overlap
+                        overlap_duration = (overlap_end - overlap_start).total_seconds()
+                        eq_duration = (actual_eq_end - eq_start).total_seconds()
+                        
+                        # If equipment event overlaps with line event for at least 50% of its duration
+                        if overlap_duration >= 0.5 * eq_duration:
+                            link = True
+                            link_method = "Significant Overlap"
+                            link_logger.debug(f"Match via significant overlap: Equipment event {eq_interval_str} overlaps with Line event {line_interval_str}")
+                
+                # 3. Check for Start Containment (equipment starts within line event timespan)
                 if not link:
                     # Equipment starts within line event timespan (with buffer)
                     # - Equipment starts after or at the same time as line (minus buffer)
@@ -328,7 +371,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
                         link_method = "Start Containment"
                         link_logger.debug(f"Match via start containment: Equipment event {eq_interval_str} starts within Line event {line_interval_str}")
                 
-                # 3. Check for End Containment if we have a real or inferred equipment end time
+                # 4. Check for End Containment if we have a real or inferred equipment end time
                 if not link and (isinstance(eq_end, datetime) or inferred_eq_end):
                     actual_eq_end = eq_end if isinstance(eq_end, datetime) else inferred_eq_end
                     
@@ -343,20 +386,57 @@ def link_equipment_events_to_line_events(onto: Ontology,
                         link_method = "End Containment" if isinstance(eq_end, datetime) else "Inferred End Containment"
                         link_logger.debug(f"Match via {link_method}: Equipment event {eq_interval_str} ends within Line event {line_interval_str}")
                 
-                # 4. Check for Temporal Overlap when both events have a start and at least one has an end time
-                if not link and line_end is not None:
-                    # Either the equipment event has a real end time or we use the inferred one
-                    actual_eq_end = eq_end if isinstance(eq_end, datetime) else inferred_eq_end
+                # 5. Check for Temporal Proximity when events don't overlap but are very close in time
+                if not link:
+                    # Calculate proximity between events
+                    proximity = None
                     
-                    if actual_eq_end and ((eq_start <= line_end + time_buffer and actual_eq_end >= line_start - time_buffer)):
+                    if isinstance(line_end, datetime) and eq_start > line_end:
+                        # Equipment event starts after line event ends
+                        proximity = eq_start - line_end
+                    elif isinstance(eq_end, datetime) and line_start > eq_end:
+                        # Line event starts after equipment event ends
+                        proximity = line_start - eq_end
+                    elif isinstance(inferred_eq_end, datetime) and line_start > inferred_eq_end:
+                        # Line event starts after inferred equipment event end
+                        proximity = line_start - inferred_eq_end
+                    
+                    # If events are within very close proximity (half the buffer)
+                    if proximity is not None and proximity <= time_buffer / 2:
                         link = True
-                        link_method = "Temporal Overlap" if isinstance(eq_end, datetime) else "Inferred Overlap"
-                        link_logger.debug(f"Match via {link_method}: Equipment event {eq_interval_str} overlaps with Line event {line_interval_str}")
+                        link_method = "Close Temporal Proximity"
+                        link_logger.debug(f"Match via close proximity: Equipment event {eq_interval_str} is {proximity} from Line event {line_interval_str}")
 
                 # --- End of Enhanced Containment Logic ---
 
                 if link:
                     try:
+                        # TKT-003: Verify both events have the correct resource types before linking
+                        eq_resource = getattr(eq_event_ind, prop_involvesResource.python_name, None)
+                        line_resource = getattr(line_event_ind, prop_involvesResource.python_name, None)
+                        
+                        # Get the first item if it's a list
+                        if isinstance(eq_resource, list) and eq_resource:
+                            eq_resource = eq_resource[0]
+                        if isinstance(line_resource, list) and line_resource:
+                            line_resource = line_resource[0]
+                        
+                        is_valid_resource_types = True
+                        
+                        # Check that equipment event links to an Equipment resource
+                        if not isinstance(eq_resource, cls_Equipment):
+                            link_logger.warning(f"TKT-003: Equipment event {eq_id} does not link to an Equipment resource. Cannot link to line event.")
+                            is_valid_resource_types = False
+                        
+                        # Check that line event links to a ProductionLine resource
+                        if not isinstance(line_resource, cls_ProductionLine):
+                            line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
+                            link_logger.warning(f"TKT-003: Line event {line_id} does not link to a ProductionLine resource. Cannot link from equipment event.")
+                            is_valid_resource_types = False
+                        
+                        if not is_valid_resource_types:
+                            continue
+                        
                         # Link: Equipment Event ---isPartOfLineEvent---> Line Event
                         current_parents = getattr(eq_event_ind, prop_isPartOfLineEvent.python_name, [])
                         if not isinstance(current_parents, list): 
@@ -492,6 +572,13 @@ def link_equipment_events_to_line_events(onto: Ontology,
     if inferred_end_count > 0:
         link_logger.info(f"Used {inferred_end_count} inferred end times for linking")
 
+    # TKT-003: Additional summary reporting for verification
+    link_logger.info(f"\nTKT-003: Event Linking Verification")
+    link_logger.info(f"  • Total line events processed: {line_events_count}")
+    link_logger.info(f"  • Total equipment events processed: {equipment_events_count}")
+    link_logger.info(f"  • Equipment events successfully linked: {linked_events} ({linked_events/max(1, equipment_events_count)*100:.1f}%)")
+    link_logger.info(f"  • Equipment events without line association: {len(equipment_without_line)}")
+    
     # Print a summary breakdown of the linking results to stdout for visibility
     print(f"\n=== EVENT LINKING RESULTS ===")
     print(f"Total equipment events: {total_equipment_events}")

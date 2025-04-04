@@ -323,38 +323,69 @@ def _read_operational_data(data_file_path, logger):
         return None # Indicate failure
 
 def _populate_abox(onto, data_rows, defined_classes, defined_properties, prop_is_functional, specification, property_mappings, logger):
-    logger.info("Starting ontology population (ABox)...")
-    population_successful = True
-    failed_rows_count = 0
-    created_eq_classes = {}
-    eq_class_positions = {}
-    created_events_context = []
-    all_created_individuals_by_uid = {}
-
-    if not data_rows:
-        logger.warning("Skipping population as no data rows were provided.")
-        # Return success=True but with zero counts/empty contexts
-        return True, 0, {}, {}, [], {}
-
+    """
+    Populate the ontology from data rows (ABox).
+    
+    Args:
+        onto: The ontology to populate
+        data_rows: The parsed data rows
+        defined_classes: Dictionary of defined classes
+        defined_properties: Dictionary of defined properties
+        prop_is_functional: Dictionary indicating functionality of properties
+        specification: The parsed specification
+        property_mappings: The parsed property mappings
+        logger: The logger to use
+        
+    Returns:
+        Tuple containing:
+        - population_successful: Whether population was overall successful
+        - failed_rows_count: Number of rows that failed to process
+        - created_eq_classes: Dictionary of equipment classes created
+        - eq_class_positions: Dictionary of equipment class positions
+        - created_events_context: Context data for event linking
+        - all_created_individuals_by_uid: Registry of all created individuals
+    """
+    logger.info("Populating ontology from data (ABox)...")
     try:
-        failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid = populate_ontology_from_data(
-            onto, data_rows, defined_classes, defined_properties, prop_is_functional,
-            specification, property_mappings
+        # Import here to avoid circular imports
+        from ontology_generator.population.processing import populate_ontology_from_data
+        
+        # Call the populate function
+        (failed_rows_count, created_eq_classes, eq_class_positions, 
+         created_events_context, all_created_individuals_by_uid, population_context) = populate_ontology_from_data(
+            onto, data_rows, defined_classes, defined_properties, 
+            prop_is_functional, specification, property_mappings
         )
-        if failed_rows_count == len(data_rows) and len(data_rows) > 0:
-            logger.error(f"Population failed for all {len(data_rows)} data rows.")
-            population_successful = False
-        elif failed_rows_count > 0:
-            logger.warning(f"Population completed with {failed_rows_count} out of {len(data_rows)} failed rows.")
+        
+        # Determine success based on failure rate (threshold could be configurable)
+        if failed_rows_count > 0:
+            failure_rate = failed_rows_count / len(data_rows) if data_rows else 1.0
+            if failure_rate > 0.5:  # More than 50% failure is considered severe
+                logger.error(f"Severe data processing failure rate: {failure_rate:.2%} ({failed_rows_count}/{len(data_rows)})")
+                population_successful = False
+            else:
+                logger.warning(f"Data processing has some failures: {failure_rate:.2%} ({failed_rows_count}/{len(data_rows)})")
+                population_successful = True  # Some failures are acceptable
         else:
-            logger.info(f"Population completed successfully for all {len(data_rows)} rows.")
-
-    except Exception as pop_exc:
-        logger.error(f"Critical error during population: {pop_exc}", exc_info=True)
-        population_successful = False
-
-    logger.info("ABox population phase finished.")
-    return population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid
+            logger.info("All data rows were processed successfully.")
+            population_successful = True
+        
+        # TKT-002: Track and store population_context for property usage reporting
+        if population_context:
+            logger.info("Prepared population context for later property usage reporting.")
+        else:
+            logger.warning("Population context not available for property usage tracking.")
+        
+        # Log count of individuals created
+        all_inds_count = len(all_created_individuals_by_uid) if all_created_individuals_by_uid else 0
+        logger.info(f"Ontology population complete. Created/used {all_inds_count} total individuals.")
+        
+        # Return all the context data needed for subsequent steps
+        return (population_successful, failed_rows_count, created_eq_classes, 
+                eq_class_positions, created_events_context, all_created_individuals_by_uid, population_context)
+    except Exception as e:
+        logger.error(f"Error during ontology population: {e}", exc_info=True)
+        return False, 0, {}, {}, [], {}, None
 
 def _run_analysis_and_optimization(onto, defined_classes, specification, optimize_ontology, output_owl_path, logger):
     logger.info("Analyzing ontology population status...")
@@ -399,9 +430,21 @@ def _run_analysis_and_optimization(onto, defined_classes, specification, optimiz
 def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
     logger.info("Setting up equipment instance relationships...")
     try:
+        # Add TKT-006 specific logging
+        logger.info("TKT-006: Verifying Equipment.sequencePosition population and sequence linking...")
+        
+        # Log some diagnostics about available data
+        logger.info(f"TKT-006: Found {len(eq_class_positions)} equipment class positions for sequencing")
+        if eq_class_positions:
+            sample_classes = list(eq_class_positions.keys())[:3]
+            logger.info(f"TKT-006: Sample classes with positions: {', '.join([f'{cls}={eq_class_positions[cls]}' for cls in sample_classes])}")
+        
         # Only set up instance-level relationships
-        setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
-        logger.info("Equipment instance sequence relationship setup complete.")
+        relationships_created = setup_equipment_instance_relationships(
+            onto, defined_classes, defined_properties, property_is_functional, eq_class_positions
+        )
+        
+        logger.info(f"TKT-006: Equipment instance sequence relationship setup complete. Created {relationships_created} relationships.")
         
         # Add equipment sequence report generation
         sequence_report = generate_equipment_sequence_report(onto)
@@ -630,6 +673,7 @@ def main_ontology_generation(spec_file_path: str,
     population_successful = False
     reasoning_successful = True # Assume success unless reasoner runs and fails
     save_failed = False
+    population_context = None  # TKT-002: Track population context for property usage reporting
 
     try:
         # 1. Log Initial Parameters
@@ -655,10 +699,21 @@ def main_ontology_generation(spec_file_path: str,
         if data_rows is None: return False # Indicate failure if reading failed
 
         # 6. Populate Ontology (ABox)
-        population_successful, failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid = _populate_abox(
+        population_result = _populate_abox(
             onto, data_rows, defined_classes, defined_properties, property_is_functional,
             specification, property_mappings, main_logger
         )
+        
+        # Unpack the population result tuple
+        if len(population_result) >= 7:  # TKT-002: Check for extended result tuple with context
+            (population_successful, failed_rows_count, created_eq_classes, 
+             eq_class_positions, created_events_context, all_created_individuals_by_uid, 
+             population_context) = population_result
+        else:
+            # Backward compatibility with older function signature
+            (population_successful, failed_rows_count, created_eq_classes, 
+             eq_class_positions, created_events_context, all_created_individuals_by_uid) = population_result
+            main_logger.warning("TKT-002: Population context not available from population result. Property usage reporting may be limited.")
         
         # 7. Process Structural Relationships (NEW STEP)
         if population_successful:
@@ -698,6 +753,13 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.warning("Skipping reasoning due to prior population failure.")
             reasoning_successful = False # Ensure overall success reflects this skipped step
         # If reasoner not used, reasoning_successful remains True
+        
+        # TKT-002: Log property usage report at the end of the entire process
+        if population_context:
+            main_logger.info("TKT-002: Generating final property usage report")
+            population_context.log_property_usage_report()
+        else:
+            main_logger.warning("TKT-002: Population context not available for final property usage report")
 
         # 12. Save Ontology
         # Saving logic depends on population and reasoning success

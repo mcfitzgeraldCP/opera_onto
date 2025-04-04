@@ -4,34 +4,7 @@ If the changes are very complex, break them down into subtasks or more tickets.
 
 Please ask as many clarifying questions you need to and challenge my thinking if appropriate.
 
-Some key issues I noticed:
-
-The euipment class is still wrong! The classes should Filler, CasePacker, Cartoner, etc. The classes are independent of line. Why does this keep happening?
-Also note that there are lines with more than one piece of the same equipment class and in the raw data this looks like CasePacker2 - the class should still be CasePacker, the EQUIPMENT_ID (the numeric asset tag, e.g. 152.0) is the unique differentiator
-
-here it is reflected in the log
-
-2025-04-04 09:36:50,134 - INFO - create_ontology - --- Population Pass 1: Creating Individuals and Data Properties ---
-2025-04-04 09:36:50,137 - INFO - ontology_population - Linked equipment '152.0' to its class 'FIPCO009_Filler'
-2025-04-04 09:36:50,139 - INFO - ontology_population - Linked equipment '225.0' to its class 'FIPCO006_Filler'
-2025-04-04 09:36:50,142 - INFO - ontology_population - Linked equipment '193.0' to its class 'FIPCO00G_CasePacker'
-2025-04-04 09:36:50,144 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,146 - INFO - ontology_population - Linked equipment '146.0' to its class 'FIPCO004_CasePacker'
-2025-04-04 09:36:50,149 - INFO - ontology_population - Linked equipment '165.0' to its class 'FIPCO002_CasePacker'
-2025-04-04 09:36:50,150 - INFO - ontology_population - Linked equipment '309.0' to its class 'FIPCO001_CasePacker2'
-
-The link failures might be due to using a small sample of data for developing and debugging, we are only using 100 lines:
-
-=== EVENT LINKING RESULTS ===
-Total equipment events: 81
-Events successfully linked: 58 (71.6%)
-Failed to link: 23 (28.4%)
-
-Failure breakdown:
-  • no_line_events: 19 (82.6%)
-  • time_gap_too_large: 4 (17.4%)
-=== END EVENT LINKING RESULTS ===
-
+IMPORTANT - I think that a major issue is that the properties themselves are not being dynamically read and used from the ontology specification. They appear to be hardcoded in the code.
 
 You have the following resources:
 
@@ -46,717 +19,79 @@ Do you understand?
 Log file
 ==============================================================================
 
-2025-04-04 09:36:50,123 - INFO - create_ontology - Logging configured.
-2025-04-04 09:36:50,123 - INFO - create_ontology - Standard logging enabled (INFO level).
-2025-04-04 09:36:50,123 - INFO - create_ontology - Warning suppression filter applied for 17 message patterns.
-2025-04-04 09:36:50,123 - INFO - create_ontology - --- Ontology Generation Process Started ---
-2025-04-04 09:36:50,123 - INFO - create_ontology - --- Starting Ontology Generation ---
-2025-04-04 09:36:50,123 - INFO - create_ontology - Specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V25.csv
-2025-04-04 09:36:50,123 - INFO - create_ontology - Data file: Data/mx_toothpaste_finishing_sample_100lines.csv
-2025-04-04 09:36:50,123 - INFO - create_ontology - Output OWL file: test.owl
-2025-04-04 09:36:50,123 - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
-2025-04-04 09:36:50,123 - INFO - create_ontology - Save format: rdfxml
-2025-04-04 09:36:50,123 - INFO - create_ontology - Run reasoner: False
-2025-04-04 09:36:50,123 - INFO - create_ontology - Reasoner report max entities: 10
-2025-04-04 09:36:50,123 - INFO - create_ontology - Reasoner report verbose: False
-2025-04-04 09:36:50,123 - INFO - create_ontology - Analyze population: True
-2025-04-04 09:36:50,123 - INFO - create_ontology - Strict adherence: False
-2025-04-04 09:36:50,123 - INFO - create_ontology - Skip classes: None
-2025-04-04 09:36:50,123 - INFO - create_ontology - Optimize ontology: False
-2025-04-04 09:36:50,123 - INFO - create_ontology - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V25.csv
-2025-04-04 09:36:50,123 - INFO - ontology_definition - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V25.csv
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Successfully parsed 87 rows from specification.
-2025-04-04 09:36:50,124 - INFO - create_ontology - Parsing property mappings from specification...
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Parsing property mappings from specification
-2025-04-04 09:36:50,124 - INFO - create_ontology - Parsed property mappings for 14 entities
-2025-04-04 09:36:50,124 - INFO - create_ontology - Validating property mappings...
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Validating property mappings...
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Found mappings for 14 entities
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: Area - 3 data properties, 2 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: Equipment - 7 data properties, 5 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: EquipmentClass - 1 data properties, 1 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: EventRecord - 19 data properties, 10 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: Material - 7 data properties, 2 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: OperationalReason - 5 data properties, 0 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: OperationalState - 1 data properties, 0 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: PersonnelClass - 1 data properties, 0 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: Plant - 1 data properties, 1 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: ProcessCell - 1 data properties, 2 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: ProductionLine - 1 data properties, 2 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: ProductionRequest - 4 data properties, 1 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: Shift - 4 data properties, 0 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Entity: TimeInterval - 2 data properties, 0 object properties
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Property mapping validation complete. Found 14 entities, 57 data properties, 26 object properties.
-2025-04-04 09:36:50,124 - INFO - ontology_definition - Validation PASSED
-2025-04-04 09:36:50,124 - INFO - create_ontology - Property mapping validation passed.
-2025-04-04 09:36:50,124 - INFO - create_ontology - Initializing in-memory World.
-2025-04-04 09:36:50,125 - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
-2025-04-04 09:36:50,125 - INFO - create_ontology - Defining ontology structure (TBox)...
-2025-04-04 09:36:50,125 - INFO - ontology_definition - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
-2025-04-04 09:36:50,126 - INFO - ontology_definition - Adding instance-level equipment sequence properties
-2025-04-04 09:36:50,126 - INFO - ontology_definition - Defined property: sequencePosition
-2025-04-04 09:36:50,126 - INFO - ontology_definition - Defined property: isImmediatelyUpstreamOf
-2025-04-04 09:36:50,126 - INFO - ontology_definition - Defined property: isImmediatelyDownstreamOf
-2025-04-04 09:36:50,127 - INFO - ontology_definition - Defined property: isPartOfProductionLine
-2025-04-04 09:36:50,127 - INFO - ontology_definition - Defined property: memberOfClass
-2025-04-04 09:36:50,132 - INFO - ontology_definition - Ontology structure definition complete.
-2025-04-04 09:36:50,132 - INFO - create_ontology - TBox definition complete.
-2025-04-04 09:36:50,132 - INFO - create_ontology - Reading operational data from: Data/mx_toothpaste_finishing_sample_100lines.csv
-2025-04-04 09:36:50,132 - INFO - ontology_definition - Reading data file: Data/mx_toothpaste_finishing_sample_100lines.csv
-2025-04-04 09:36:50,134 - INFO - ontology_definition - Successfully read 100 data rows.
-2025-04-04 09:36:50,134 - INFO - create_ontology - Read 100 data rows.
-2025-04-04 09:36:50,134 - INFO - create_ontology - Starting ontology population (ABox)...
-2025-04-04 09:36:50,134 - INFO - create_ontology - Starting ontology population with 100 data rows (Two-Pass Strategy).
-2025-04-04 09:36:50,134 - INFO - create_ontology - --- Population Pass 1: Creating Individuals and Data Properties ---
-2025-04-04 09:36:50,137 - INFO - ontology_population - Linked equipment '152.0' to its class 'FIPCO009_Filler'
-2025-04-04 09:36:50,139 - INFO - ontology_population - Linked equipment '225.0' to its class 'FIPCO006_Filler'
-2025-04-04 09:36:50,142 - INFO - ontology_population - Linked equipment '193.0' to its class 'FIPCO00G_CasePacker'
-2025-04-04 09:36:50,144 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,146 - INFO - ontology_population - Linked equipment '146.0' to its class 'FIPCO004_CasePacker'
-2025-04-04 09:36:50,149 - INFO - ontology_population - Linked equipment '165.0' to its class 'FIPCO002_CasePacker'
-2025-04-04 09:36:50,150 - INFO - ontology_population - Linked equipment '309.0' to its class 'FIPCO001_CasePacker2'
-2025-04-04 09:36:50,153 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,154 - INFO - ontology_population - Linked equipment '164.0' to its class 'FIPCO002_Cartoner'
-2025-04-04 09:36:50,156 - INFO - ontology_population - Linked equipment '177.0' to its class 'FIPCO00E_Bundler'
-2025-04-04 09:36:50,157 - INFO - ontology_population - Linked equipment '166.0' to its class 'FIPCO002_Filler'
-2025-04-04 09:36:50,159 - INFO - ontology_population - Linked equipment '178.0' to its class 'FIPCO00E_Cartoner'
-2025-04-04 09:36:50,160 - INFO - ontology_population - Linked equipment '180.0' to its class 'FIPCO00E_Filler'
-2025-04-04 09:36:50,162 - INFO - ontology_population - Linked equipment '143.0' to its class 'FIPCO004_Filler'
-2025-04-04 09:36:50,163 - INFO - ontology_population - Linked equipment '192.0' to its class 'FIPCO00G_Cartoner'
-2025-04-04 09:36:50,165 - INFO - ontology_population - Linked equipment '185.0' to its class 'FIPCO00F_Cartoner'
-2025-04-04 09:36:50,167 - INFO - ontology_population - Linked equipment '205.0' to its class 'FIPCO00I_Bundler'
-2025-04-04 09:36:50,168 - INFO - ontology_population - Linked equipment '181.0' to its class 'FIPCO00E_Palletizer'
-2025-04-04 09:36:50,170 - INFO - ontology_population - Linked equipment '171.0' to its class 'FIPCO003_Cartoner'
-2025-04-04 09:36:50,172 - INFO - ontology_population - Linked equipment '200.0' to its class 'FIPCO00H_CasePacker'
-2025-04-04 09:36:50,173 - INFO - ontology_population - Linked equipment '205.0' to its class 'FIPCO00I_Bundler'
-2025-04-04 09:36:50,174 - INFO - ontology_population - Linked equipment '152.0' to its class 'FIPCO009_Filler'
-2025-04-04 09:36:50,175 - INFO - ontology_population - Linked equipment '151.0' to its class 'FIPCO009_CasePacker'
-2025-04-04 09:36:50,177 - INFO - ontology_population - Linked equipment '152.0' to its class 'FIPCO009_Filler'
-2025-04-04 09:36:50,179 - INFO - ontology_population - Linked equipment '769.0' to its class 'FIPCO00J_Filler'
-2025-04-04 09:36:50,180 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,181 - INFO - ontology_population - Linked equipment '178.0' to its class 'FIPCO00E_Cartoner'
-2025-04-04 09:36:50,182 - INFO - ontology_population - Linked equipment '200.0' to its class 'FIPCO00H_CasePacker'
-2025-04-04 09:36:50,184 - INFO - ontology_population - Linked equipment '145.0' to its class 'FIPCO004_Cartoner'
-2025-04-04 09:36:50,185 - INFO - ontology_population - Linked equipment '144.0' to its class 'FIPCO004_Bundler'
-2025-04-04 09:36:50,187 - INFO - ontology_population - Linked equipment '151.0' to its class 'FIPCO009_CasePacker'
-2025-04-04 09:36:50,188 - INFO - ontology_population - Linked equipment '159.0' to its class 'FIPCO001_Filler'
-2025-04-04 09:36:50,190 - INFO - ontology_population - Linked equipment '200.0' to its class 'FIPCO00H_CasePacker'
-2025-04-04 09:36:50,191 - INFO - ontology_population - Linked equipment '208.0' to its class 'FIPCO00I_Filler'
-2025-04-04 09:36:50,192 - INFO - ontology_population - Linked equipment '152.0' to its class 'FIPCO009_Filler'
-2025-04-04 09:36:50,195 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,197 - INFO - ontology_population - Linked equipment '149.0' to its class 'FIPCO009_Bundler'
-2025-04-04 09:36:50,199 - INFO - ontology_population - Linked equipment '187.0' to its class 'FIPCO00F_Filler'
-2025-04-04 09:36:50,202 - INFO - ontology_population - Linked equipment '201.0' to its class 'FIPCO00H_Filler'
-2025-04-04 09:36:50,204 - INFO - ontology_population - Linked equipment '767.0' to its class 'FIPCO00J_Cartoner'
-2025-04-04 09:36:50,205 - INFO - ontology_population - Linked equipment '193.0' to its class 'FIPCO00G_CasePacker'
-2025-04-04 09:36:50,206 - INFO - ontology_population - Linked equipment '164.0' to its class 'FIPCO002_Cartoner'
-2025-04-04 09:36:50,207 - INFO - ontology_population - Linked equipment '152.0' to its class 'FIPCO009_Filler'
-2025-04-04 09:36:50,209 - INFO - ontology_population - Linked equipment '164.0' to its class 'FIPCO002_Cartoner'
-2025-04-04 09:36:50,210 - INFO - ontology_population - Linked equipment '207.0' to its class 'FIPCO00I_CasePacker'
-2025-04-04 09:36:50,214 - INFO - ontology_population - Linked equipment '171.0' to its class 'FIPCO003_Cartoner'
-2025-04-04 09:36:50,215 - INFO - ontology_population - Linked equipment '181.0' to its class 'FIPCO00E_Palletizer'
-2025-04-04 09:36:50,216 - INFO - ontology_population - Linked equipment '151.0' to its class 'FIPCO009_CasePacker'
-2025-04-04 09:36:50,218 - INFO - ontology_population - Linked equipment '164.0' to its class 'FIPCO002_Cartoner'
-2025-04-04 09:36:50,219 - INFO - ontology_population - Linked equipment '165.0' to its class 'FIPCO002_CasePacker'
-2025-04-04 09:36:50,221 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,222 - INFO - ontology_population - Linked equipment '192.0' to its class 'FIPCO00G_Cartoner'
-2025-04-04 09:36:50,224 - INFO - ontology_population - Linked equipment '143.0' to its class 'FIPCO004_Filler'
-2025-04-04 09:36:50,226 - INFO - ontology_population - Linked equipment '172.0' to its class 'FIPCO003_CasePacker'
-2025-04-04 09:36:50,228 - INFO - ontology_population - Linked equipment '227.0' to its class 'FIPCO006_CasePacker'
-2025-04-04 09:36:50,229 - INFO - ontology_population - Linked equipment '199.0' to its class 'FIPCO00H_Cartoner'
-2025-04-04 09:36:50,231 - INFO - ontology_population - Linked equipment '164.0' to its class 'FIPCO002_Cartoner'
-2025-04-04 09:36:50,232 - INFO - ontology_population - Linked equipment '184.0' to its class 'FIPCO00F_Bundler'
-2025-04-04 09:36:50,233 - INFO - ontology_population - Linked equipment '149.0' to its class 'FIPCO009_Bundler'
-2025-04-04 09:36:50,234 - INFO - ontology_population - Linked equipment '166.0' to its class 'FIPCO002_Filler'
-2025-04-04 09:36:50,235 - INFO - ontology_population - Linked equipment '160.0' to its class 'FIPCO001_Palletizer'
-2025-04-04 09:36:50,236 - INFO - ontology_population - Linked equipment '146.0' to its class 'FIPCO004_CasePacker'
-2025-04-04 09:36:50,238 - INFO - ontology_population - Linked equipment '170.0' to its class 'FIPCO003_Bundler'
-2025-04-04 09:36:50,240 - INFO - ontology_population - Linked equipment '163.0' to its class 'FIPCO002_Bundler'
-2025-04-04 09:36:50,241 - INFO - ontology_population - Linked equipment '184.0' to its class 'FIPCO00F_Bundler'
-2025-04-04 09:36:50,244 - INFO - ontology_population - Linked equipment '227.0' to its class 'FIPCO006_CasePacker'
-2025-04-04 09:36:50,245 - INFO - ontology_population - Linked equipment '170.0' to its class 'FIPCO003_Bundler'
-2025-04-04 09:36:50,246 - INFO - ontology_population - Linked equipment '146.0' to its class 'FIPCO004_CasePacker'
-2025-04-04 09:36:50,247 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,248 - INFO - ontology_population - Linked equipment '144.0' to its class 'FIPCO004_Bundler'
-2025-04-04 09:36:50,252 - INFO - ontology_population - Linked equipment '207.0' to its class 'FIPCO00I_CasePacker'
-2025-04-04 09:36:50,253 - INFO - ontology_population - Linked equipment '206.0' to its class 'FIPCO00I_Cartoner'
-2025-04-04 09:36:50,254 - INFO - ontology_population - Linked equipment '152.0' to its class 'FIPCO009_Filler'
-2025-04-04 09:36:50,255 - INFO - ontology_population - Linked equipment '177.0' to its class 'FIPCO00E_Bundler'
-2025-04-04 09:36:50,259 - INFO - ontology_population - Linked equipment '150.0' to its class 'FIPCO009_Cartoner'
-2025-04-04 09:36:50,260 - INFO - ontology_population - Linked equipment '143.0' to its class 'FIPCO004_Filler'
-2025-04-04 09:36:50,263 - INFO - ontology_population - Linked equipment '195.0' to its class 'FIPCO00G_Palletizer'
-2025-04-04 09:36:50,265 - INFO - ontology_population - Linked equipment '153.0' to its class 'FIPCO009_Palletizer'
-2025-04-04 09:36:50,266 - INFO - ontology_population - Linked equipment '146.0' to its class 'FIPCO004_CasePacker'
-2025-04-04 09:36:50,267 - INFO - ontology_population - Linked equipment '201.0' to its class 'FIPCO00H_Filler'
-2025-04-04 09:36:50,268 - INFO - ontology_population - Linked equipment '767.0' to its class 'FIPCO00J_Cartoner'
-2025-04-04 09:36:50,269 - INFO - create_ontology - Pass 1 Complete. Successful rows: 100, Failed rows: 0.
-2025-04-04 09:36:50,269 - INFO - create_ontology - Total unique individuals created (approx): 419
-2025-04-04 09:36:50,269 - INFO - create_ontology - --- Unique Equipment Classes Found/Created (Pass 1) ---
-2025-04-04 09:36:50,269 - INFO - create_ontology - Total unique equipment classes: 40
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO001_CasePacker2 (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO001_Filler (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO001_Palletizer (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO002_Bundler (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO002_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO002_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO002_Filler (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO003_Bundler (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO003_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO003_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO004_Bundler (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO004_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO004_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,269 - INFO - create_ontology -   • FIPCO004_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO006_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO006_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO009_Bundler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO009_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO009_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO009_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO009_Palletizer (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00E_Bundler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00E_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00E_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00E_Palletizer (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00F_Bundler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00F_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00F_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00G_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00G_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00G_Palletizer (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00H_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00H_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00H_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00I_Bundler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00I_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00I_CasePacker (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00I_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00J_Cartoner (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology -   • FIPCO00J_Filler (Position: Not Set)
-2025-04-04 09:36:50,270 - INFO - create_ontology - --- Population Pass 2: Linking Individuals (Object Properties) ---
-2025-04-04 09:36:50,270 - INFO - create_ontology - Prepared context for Pass 2 with 13 potential link targets.
-2025-04-04 09:36:50,281 - INFO - create_ontology - Pass 2 Complete. Rows successfully linked: 100, Rows failed/skipped linking: 0.
-2025-04-04 09:36:50,281 - INFO - create_ontology - Ontology population complete. All rows processed successfully.
-2025-04-04 09:36:50,281 - INFO - create_ontology - Population completed successfully for all 100 rows.
-2025-04-04 09:36:50,281 - INFO - create_ontology - ABox population phase finished.
-2025-04-04 09:36:50,281 - INFO - create_ontology - Processing structural relationships between entities...
-2025-04-04 09:36:50,281 - INFO - create_ontology - Starting post-processing of structural relationships...
-2025-04-04 09:36:50,281 - INFO - create_ontology - Processing Equipment.memberOfClass structural relationships...
-2025-04-04 09:36:50,281 - INFO - create_ontology - Found 40 Equipment individuals for class linking
-2025-04-04 09:36:50,281 - INFO - create_ontology - Found 40 EquipmentClass individuals for linking
-2025-04-04 09:36:50,281 - INFO - create_ontology - Equipment-Class linking summary:
-2025-04-04 09:36:50,281 - INFO - create_ontology -   • Equipment already linked: 40
-2025-04-04 09:36:50,281 - INFO - create_ontology -   • Equipment newly linked: 0
-2025-04-04 09:36:50,281 - INFO - create_ontology -   • Equipment not linked: 0
-2025-04-04 09:36:50,281 - INFO - create_ontology -   • Total equipment processed: 40
-2025-04-04 09:36:50,281 - INFO - create_ontology - Processing Equipment.isPartOfProductionLine structural relationships...
-2025-04-04 09:36:50,281 - INFO - create_ontology - Post-processing complete: Created 0 structural links in total
-2025-04-04 09:36:50,281 - INFO - create_ontology - Structural relationship processing complete. Created 0 links.
-2025-04-04 09:36:50,281 - INFO - create_ontology - Structural relationship processing complete.
-2025-04-04 09:36:50,281 - INFO - create_ontology - Analyzing ontology population status...
-2025-04-04 09:36:50,281 - INFO - ontology_analysis - Starting analysis of ontology population
-2025-04-04 09:36:50,283 - INFO - ontology_analysis - Analysis complete. Found 15 classes, 0 empty classes
-2025-04-04 09:36:50,284 - INFO - create_ontology - Ontology Population Analysis Complete
-
-================================================================================
-ONTOLOGY POPULATION REPORT
-================================================================================
-
-SUMMARY:
-  • Total Classes: 15
-  • Populated Classes: 15 (100.0%)
-  • Empty Classes: 0 (0.0%)
-  • Total Individuals: 434
-
-SPECIFICATION ANALYSIS:
-  • Classes in Specification: 15
-  • Classes Implemented in Ontology: 15
-
-POPULATED CLASSES (Class: Count)
-  • EventRecord: 101
-  • TimeInterval: 101
-  • Equipment: 41
-  • EquipmentClass: 41
-  • OperationalReason: 40
-  • ProductionRequest: 35
-  • Material: 34
-  • ProductionLine: 13
-      Examples: ProductionLine, ProductionLine_FIPCO006, ProductionLine_FIPCO009, ProductionLine_FIPCO00G, ProductionLine_FIPCO00I
-      ... and 5 more
-  • OperationalState: 10
-      Examples: OperationalState, OperationalState_DOWNTIME, OperationalState_PLANNED, OperationalState_RUNNING, OperationalState_BUSINESS_EXTERNAL
-      ... and 5 more
-  • Shift: 10
-      Examples: Shift, Shift_Shift2_2025-02-07_14_00_00.000_-0500, Shift_Shift1_2025-02-06_06_00_00.000_-0500, Shift_Shift2_2025-02-05_14_00_00.000_-0500, Shift_Shift2_2025-02-06_14_00_00.000_-0500
-      ... and 5 more
-  • Area: 2
-      Examples: Area, Area_TPST
-  • Plant: 2
-      Examples: Plant, Plant_MX11
-  • ProcessCell: 2
-      Examples: ProcessCell, ProcessCell_PACK
-  • PersonnelClass: 1
-      Examples: PersonnelClass
-  • ProductionLineOrEquipment: 1
-      Examples: ProductionLineOrEquipment
-
-OPTIMIZATION RECOMMENDATIONS:
-2025-04-04 09:36:50,284 - INFO - create_ontology - Setting up equipment instance relationships...
-2025-04-04 09:36:50,284 - INFO - ontology_population - Setting up INSTANCE-LEVEL equipment relationships within production lines...
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment class positions dictionary is empty. We'll still process equipment instances that have sequence positions set directly.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Grouping equipment instances by production line...
-2025-04-04 09:36:50,284 - INFO - ontology_population - Equipment distribution summary:
-2025-04-04 09:36:50,284 - INFO - ontology_population -   • Total equipment found: 40
-2025-04-04 09:36:50,284 - INFO - ontology_population -   • Equipment linked to lines: 40
-2025-04-04 09:36:50,284 - INFO - ontology_population -   • Equipment linked to equipment classes: 40
-2025-04-04 09:36:50,284 - INFO - ontology_population -   • Production lines with equipment: 12
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO009
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 152.0 on line FIPCO009 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 151.0 on line FIPCO009 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 149.0 on line FIPCO009 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 150.0 on line FIPCO009 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 153.0 on line FIPCO009 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO009. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO006
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 225.0 on line FIPCO006 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 227.0 on line FIPCO006 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO006. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00G
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 193.0 on line FIPCO00G has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 192.0 on line FIPCO00G has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 195.0 on line FIPCO00G has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO00G. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00I
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 206.0 on line FIPCO00I has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 205.0 on line FIPCO00I has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 208.0 on line FIPCO00I has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 207.0 on line FIPCO00I has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO00I. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO004
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 146.0 on line FIPCO004 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 143.0 on line FIPCO004 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 145.0 on line FIPCO004 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 144.0 on line FIPCO004 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO004. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO002
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 165.0 on line FIPCO002 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 164.0 on line FIPCO002 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 166.0 on line FIPCO002 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 163.0 on line FIPCO002 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO002. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO001
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 309.0 on line FIPCO001 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 159.0 on line FIPCO001 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 160.0 on line FIPCO001 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO001. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00E
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 177.0 on line FIPCO00E has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 178.0 on line FIPCO00E has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 180.0 on line FIPCO00E has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 181.0 on line FIPCO00E has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO00E. Skipping relationship setup.
-2025-04-04 09:36:50,284 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00F
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 185.0 on line FIPCO00F has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,284 - WARNING - ontology_population - Equipment 187.0 on line FIPCO00F has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 184.0 on line FIPCO00F has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO00F. Skipping relationship setup.
-2025-04-04 09:36:50,285 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO003
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 171.0 on line FIPCO003 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 172.0 on line FIPCO003 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 170.0 on line FIPCO003 has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO003. Skipping relationship setup.
-2025-04-04 09:36:50,285 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00H
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 200.0 on line FIPCO00H has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 201.0 on line FIPCO00H has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 199.0 on line FIPCO00H has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO00H. Skipping relationship setup.
-2025-04-04 09:36:50,285 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00J
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 769.0 on line FIPCO00J has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - Equipment 767.0 on line FIPCO00J has no sequencePosition. Skipping for relationship setup.
-2025-04-04 09:36:50,285 - WARNING - ontology_population - No equipment with sequence positions found on line FIPCO00J. Skipping relationship setup.
-
-=== EQUIPMENT INSTANCE RELATIONSHIP REPORT ===
-Found 0 equipment instances with sequencePosition
-2025-04-04 09:36:50,285 - WARNING - ontology_population - No equipment instance relationships were established.
-No equipment instance relationships could be established.
-Possible reasons:
-  • Equipment not linked to lines/classes
-  • Missing sequencePosition values (check TKT-010 implementation)
-  • No equipment found on the same line
-
-Production lines without sequence relationships:
-  • FIPCO001
-  • FIPCO002
-  • FIPCO003
-  • FIPCO004
-  • FIPCO006
-  • FIPCO009
-  • FIPCO00E
-  • FIPCO00F
-  • FIPCO00G
-  • FIPCO00H
-  • FIPCO00I
-  • FIPCO00J
-2025-04-04 09:36:50,285 - INFO - create_ontology - Equipment instance sequence relationship setup complete.
-2025-04-04 09:36:50,285 - INFO - ontology_analysis - Generating equipment sequence report for all lines
-2025-04-04 09:36:50,288 - INFO - ontology_analysis - Found 12 production lines
-2025-04-04 09:36:50,288 - INFO - ontology_analysis - Sample line IDs: FIPCO006, FIPCO009, FIPCO00G, FIPCO00I, FIPCO004
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - WARNING - ontology_analysis - Property 'equipmentIsUpstreamOf' not found in ontology
-2025-04-04 09:36:50,288 - INFO - create_ontology - Equipment sequence report generated.
-
-=== EQUIPMENT SEQUENCE REPORT ===
-
-Line: FIPCO001
-  No equipment sequence found
-
-Line: FIPCO002
-  No equipment sequence found
-
-Line: FIPCO003
-  No equipment sequence found
-
-Line: FIPCO004
-  No equipment sequence found
-
-Line: FIPCO006
-  No equipment sequence found
-
-Line: FIPCO009
-  No equipment sequence found
-
-Line: FIPCO00E
-  No equipment sequence found
-
-Line: FIPCO00F
-  No equipment sequence found
-
-Line: FIPCO00G
-  No equipment sequence found
-
-Line: FIPCO00H
-  No equipment sequence found
-
-Line: FIPCO00I
-  No equipment sequence found
-
-Line: FIPCO00J
-  No equipment sequence found
-2025-04-04 09:36:50,288 - INFO - create_ontology - Linking equipment events to line events...
-2025-04-04 09:36:50,288 - INFO - event_linking - Starting second pass: Linking equipment events to line events (Enhanced Relaxed Temporal Logic)...
-2025-04-04 09:36:50,288 - INFO - event_linking - Using temporal linking parameters: Buffer=5 minutes, Default Duration=2 hours
-2025-04-04 09:36:50,289 - INFO - event_linking - Indexed 9 lines with line events.
-2025-04-04 09:36:50,289 - INFO - event_linking - Found 81 equipment events with context to potentially link.
-2025-04-04 09:36:50,289 - INFO - event_linking - Processed 100 valid intervals, skipped 0 invalid/incomplete intervals.
-2025-04-04 09:36:50,289 - INFO - event_linking - Time data statistics: Missing start times: 0, Missing end times: 14
-2025-04-04 09:36:50,289 - WARNING - event_linking - Found 3 lines with no associated events. First 5: ProductionLine_FIPCO00J, ProductionLine_FIPCO004, ProductionLine_FIPCO00H
-2025-04-04 09:36:50,289 - INFO - event_linking - Found 14 events with missing end times - will apply enhanced linking logic
-2025-04-04 09:36:50,289 - INFO - event_linking - Attempting to link equipment events to containing line events...
-2025-04-04 09:36:50,289 - INFO - event_linking - Linked (End Containment): EventRecord_Event_152.0_2025-02-05T090246_Row3 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,289 - WARNING - event_linking - Could not find suitable parent line event for equipment event EventRecord_Event_225.0_2025-02-05T201240_Row4
-2025-04-04 09:36:50,289 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_193.0_2025-02-05T191720_Row5 isPartOfLineEvent EventRecord_Event_FIPCO00G_2025-02-05T191610_Row51
-2025-04-04 09:36:50,289 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_206.0_2025-02-07T021718_Row6 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,289 - WARNING - event_linking - Equipment event EventRecord_Event_146.0_2025-02-07T140419_Row7 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,289 - INFO - event_linking - Linked (End Containment): EventRecord_Event_165.0_2025-02-05T000814_Row8 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,289 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_309.0_2025-02-04T152114_Row9 isPartOfLineEvent EventRecord_Event_FIPCO001_2025-02-04T152053_Row54
-2025-04-04 09:36:50,289 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_206.0_2025-02-07T021718_Row11 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,289 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_164.0_2025-02-06T220312_Row12 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_177.0_2025-02-06T065220_Row13 isPartOfLineEvent EventRecord_Event_FIPCO00E_2025-02-05T163743_Row46
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_166.0_2025-02-06T230327_Row14 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_178.0_2025-02-05T000430_Row15 isPartOfLineEvent EventRecord_Event_FIPCO00E_2025-02-05T163743_Row46
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_180.0_2025-02-06T201508_Row16 isPartOfLineEvent EventRecord_Event_FIPCO00E_2025-02-07T130618_Row92
-2025-04-04 09:36:50,290 - WARNING - event_linking - Equipment event EventRecord_Event_143.0_2025-02-07T000752_Row17 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_192.0_2025-02-05T191720_Row18 isPartOfLineEvent EventRecord_Event_FIPCO00G_2025-02-05T191610_Row51
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_185.0_2025-02-05T041219_Row19 isPartOfLineEvent EventRecord_Event_FIPCO00F_2025-02-05T041132_Row85
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_205.0_2025-02-07T021718_Row20 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_181.0_2025-02-06T065221_Row21 isPartOfLineEvent EventRecord_Event_FIPCO00E_2025-02-05T163743_Row46
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_171.0_2025-02-04T174752_Row22 isPartOfLineEvent EventRecord_Event_FIPCO003_2025-02-05T101841_Row56
-2025-04-04 09:36:50,290 - WARNING - event_linking - Equipment event EventRecord_Event_200.0_2025-02-05T030204_Row23 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00H. Verify source data.
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_205.0_2025-02-05T045658_Row24 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_152.0_2025-02-05T090246_Row25 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_151.0_2025-02-06T141753_Row26 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_152.0_2025-02-05T090246_Row27 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,290 - WARNING - event_linking - Equipment event EventRecord_Event_769.0_2025-02-05T070727_Row28 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00J. Verify source data.
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_206.0_2025-02-05T045658_Row29 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_178.0_2025-02-05T163805_Row30 isPartOfLineEvent EventRecord_Event_FIPCO00E_2025-02-05T163743_Row46
-2025-04-04 09:36:50,290 - WARNING - event_linking - Equipment event EventRecord_Event_200.0_2025-02-06T093417_Row31 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00H. Verify source data.
-2025-04-04 09:36:50,290 - WARNING - event_linking - Equipment event EventRecord_Event_145.0_2025-02-06T060836_Row32 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,290 - WARNING - event_linking - Equipment event EventRecord_Event_144.0_2025-02-05T181456_Row33 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,290 - WARNING - event_linking - Could not find suitable parent line event for equipment event EventRecord_Event_151.0_2025-02-04T160617_Row34
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_159.0_2025-02-07T200250_Row35 isPartOfLineEvent EventRecord_Event_FIPCO001_2025-02-04T152053_Row54
-2025-04-04 09:36:50,290 - WARNING - event_linking - Equipment event EventRecord_Event_200.0_2025-02-06T093417_Row36 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00H. Verify source data.
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_208.0_2025-02-05T045658_Row37 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,290 - WARNING - event_linking - Could not find suitable parent line event for equipment event EventRecord_Event_152.0_2025-02-04T160617_Row38
-2025-04-04 09:36:50,290 - INFO - event_linking - Linked (End Containment): EventRecord_Event_206.0_2025-02-05T045658_Row40 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_149.0_2025-02-06T141755_Row41 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_187.0_2025-02-05T041219_Row43 isPartOfLineEvent EventRecord_Event_FIPCO00F_2025-02-05T041132_Row85
-2025-04-04 09:36:50,291 - WARNING - event_linking - Equipment event EventRecord_Event_201.0_2025-02-05T030204_Row45 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00H. Verify source data.
-2025-04-04 09:36:50,291 - WARNING - event_linking - Equipment event EventRecord_Event_767.0_2025-02-05T070727_Row47 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00J. Verify source data.
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_193.0_2025-02-05T024216_Row48 isPartOfLineEvent EventRecord_Event_FIPCO00G_2025-02-05T191610_Row51
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_164.0_2025-02-05T000844_Row49 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_152.0_2025-02-06T141745_Row50 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_164.0_2025-02-06T230327_Row52 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_207.0_2025-02-05T045658_Row53 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_171.0_2025-02-04T174752_Row57 isPartOfLineEvent EventRecord_Event_FIPCO003_2025-02-05T101841_Row56
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_181.0_2025-02-05T000431_Row58 isPartOfLineEvent EventRecord_Event_FIPCO00E_2025-02-05T163743_Row46
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_151.0_2025-02-05T090246_Row59 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_164.0_2025-02-05T000844_Row60 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_165.0_2025-02-05T000814_Row61 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_206.0_2025-02-07T021718_Row63 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_192.0_2025-02-05T191720_Row64 isPartOfLineEvent EventRecord_Event_FIPCO00G_2025-02-05T191610_Row51
-2025-04-04 09:36:50,291 - WARNING - event_linking - Equipment event EventRecord_Event_143.0_2025-02-07T140436_Row65 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_172.0_2025-02-06T022013_Row66 isPartOfLineEvent EventRecord_Event_FIPCO003_2025-02-06T181614_Row39
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_227.0_2025-02-05T224053_Row67 isPartOfLineEvent EventRecord_Event_FIPCO006_2025-02-05T224021_Row2
-2025-04-04 09:36:50,291 - WARNING - event_linking - Equipment event EventRecord_Event_199.0_2025-02-07T133917_Row68 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00H. Verify source data.
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_164.0_2025-02-06T220312_Row69 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_184.0_2025-02-05T041219_Row70 isPartOfLineEvent EventRecord_Event_FIPCO00F_2025-02-05T041132_Row85
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_149.0_2025-02-06T141755_Row71 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_166.0_2025-02-06T230327_Row72 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_160.0_2025-02-04T152114_Row73 isPartOfLineEvent EventRecord_Event_FIPCO001_2025-02-04T152053_Row54
-2025-04-04 09:36:50,291 - WARNING - event_linking - Equipment event EventRecord_Event_146.0_2025-02-07T000752_Row74 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_170.0_2025-02-06T181621_Row75 isPartOfLineEvent EventRecord_Event_FIPCO003_2025-02-06T181614_Row39
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_163.0_2025-02-05T000844_Row77 isPartOfLineEvent EventRecord_Event_FIPCO002_2025-02-06T220243_Row10
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_184.0_2025-02-07T132133_Row78 isPartOfLineEvent EventRecord_Event_FIPCO00F_2025-02-05T041132_Row85
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_227.0_2025-02-05T224053_Row80 isPartOfLineEvent EventRecord_Event_FIPCO006_2025-02-05T224021_Row2
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_170.0_2025-02-06T181621_Row81 isPartOfLineEvent EventRecord_Event_FIPCO003_2025-02-06T181614_Row39
-2025-04-04 09:36:50,291 - WARNING - event_linking - Equipment event EventRecord_Event_146.0_2025-02-06T060837_Row82 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_206.0_2025-02-07T021718_Row83 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,291 - WARNING - event_linking - Equipment event EventRecord_Event_144.0_2025-02-07T140434_Row84 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,291 - INFO - event_linking - Linked (End Containment): EventRecord_Event_207.0_2025-02-05T045658_Row87 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,292 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_206.0_2025-02-08T032858_Row88 isPartOfLineEvent EventRecord_Event_FIPCO00I_2025-02-07T021644_Row42
-2025-04-04 09:36:50,292 - WARNING - event_linking - Could not find suitable parent line event for equipment event EventRecord_Event_152.0_2025-02-04T160617_Row89
-2025-04-04 09:36:50,292 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_177.0_2025-02-07T130708_Row90 isPartOfLineEvent EventRecord_Event_FIPCO00E_2025-02-07T130618_Row92
-2025-04-04 09:36:50,292 - INFO - event_linking - Linked (End Containment): EventRecord_Event_150.0_2025-02-05T090246_Row93 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,292 - WARNING - event_linking - Equipment event EventRecord_Event_143.0_2025-02-05T181449_Row94 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,292 - INFO - event_linking - Linked (Start Containment): EventRecord_Event_195.0_2025-02-05T191721_Row97 isPartOfLineEvent EventRecord_Event_FIPCO00G_2025-02-05T191610_Row51
-2025-04-04 09:36:50,292 - INFO - event_linking - Linked (Strict Containment): EventRecord_Event_153.0_2025-02-06T141745_Row98 isPartOfLineEvent EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,292 - WARNING - event_linking - Equipment event EventRecord_Event_146.0_2025-02-05T181456_Row99 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO004. Verify source data.
-2025-04-04 09:36:50,292 - WARNING - event_linking - Equipment event EventRecord_Event_201.0_2025-02-06T093348_Row100 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00H. Verify source data.
-2025-04-04 09:36:50,292 - WARNING - event_linking - Equipment event EventRecord_Event_767.0_2025-02-05T070727_Row101 has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line ProductionLine_FIPCO00J. Verify source data.
-2025-04-04 09:36:50,292 - WARNING - event_linking - FAILURE ANALYSIS: 23 equipment events could not be linked
-2025-04-04 09:36:50,292 - WARNING - event_linking - Failure categories:
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • no_line_events: 19 events
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • time_gap_too_large: 4 events
-2025-04-04 09:36:50,292 - WARNING - event_linking - Detailed failure information for failed equipment events:
-2025-04-04 09:36:50,292 - WARNING - event_linking - Unlinked Equipment Event #1: EventRecord_Event_225.0_2025-02-05T201240_Row4
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Line: ProductionLine_FIPCO006
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Start Time: 2025-02-05 20:12:40
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • End Time: 2025-02-05 20:13:31
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Potential Line Events: 2
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Line Event: EventRecord_Event_FIPCO006_2025-02-05T224021_Row2
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Gap: 2:27:41
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Failure Reason: Time gap too large: 2:27:41 > buffer 0:05:00
-2025-04-04 09:36:50,292 - WARNING - event_linking - Unlinked Equipment Event #2: EventRecord_Event_146.0_2025-02-07T140419_Row7
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Start Time: 2025-02-07 14:04:19
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • End Time: 2025-02-09 20:23:49
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,292 - WARNING - event_linking - Unlinked Equipment Event #3: EventRecord_Event_143.0_2025-02-07T000752_Row17
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Start Time: 2025-02-07 00:07:52
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • End Time: 2025-02-07 13:58:36
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,292 - WARNING - event_linking - Unlinked Equipment Event #4: EventRecord_Event_200.0_2025-02-05T030204_Row23
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00H
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Start Time: 2025-02-05 03:02:04
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • End Time: 2025-02-06 09:33:24
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,292 - WARNING - event_linking - Unlinked Equipment Event #5: EventRecord_Event_769.0_2025-02-05T070727_Row28
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00J
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Start Time: 2025-02-05 07:07:27
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • End Time: 2025-02-05 09:07:27
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,292 - WARNING - event_linking - Unlinked Equipment Event #6: EventRecord_Event_200.0_2025-02-06T093417_Row31
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00H
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Start Time: 2025-02-06 09:34:17
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • End Time: 2025-02-07 13:38:44
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,292 - WARNING - event_linking - Unlinked Equipment Event #7: EventRecord_Event_145.0_2025-02-06T060836_Row32
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Start Time: 2025-02-06 06:08:36
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • End Time: 2025-02-07 00:07:28
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,292 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #8: EventRecord_Event_144.0_2025-02-05T181456_Row33
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-05 18:14:56
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-06 06:08:02
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #9: EventRecord_Event_151.0_2025-02-04T160617_Row34
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO009
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-04 16:06:17
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-05 09:01:41
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 1
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: 1 day, 22:11:12
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: Time gap too large: 1 day, 22:11:12 > buffer 0:05:00
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #10: EventRecord_Event_200.0_2025-02-06T093417_Row36
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00H
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-06 09:34:17
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-07 13:38:44
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #11: EventRecord_Event_152.0_2025-02-04T160617_Row38
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO009
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-04 16:06:17
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-05 09:01:41
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 1
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: 1 day, 22:11:12
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: Time gap too large: 1 day, 22:11:12 > buffer 0:05:00
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #12: EventRecord_Event_201.0_2025-02-05T030204_Row45
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00H
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-05 03:02:04
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-06 09:33:24
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #13: EventRecord_Event_767.0_2025-02-05T070727_Row47
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00J
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-05 07:07:27
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-05 09:07:27
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #14: EventRecord_Event_143.0_2025-02-07T140436_Row65
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-07 14:04:36
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-09 20:23:49
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #15: EventRecord_Event_199.0_2025-02-07T133917_Row68
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00H
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Start Time: 2025-02-07 13:39:17
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • End Time: 2025-02-08 13:48:17
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,293 - WARNING - event_linking - Unlinked Equipment Event #16: EventRecord_Event_146.0_2025-02-07T000752_Row74
-2025-04-04 09:36:50,293 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-07 00:07:52
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-07 13:58:36
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,294 - WARNING - event_linking - Unlinked Equipment Event #17: EventRecord_Event_146.0_2025-02-06T060837_Row82
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-06 06:08:37
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-07 00:07:28
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,294 - WARNING - event_linking - Unlinked Equipment Event #18: EventRecord_Event_144.0_2025-02-07T140434_Row84
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-07 14:04:34
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-09 20:23:49
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,294 - WARNING - event_linking - Unlinked Equipment Event #19: EventRecord_Event_152.0_2025-02-04T160617_Row89
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Line: ProductionLine_FIPCO009
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-04 16:06:17
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-05 09:01:41
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 1
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: EventRecord_Event_FIPCO009_2025-02-06T141729_Row86
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: 1 day, 22:11:12
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: Time gap too large: 1 day, 22:11:12 > buffer 0:05:00
-2025-04-04 09:36:50,294 - WARNING - event_linking - Unlinked Equipment Event #20: EventRecord_Event_143.0_2025-02-05T181449_Row94
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-05 18:14:49
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-06 06:08:00
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,294 - WARNING - event_linking - Unlinked Equipment Event #21: EventRecord_Event_146.0_2025-02-05T181456_Row99
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Line: ProductionLine_FIPCO004
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-05 18:14:56
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-06 06:08:02
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,294 - WARNING - event_linking - Unlinked Equipment Event #22: EventRecord_Event_201.0_2025-02-06T093348_Row100
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00H
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-06 09:33:48
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-07 13:38:44
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,294 - WARNING - event_linking - Unlinked Equipment Event #23: EventRecord_Event_767.0_2025-02-05T070727_Row101
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Line: ProductionLine_FIPCO00J
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Start Time: 2025-02-05 07:07:27
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • End Time: 2025-02-05 09:07:27
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Potential Line Events: 0
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Line Event: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Nearest Gap: None
-2025-04-04 09:36:50,294 - WARNING - event_linking -   • Failure Reason: No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.
-2025-04-04 09:36:50,294 - INFO - event_linking - Equipment Event Linking Complete: Created 58 links between equipment and line events
-2025-04-04 09:36:50,294 - INFO - event_linking - Linking stats: 58/81 equipment events linked (23 failed)
-2025-04-04 09:36:50,294 - INFO - event_linking -   - End Containment: 23 links
-2025-04-04 09:36:50,294 - INFO - event_linking -   - Start Containment: 16 links
-2025-04-04 09:36:50,294 - INFO - event_linking -   - Strict Containment: 19 links
-2025-04-04 09:36:50,294 - INFO - event_linking - Used 14 inferred end times for linking
-
-=== EVENT LINKING RESULTS ===
-Total equipment events: 81
-Events successfully linked: 58 (71.6%)
-Failed to link: 23 (28.4%)
-
-Failure breakdown:
-  • no_line_events: 19 (82.6%)
-  • time_gap_too_large: 4 (17.4%)
-=== END EVENT LINKING RESULTS ===
-
-2025-04-04 09:36:50,294 - INFO - create_ontology - Event linking pass created 58 links.
-2025-04-04 09:36:50,294 - INFO - create_ontology - Attempting to save final ontology to: test.owl
-2025-04-04 09:36:50,294 - INFO - create_ontology - Saving ontology in 'rdfxml' format...
-2025-04-04 09:36:50,306 - INFO - create_ontology - Ontology saved successfully.
-2025-04-04 09:36:50,306 - INFO - create_ontology - --- Ontology Generation Finished --- Total time: 0.18 seconds
-2025-04-04 09:36:50,306 - INFO - create_ontology - Message suppression summary: 419 messages suppressed (0 warnings, 419 info messages)
-2025-04-04 09:36:50,306 - INFO - create_ontology - Ontology generation process completed.
-
+2025-04-04 10:22:12,414 - INFO - create_ontology - Logging configured.
+2025-04-04 10:22:12,414 - INFO - create_ontology - Standard logging enabled (INFO level).
+2025-04-04 10:22:12,414 - INFO - create_ontology - Warning suppression filter applied for 17 message patterns.
+2025-04-04 10:22:12,414 - INFO - create_ontology - --- Ontology Generation Process Started ---
+2025-04-04 10:22:12,414 - INFO - create_ontology - --- Starting Ontology Generation ---
+2025-04-04 10:22:12,414 - INFO - create_ontology - Specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V25.csv
+2025-04-04 10:22:12,414 - INFO - create_ontology - Data file: Data/mx_toothpaste_finishing_sample_100lines.csv
+2025-04-04 10:22:12,414 - INFO - create_ontology - Output OWL file: test.owl
+2025-04-04 10:22:12,414 - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
+2025-04-04 10:22:12,414 - INFO - create_ontology - Save format: rdfxml
+2025-04-04 10:22:12,414 - INFO - create_ontology - Run reasoner: False
+2025-04-04 10:22:12,414 - INFO - create_ontology - Reasoner report max entities: 10
+2025-04-04 10:22:12,414 - INFO - create_ontology - Reasoner report verbose: False
+2025-04-04 10:22:12,414 - INFO - create_ontology - Analyze population: True
+2025-04-04 10:22:12,414 - INFO - create_ontology - Strict adherence: False
+2025-04-04 10:22:12,414 - INFO - create_ontology - Skip classes: None
+2025-04-04 10:22:12,414 - INFO - create_ontology - Optimize ontology: False
+2025-04-04 10:22:12,414 - INFO - create_ontology - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V25.csv
+2025-04-04 10:22:12,414 - INFO - ontology_definition - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V25.csv
+2025-04-04 10:22:12,414 - INFO - ontology_definition - Successfully parsed 86 rows from specification.
+2025-04-04 10:22:12,414 - INFO - create_ontology - Parsing property mappings from specification...
+2025-04-04 10:22:12,414 - INFO - ontology_definition - Parsing property mappings from specification
+2025-04-04 10:22:12,415 - INFO - create_ontology - Parsed property mappings for 14 entities
+2025-04-04 10:22:12,415 - INFO - create_ontology - Validating property mappings...
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Validating property mappings...
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Found mappings for 14 entities
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: Area - 3 data properties, 2 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: Equipment - 7 data properties, 5 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: EquipmentClass - 0 data properties, 1 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: EventRecord - 19 data properties, 10 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: Material - 7 data properties, 2 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: OperationalReason - 5 data properties, 0 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: OperationalState - 1 data properties, 0 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: PersonnelClass - 1 data properties, 0 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: Plant - 1 data properties, 1 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: ProcessCell - 1 data properties, 2 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: ProductionLine - 1 data properties, 2 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: ProductionRequest - 4 data properties, 1 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: Shift - 4 data properties, 0 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Entity: TimeInterval - 2 data properties, 0 object properties
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Property mapping validation complete. Found 14 entities, 56 data properties, 26 object properties.
+2025-04-04 10:22:12,415 - INFO - ontology_definition - Validation PASSED
+2025-04-04 10:22:12,415 - INFO - create_ontology - Property mapping validation passed.
+2025-04-04 10:22:12,415 - INFO - create_ontology - Initializing in-memory World.
+2025-04-04 10:22:12,416 - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
+2025-04-04 10:22:12,416 - INFO - create_ontology - Defining ontology structure (TBox)...
+2025-04-04 10:22:12,416 - INFO - ontology_definition - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
+2025-04-04 10:22:12,417 - INFO - ontology_definition - Adding instance-level equipment sequence properties
+2025-04-04 10:22:12,417 - INFO - ontology_definition - Defined property: sequencePosition
+2025-04-04 10:22:12,417 - INFO - ontology_definition - Defined property: isImmediatelyUpstreamOf
+2025-04-04 10:22:12,417 - INFO - ontology_definition - Defined property: isImmediatelyDownstreamOf
+2025-04-04 10:22:12,417 - INFO - ontology_definition - Defined property: isPartOfProductionLine
+2025-04-04 10:22:12,417 - INFO - ontology_definition - Defined property: memberOfClass
+2025-04-04 10:22:12,422 - INFO - ontology_definition - Ontology structure definition complete.
+2025-04-04 10:22:12,422 - INFO - create_ontology - TBox definition complete.
+2025-04-04 10:22:12,422 - INFO - create_ontology - Reading operational data from: Data/mx_toothpaste_finishing_sample_100lines.csv
+2025-04-04 10:22:12,422 - INFO - ontology_definition - Reading data file: Data/mx_toothpaste_finishing_sample_100lines.csv
+2025-04-04 10:22:12,424 - INFO - ontology_definition - Successfully read 100 data rows.
+2025-04-04 10:22:12,424 - INFO - create_ontology - Read 100 data rows.
+2025-04-04 10:22:12,424 - INFO - create_ontology - Starting ontology population (ABox)...
+2025-04-04 10:22:12,424 - INFO - create_ontology - Starting ontology population with 100 data rows (Two-Pass Strategy).
+2025-04-04 10:22:12,424 - WARNING - ontology_population - Property 'equipmentClassId' not found in defined properties.
+2025-04-04 10:22:12,424 - ERROR - create_ontology - Cannot reliably proceed. Missing essential data properties definitions: ['equipmentClassId']
+2025-04-04 10:22:12,424 - ERROR - create_ontology - Population failed for all 100 data rows.
+2025-04-04 10:22:12,424 - INFO - create_ontology - ABox population phase finished.
+2025-04-04 10:22:12,424 - WARNING - create_ontology - No event context data available for linking. Event linking skipped.
+2025-04-04 10:22:12,424 - ERROR - create_ontology - Ontology generation had issues (population/reasoning failure/inconsistency). Saving to debug file instead.
+2025-04-04 10:22:12,424 - INFO - create_ontology - Attempting to save potentially problematic ontology to: test_debug.owl
+2025-04-04 10:22:12,424 - INFO - create_ontology - Saving ontology in 'rdfxml' format...
+2025-04-04 10:22:12,425 - INFO - create_ontology - Ontology saved successfully.
+2025-04-04 10:22:12,425 - INFO - create_ontology - --- Ontology Generation Finished --- Total time: 0.01 seconds
+2025-04-04 10:22:12,425 - INFO - create_ontology - No messages have been suppressed by filters
+2025-04-04 10:22:12,425 - ERROR - create_ontology - Ontology generation process failed or encountered errors.
 
 ==============================
 Ontology specification (csv)
@@ -1297,11 +632,11 @@ def _safe_sort_by_attribute(items, attr_name, default_value='Unknown'):
 def get_equipment_sequence_for_line(onto: Ontology, line_individual: Thing) -> List[Thing]:
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == 'equipmentIsUpstreamOf':
+        if prop.name == 'isImmediatelyUpstreamOf':
             equipment_is_upstream_of = prop
             break
     if not equipment_is_upstream_of:
-        analysis_logger.warning("Property 'equipmentIsUpstreamOf' not found in ontology")
+        analysis_logger.warning("Property 'isImmediatelyUpstreamOf' not found in ontology")
         return []
     equipment_on_line = []
     for ind in onto.individuals():
@@ -1434,7 +769,7 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
         return ({}, {'error': 'Equipment class not found'})
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == 'equipmentIsUpstreamOf':
+        if prop.name == 'isImmediatelyUpstreamOf':
             equipment_is_upstream_of = prop
             break
     sequences = {}
@@ -3190,7 +2525,7 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
         class_part = parts[-1]
         base_class = re.sub('\\d+$', '', class_part)
         if base_class and re.search('[a-zA-Z]', base_class):
-            if not base_class.startswith('FIPCO'):
+            if not re.match('^(FIPCO|LINE)\\d*$', base_class, re.IGNORECASE):
                 match_found = False
                 for known_class in KNOWN_EQUIPMENT_CLASSES:
                     if base_class == known_class or known_class.startswith(base_class):
@@ -3206,35 +2541,37 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
             else:
                 pop_logger.debug(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
     if not matched_class and equipment_name and isinstance(equipment_name, str):
+        cleaned_name = re.sub('^(FIPCO|LINE)\\d*_?', '', equipment_name)
+        base_name = re.sub('\\d+$', '', cleaned_name)
         for known_class in KNOWN_EQUIPMENT_CLASSES:
-            class_pattern = re.compile(f'^{known_class}\\d*$', re.IGNORECASE)
-            if class_pattern.match(equipment_name):
+            if base_name.lower() == known_class.lower():
                 match_method = 'Known Class Exact Match'
                 matched_class = known_class
-                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}'")
+                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}' after cleaning")
                 break
-            if equipment_name.startswith(known_class):
-                remainder = equipment_name[len(known_class):]
-                if not remainder or remainder.isdigit() or remainder[0].isdigit():
+            if base_name.lower().startswith(known_class.lower()):
+                remainder = base_name[len(known_class):].strip()
+                if not remainder or not re.search('[a-zA-Z]', remainder):
                     match_method = 'Known Class Prefix Match'
                     matched_class = known_class
-                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix")
+                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix after cleaning")
                     break
-            if known_class in equipment_name:
+            if known_class.lower() in base_name.lower():
                 match_method = 'Known Class Substring Match'
                 matched_class = known_class
-                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}'")
+                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}' after cleaning")
                 break
     if not matched_class and equipment_model and isinstance(equipment_model, str):
         model_to_use = equipment_model
         for known_class in KNOWN_EQUIPMENT_CLASSES:
-            if known_class in model_to_use:
+            if known_class.lower() in model_to_use.lower():
                 match_method = 'Model-Based Match'
                 matched_class = known_class
                 pop_logger.debug(f"Extracted equipment class '{matched_class}' from model '{model_to_use}'")
                 break
     if not matched_class and equipment_name and isinstance(equipment_name, str):
-        words = re.findall('[A-Z][a-zA-Z]*', equipment_name)
+        cleaned_name = re.sub('^(FIPCO|LINE)\\d*_?', '', equipment_name)
+        words = re.findall('[A-Z][a-zA-Z]*', cleaned_name)
         if words:
             candidate_classes = []
             for word in words:
@@ -3365,6 +2702,30 @@ def process_equipment_and_class(row: Dict[str, Any], context: PopulationContext,
                         pop_logger.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to class.")
                 elif not eq_class_ind:
                     pop_logger.error(f"CRITICAL: Failed to establish memberOfClass link - missing class individual for '{eq_class_base_name}'")
+                sequence_position_prop = context.get_prop('sequencePosition')
+                if sequence_position_prop:
+                    position_value = None
+                    line_id = None
+                    if line_ind:
+                        line_id_prop = context.get_prop('lineId')
+                        if line_id_prop:
+                            line_id = getattr(line_ind, line_id_prop.python_name, None)
+                    from ontology_generator.config import LINE_SPECIFIC_EQUIPMENT_SEQUENCE
+                    if line_id and line_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE and (eq_class_base_name in LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id]):
+                        position_value = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(eq_class_base_name)
+                        pop_logger.debug(f'Using line-specific sequence position {position_value} for {eq_class_base_name} on line {line_id}')
+                    if position_value is None:
+                        from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
+                        position_value = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
+                        if position_value:
+                            pop_logger.debug(f'Using default sequence position {position_value} for {eq_class_base_name}')
+                    if position_value is not None:
+                        context.set_prop(eq_ind, 'sequencePosition', position_value)
+                        pop_logger.debug(f'Set sequencePosition={position_value} for equipment {eq_id} of class {eq_class_base_name}')
+                    else:
+                        pop_logger.warning(f'No sequence position found for equipment class {eq_class_base_name}')
+                else:
+                    pop_logger.warning(f"Required property 'sequencePosition' not found. Cannot set sequence position.")
                 if eq_ind and line_ind:
                     part_of_line_prop = context.get_prop('isPartOfProductionLine')
                     if part_of_line_prop:
@@ -4279,23 +3640,25 @@ def process_structural_relationships(context: PopulationContext, property_mappin
                             if parsed_class and str(parsed_class) in classes_by_identifier:
                                 matching_class_ind = classes_by_identifier[str(parsed_class)]
                                 match_method = f"Parsed from name '{eq_name}'"
+                                log.info(f"[TKT-001] Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
                     if not matching_class_ind and hasattr(eq_ind, 'name'):
                         eq_name = eq_ind.name
                         from .equipment import parse_equipment_class
                         import re
-                        if '_' in eq_name:
+                        cleaned_name = re.sub('^(FIPCO|LINE)\\d*_?', '', eq_name)
+                        base_name = re.sub('\\d+$', '', cleaned_name)
+                        if base_name in classes_by_identifier:
+                            matching_class_ind = classes_by_identifier[base_name]
+                            match_method = f"Cleaned name match from '{eq_name}' -> '{base_name}'"
+                            log.info(f"[TKT-001] Matched cleaned name '{base_name}' to equipment class from '{eq_name}'")
+                        if not matching_class_ind and '_' in eq_name:
                             parts = eq_name.split('_')
                             for part in parts:
-                                if part and part in classes_by_identifier:
-                                    matching_class_ind = classes_by_identifier[part]
-                                    match_method = f"Direct part match from '{eq_name}'"
-                                    break
-                        if not matching_class_ind:
-                            words = re.findall('[A-Z][a-zA-Z]*', eq_name)
-                            for word in words:
-                                if word and word in classes_by_identifier:
-                                    matching_class_ind = classes_by_identifier[word]
-                                    match_method = f"Capital word match from '{eq_name}'"
+                                base_part = re.sub('\\d+$', '', part)
+                                if base_part and base_part in classes_by_identifier:
+                                    matching_class_ind = classes_by_identifier[base_part]
+                                    match_method = f"Direct part match from '{eq_name}' (part: '{base_part}')"
+                                    log.info(f"[TKT-001] Found equipment class '{base_part}' in parts of '{eq_name}'")
                                     break
                     if matching_class_ind:
                         try:
@@ -4774,5 +4137,4 @@ def sanitize_name(name: Any) -> str:
         safe_name = f'UnnamedData_{fallback_hash}'
         pop_logger.warning(f"Sanitized name for '{name_str}' became empty or invalid. Using fallback hash: {safe_name}")
     return safe_name
-
 

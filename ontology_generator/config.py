@@ -146,14 +146,43 @@ DEFAULT_EQUIPMENT_SEQUENCE: Dict[str, int] = {
 KNOWN_EQUIPMENT_CLASSES = list(DEFAULT_EQUIPMENT_SEQUENCE.keys())
 
 # Maps specific patterns in equipment names to their classes
+# Key TKT-004: Extended to provide more robust matching patterns for equipment types
 EQUIPMENT_NAME_TO_CLASS_MAP = {
+    # Standard underscore prefixed types
     "_Filler": "Filler",
     "_Cartoner": "Cartoner",
     "_Bundler": "Bundler",
     "_CaseFormer": "CaseFormer",
     "_CasePacker": "CasePacker",
     "_CaseSealer": "CaseSealer",
-    "_Palletizer": "Palletizer"
+    "_Palletizer": "Palletizer",
+    
+    # Common parenthesized formats
+    "(Filler)": "Filler",
+    "(Cartoner)": "Cartoner",
+    "(Bundler)": "Bundler",
+    "(CaseFormer)": "CaseFormer",
+    "(CasePacker)": "CasePacker",
+    "(CaseSealer)": "CaseSealer",
+    "(Palletizer)": "Palletizer",
+    
+    # Variations with common prefixes/suffixes
+    "FIL": "Filler",
+    "FILL": "Filler",
+    "FILLING": "Filler",
+    "CART": "Cartoner",
+    "CARTONING": "Cartoner",
+    "BUND": "Bundler",
+    "BUNDLING": "Bundler",
+    "CASEFORM": "CaseFormer",
+    "CASE FORM": "CaseFormer",
+    "CASEPAK": "CasePacker",
+    "CASE PAK": "CasePacker",
+    "CASE PACK": "CasePacker",
+    "CASESEAL": "CaseSealer",
+    "CASE SEAL": "CaseSealer",
+    "PALLET": "Palletizer",
+    "PAL": "Palletizer"
 }
 
 # Line-specific equipment sequences that override the default

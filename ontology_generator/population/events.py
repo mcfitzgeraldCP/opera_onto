@@ -338,31 +338,26 @@ def process_event_record(
     if not state_ind:
         pop_logger.warning(f"Row {row_num}: Missing state individual for event. Skipping event creation.")
         return None, None
-    if not (equipment_ind or line_ind):
-        pop_logger.warning(f"Row {row_num}: Missing both equipment and line individuals for event. Need at least one resource. Skipping event creation.")
-        return None, None
 
-    # Check EQUIPMENT_TYPE column to determine the correct resource to link
+    # TKT-003: Strictly validate that the appropriate resource individual is available based on EQUIPMENT_TYPE
     equipment_type = row.get('EQUIPMENT_TYPE', '').strip()
     
-    # Determine the main resource involved based on EQUIPMENT_TYPE
     if equipment_type == 'Line':
         if not line_ind:
-            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Line' but no line_ind was provided. Cannot link event to line resource.")
+            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Line' but no line_ind was provided. Cannot create line event.")
             return None, None
         resource_ind = line_ind
         resource_type = "Line"
     elif equipment_type == 'Equipment':
         if not equipment_ind:
-            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Equipment' but no equipment_ind was provided. Cannot link event to equipment resource.")
+            pop_logger.warning(f"Row {row_num}: EQUIPMENT_TYPE is 'Equipment' but no equipment_ind was provided. Cannot create equipment event.")
             return None, None
         resource_ind = equipment_ind
         resource_type = "Equipment"
     else:
-        # Fallback to previous logic for backwards compatibility
-        pop_logger.warning(f"Row {row_num}: Unknown EQUIPMENT_TYPE '{equipment_type}'. Falling back to equipment_ind if available, otherwise line_ind.")
-        resource_ind = equipment_ind if equipment_ind else line_ind
-        resource_type = "Equipment" if equipment_ind else "Line"
+        # Provide detailed warning for unknown EQUIPMENT_TYPE
+        pop_logger.warning(f"Row {row_num}: Unknown EQUIPMENT_TYPE '{equipment_type}'. Must be either 'Line' or 'Equipment'. Skipping event creation.")
+        return None, None
     
     resource_id = None
     
@@ -463,10 +458,12 @@ def process_event_record(
                 pop_logger.warning(f"Row {row_num}: Required property 'eventHasReason' not found. Cannot link event to reason.")
         
         # 4. Link to primary resource (Equipment or ProductionLine) - critical
-        # Check for involvesResource property existence
+        # TKT-003: Ensure events link to the correct resource based on EQUIPMENT_TYPE
         involves_resource_prop = context.get_prop("involvesResource")
         if involves_resource_prop:
+            # Set involvesResource to only the appropriate resource type (equipment or line)
             context.set_prop(event_ind, "involvesResource", resource_ind)
+            pop_logger.debug(f"Row {row_num}: Linked event to {resource_type} '{resource_ind.name}' via involvesResource")
         else:
             pop_logger.warning(f"Row {row_num}: Required property 'involvesResource' not found. Cannot link event to resource.")
         

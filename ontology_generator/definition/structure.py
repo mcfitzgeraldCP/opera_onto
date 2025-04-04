@@ -42,11 +42,25 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
     defined_properties: Dict[str, PropertyClass] = {}
     property_is_functional: Dict[str, bool] = {}  # Track which properties are functional based on spec
     class_metadata: Dict[str, Dict[str, Any]] = {} # Store metadata like notes per class
-
+    
+    # TKT-002: Track all property names in the specification
+    spec_property_names = set()
+    spec_property_types = {} # Store property types for validation
+    
     # --- Pre-process Spec for Class Metadata and Hierarchy ---
     logger.debug("--- Pre-processing specification for class details ---")
     all_class_names: Set[str] = set()
     class_parents: Dict[str, str] = {} # {child_name: parent_name}
+    
+    # TKT-002: Pre-process property names from specification
+    for row in specification:
+        prop_name = row.get(SPEC_COL_PROPERTY, '').strip()
+        if prop_name:
+            spec_property_names.add(prop_name)
+            spec_property_types[prop_name] = row.get(SPEC_COL_PROP_TYPE, '').strip()
+    
+    logger.info(f"TKT-002: Found {len(spec_property_names)} unique properties in specification")
+    
     for i, row in enumerate(specification):
         class_name = row.get(SPEC_COL_ENTITY, '').strip()
         if class_name:
@@ -205,6 +219,20 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                     defined_properties["memberOfClass"] = prop_memberOfClass
                     property_is_functional["memberOfClass"] = True
                     logger.info("Defined property: memberOfClass")
+                    
+            # TKT-001: Define equipmentClassId property for EquipmentClass if it doesn't exist
+            if defined_classes.get("EquipmentClass") and "equipmentClassId" not in defined_properties:
+                logger.info("Adding missing equipmentClassId property for EquipmentClass")
+                
+                cls_EquipmentClass = defined_classes.get("EquipmentClass")
+                
+                prop_equipmentClassId = types.new_class("equipmentClassId", (DataProperty, FunctionalProperty))
+                prop_equipmentClassId.domain = [cls_EquipmentClass]
+                prop_equipmentClassId.range = [str]
+                prop_equipmentClassId.comment = ["Identifier for the equipment class"]
+                defined_properties["equipmentClassId"] = prop_equipmentClassId
+                property_is_functional["equipmentClassId"] = True
+                logger.info("Defined property: equipmentClassId")
 
     with onto:
         # Define properties first without inverse, handle inverse in a second pass
@@ -358,6 +386,31 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             elif not inverse_prop:
                 logger.warning(f"Inverse property '{inverse_name}' not found for property '{prop_name}'.")
 
+    # TKT-002: Verify all properties from spec were defined
+    missing_properties = spec_property_names - set(defined_properties.keys())
+    
+    # Exclude properties we intentionally skip
+    excluded_properties = {"classIsUpstreamOf", "classIsDownstreamOf", "defaultSequencePosition"}
+    real_missing = missing_properties - excluded_properties
+    
+    if real_missing:
+        logger.warning(f"TKT-002: {len(real_missing)} properties in specification were not defined: {', '.join(sorted(real_missing))}")
+    else:
+        logger.info(f"TKT-002: All properties from specification were successfully defined")
+    
+    # Check for property type consistency
+    for prop_name, prop_obj in defined_properties.items():
+        if prop_name in spec_property_types:
+            expected_type = spec_property_types[prop_name]
+            # Simple type check between expected and actual property type
+            if expected_type == 'ObjectProperty' and not isinstance(prop_obj, ObjectPropertyClass):
+                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
+            elif expected_type == 'DatatypeProperty' and not isinstance(prop_obj, DataPropertyClass):
+                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
+    
+    # Log total property counts
+    logger.info(f"TKT-002: Defined {len(defined_properties)} total properties ({len([p for p in defined_properties.values() if isinstance(p, ObjectPropertyClass)])} object properties, {len([p for p in defined_properties.values() if isinstance(p, DataPropertyClass)])} data properties)")
+    
     logger.info("Ontology structure definition complete.")
     return defined_classes, defined_properties, property_is_functional
 

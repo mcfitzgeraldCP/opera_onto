@@ -50,6 +50,12 @@ class PopulationContext:
         self.property_is_functional = property_is_functional
         self._property_cache = {} # Cache for faster property lookup
         self._class_cache = {} # Cache for faster class lookup
+        
+        # TKT-002: Track property usage and access patterns
+        self._property_access_count = {prop_name: 0 for prop_name in defined_properties}
+        self._property_usage_count = {prop_name: 0 for prop_name in defined_properties}
+        self._property_misses = set()  # Track property names that were requested but not found
+        self._individual_data_cache = {}  # Cache for storing data associated with individuals
 
     def get_class(self, name: str) -> Optional[ThingClass]:
         """
@@ -86,12 +92,17 @@ class PopulationContext:
         Returns:
             The property object or None if not found
         """
+        # TKT-002: Track access counts for all properties
+        self._property_access_count[name] = self._property_access_count.get(name, 0) + 1
+        
         if name in self._property_cache:
             return self._property_cache[name]
 
         prop = self.defined_properties.get(name)
         if not prop:
-            pop_logger.warning(f"Property '{name}' not found in defined properties.")
+            # TKT-002: Track property misses for later analysis
+            self._property_misses.add(name)
+            pop_logger.warning(f"TKT-002: Property '{name}' not found in defined properties.")
             return None
         # Basic validation (could add more specific checks if needed)
         if not isinstance(prop, (ObjectPropertyClass, DataPropertyClass)):
@@ -114,12 +125,103 @@ class PopulationContext:
         if not prop:
             # Error logged by get_prop
             return
+            
+        # TKT-002: Track usage count when property is successfully retrieved and used
+        self._property_usage_count[prop_name] = self._property_usage_count.get(prop_name, 0) + 1
+        
         is_functional = self.property_is_functional.get(prop_name, False) # Assume non-functional if not specified
 
         try:
             _set_property_value(individual, prop, value, is_functional)
         except Exception as e:
             pop_logger.error(f"Error setting property '{prop_name}' on individual '{individual.name}' with value '{value}': {e}", exc_info=True)
+    
+    # TKT-002: New method to store data associated with individuals for property access
+    def store_individual_data(self, individual: Thing, data: Dict[str, Any]) -> None:
+        """
+        Store row data associated with an individual for later property lookups.
+        
+        Args:
+            individual: The individual to associate with data
+            data: Dictionary of column data that can be used for property lookup
+        """
+        if individual and hasattr(individual, "name"):
+            self._individual_data_cache[individual.name] = data
+    
+    # TKT-002: New method to retrieve data associated with individuals
+    def get_individual_data(self, individual: Thing) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve data associated with an individual.
+        
+        Args:
+            individual: The individual to get data for
+            
+        Returns:
+            Dictionary of data associated with the individual or None
+        """
+        if individual and hasattr(individual, "name"):
+            return self._individual_data_cache.get(individual.name)
+        return None
+    
+    # TKT-002: New diagnostic method to report property usage statistics
+    def report_property_usage(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Generate a report of property usage statistics.
+        
+        Returns:
+            Dictionary with property usage statistics
+        """
+        unused_properties = [
+            prop_name for prop_name, count in self._property_usage_count.items() 
+            if count == 0
+        ]
+        
+        accessed_but_unused = [
+            prop_name for prop_name in self.defined_properties
+            if self._property_access_count.get(prop_name, 0) > 0 and 
+               self._property_usage_count.get(prop_name, 0) == 0
+        ]
+        
+        most_used = sorted(
+            [(prop_name, count) for prop_name, count in self._property_usage_count.items() if count > 0],
+            key=lambda x: x[1], 
+            reverse=True
+        )[:10]  # Top 10 most used properties
+        
+        report = {
+            "total_properties": len(self.defined_properties),
+            "total_accessed": len([p for p, c in self._property_access_count.items() if c > 0]),
+            "total_used": len([p for p, c in self._property_usage_count.items() if c > 0]),
+            "unused_count": len(unused_properties),
+            "unused_properties": unused_properties,
+            "accessed_but_unused": accessed_but_unused,
+            "most_used": most_used,
+            "property_misses": sorted(list(self._property_misses))
+        }
+        return report
+    
+    def log_property_usage_report(self) -> None:
+        """
+        Log property usage statistics at INFO level.
+        """
+        report = self.report_property_usage()
+        
+        pop_logger.info("TKT-002: Property Usage Report")
+        pop_logger.info(f"  Total properties defined: {report['total_properties']}")
+        pop_logger.info(f"  Properties accessed: {report['total_accessed']}/{report['total_properties']} ({report['total_accessed']/report['total_properties']*100:.1f}%)")
+        pop_logger.info(f"  Properties used (set on individuals): {report['total_used']}/{report['total_properties']} ({report['total_used']/report['total_properties']*100:.1f}%)")
+        
+        if report['unused_count'] > 0:
+            pop_logger.info(f"  Unused properties: {report['unused_count']} properties were never used")
+            pop_logger.debug(f"  Unused property names: {', '.join(sorted(report['unused_properties'][:20]))}{' ...' if len(report['unused_properties']) > 20 else ''}")
+        
+        if report['accessed_but_unused']:
+            pop_logger.warning(f"  TKT-002: {len(report['accessed_but_unused'])} properties were accessed but never successfully used: {', '.join(sorted(report['accessed_but_unused']))}")
+        
+        if report['property_misses']:
+            pop_logger.warning(f"  TKT-002: {len(report['property_misses'])} undefined properties were requested: {', '.join(sorted(report['property_misses']))}")
+        
+        pop_logger.info(f"  Most used properties: {', '.join([f'{name} ({count})' for name, count in report['most_used'][:5]])}")
 
 
 def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_functional: bool) -> None:

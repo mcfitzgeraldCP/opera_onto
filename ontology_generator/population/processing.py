@@ -2,9 +2,9 @@
 Module for processing individual data rows during ontology population.
 """
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List, Set
 
-from owlready2 import Thing, ThingClass
+from owlready2 import Thing, ThingClass, Ontology, PropertyClass
 
 # Assuming PopulationContext is defined elsewhere and imported appropriately
 from .core import PopulationContext
@@ -196,3 +196,82 @@ def process_single_data_row(row: Dict[str, Any],
         # Log unexpected errors with traceback
         proc_logger.error(f"An unexpected error processing data row {row_num}: {row if len(str(row)) < 500 else str(row)[:500] + '...'}", exc_info=True)
         return False, None, None # Indicate failure
+
+def populate_ontology_from_data(onto: Ontology,
+                                data_rows: List[Dict[str, Any]],
+                                defined_classes: Dict[str, ThingClass],
+                                defined_properties: Dict[str, PropertyClass],
+                                property_is_functional: Dict[str, bool],
+                                specification: List[Dict[str, str]],
+                                property_mappings: Dict[str, Dict[str, Dict[str, Any]]] = None
+                              ) -> Tuple[int, Dict[str, ThingClass], Dict[str, int], List[Tuple[Thing, Thing, Thing, Thing]], Dict[Tuple[str, str], Thing], PopulationContext]:
+    """
+    Populates the ontology from data rows, creating individuals and establishing links.
+    
+    Args:
+        onto: The ontology to populate
+        data_rows: The parsed data rows
+        defined_classes: Dictionary of defined classes
+        defined_properties: Dictionary of defined properties
+        property_is_functional: Dictionary indicating which properties are functional
+        specification: The parsed specification
+        property_mappings: The parsed property mappings
+    
+    Returns:
+        Tuple containing:
+        - failed_rows_count: Number of rows that failed to process
+        - created_eq_classes: Dictionary of equipment classes created
+        - eq_class_positions: Dictionary of equipment class positions
+        - created_events_context: Context tuples for event linking
+        - all_created_individuals_by_uid: Registry of all created individuals
+        - population_context: The PopulationContext used during population (for property reporting)
+    """
+    # Create the PopulationContext
+    context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
+    proc_logger.info(f"Created population context with {len(defined_classes)} classes and {len(defined_properties)} properties")
+    
+    # Validate property mappings
+    if not property_mappings:
+        proc_logger.error("No property mappings provided. Population may fail or be incomplete.")
+        # Continue anyway with empty mappings
+        property_mappings = {}
+    
+    # Initialize counters and containers
+    failed_rows_count = 0
+    total_rows = len(data_rows)
+    created_events_context: List[Tuple[Thing, Thing, Thing, Thing]] = []
+    created_eq_classes: Dict[str, ThingClass] = {}  # Key: class name, Value: class individual
+    eq_class_positions: Dict[str, int] = {}  # Key: class name, Value: sequence position
+    all_created_individuals_by_uid: Dict[Tuple[str, str], Thing] = {}  # Registry for get_or_create lookups
+    
+    # Process each data row
+    for index, row in enumerate(data_rows):
+        row_num = index + 1  # 1-indexed for user-friendly logging
+        
+        # Process row and gather context/info
+        success, event_context, eq_class_info = process_single_data_row(
+            row, row_num, context, property_mappings
+        )
+        
+        if not success:
+            failed_rows_count += 1
+            continue  # Skip to next row
+        
+        # Store event context if available
+        if event_context:
+            created_events_context.append(event_context)
+        
+        # Store equipment class info if available
+        if eq_class_info:
+            eq_class_name, eq_class_ind, position = eq_class_info
+            created_eq_classes[eq_class_name] = eq_class_ind
+            if position is not None:
+                eq_class_positions[eq_class_name] = position
+    
+    # Log statistics
+    proc_logger.info(f"Ontology population complete: Processed {total_rows} rows with {failed_rows_count} failures.")
+    proc_logger.info(f"Created {len(created_eq_classes)} unique equipment classes")
+    proc_logger.info(f"Collected {len(created_events_context)} event contexts for linking")
+    
+    # TKT-002: Return the PopulationContext for property usage reporting
+    return failed_rows_count, created_eq_classes, eq_class_positions, created_events_context, all_created_individuals_by_uid, context

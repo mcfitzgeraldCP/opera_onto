@@ -59,10 +59,23 @@ def process_single_data_row_pass1(
         plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(
             row, context, property_mappings, all_created_individuals_by_uid, pass_num=1
         )
-        if plant_ind: created_inds_this_row["Plant"] = plant_ind
-        if area_ind: created_inds_this_row["Area"] = area_ind
-        if pcell_ind: created_inds_this_row["ProcessCell"] = pcell_ind
-        if line_ind: created_inds_this_row["ProductionLine"] = line_ind
+        if plant_ind: 
+            created_inds_this_row["Plant"] = plant_ind
+            # TKT-002: Store row data with individual
+            context.store_individual_data(plant_ind, row)
+            
+        if area_ind: 
+            created_inds_this_row["Area"] = area_ind
+            context.store_individual_data(area_ind, row)
+            
+        if pcell_ind: 
+            created_inds_this_row["ProcessCell"] = pcell_ind
+            context.store_individual_data(pcell_ind, row)
+            
+        if line_ind: 
+            created_inds_this_row["ProductionLine"] = line_ind
+            context.store_individual_data(line_ind, row)
+            
         if not plant_ind:
              row_proc_logger.error(f"Row {row_num} - Pass 1: Failed to process mandatory Plant. Aborting row.")
              return False, {}, None, None
@@ -70,29 +83,53 @@ def process_single_data_row_pass1(
         # --- 2. Process Equipment & Equipment Class ---
         equipment_ind, eq_class_ind, eq_class_info_out = None, None, None
         
-        # Check EQUIPMENT_TYPE to determine if we should process equipment
+        # TKT-003: Check EQUIPMENT_TYPE to determine if we should process equipment
         equipment_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
+        
+        # TKT-003: Log the equipment type for traceability
+        row_proc_logger.debug(f"Row {row_num} - TKT-003: Processing row with EQUIPMENT_TYPE='{equipment_type}'")
         
         if equipment_type == 'Equipment':
             # Only process equipment and class if it's actually an equipment type
             equipment_ind, eq_class_ind, eq_class_info_out = process_equipment_and_class(
                 row, context, property_mappings, all_created_individuals_by_uid, line_ind, pass_num=1
             )
-            if equipment_ind: created_inds_this_row["Equipment"] = equipment_ind
-            if eq_class_ind: created_inds_this_row["EquipmentClass"] = eq_class_ind
+            if equipment_ind: 
+                created_inds_this_row["Equipment"] = equipment_ind
+                context.store_individual_data(equipment_ind, row)
+                
+            if eq_class_ind: 
+                created_inds_this_row["EquipmentClass"] = eq_class_ind
+                context.store_individual_data(eq_class_ind, row)
+                
             if eq_class_info_out: eq_class_info = eq_class_info_out
+        elif equipment_type == 'Line':
+            row_proc_logger.debug(f"Row {row_num} - TKT-003: Row has EQUIPMENT_TYPE='Line', skipping equipment processing")
+            # Verify that we have a line_ind for line events
+            if not line_ind:
+                row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE is 'Line' but no line individual was created. Event linking may fail.")
         else:
-            row_proc_logger.debug(f"Row {row_num} - Not processing equipment for EQUIPMENT_TYPE='{equipment_type}'")
+            row_proc_logger.warning(f"Row {row_num} - TKT-003: Unknown EQUIPMENT_TYPE '{equipment_type}'. Expected 'Equipment' or 'Line'.")
 
         # --- 3. Process Material ---
         material_ind = process_material(row, context, property_mappings, all_created_individuals_by_uid, pass_num=1)
-        if material_ind: created_inds_this_row["Material"] = material_ind
+        if material_ind: 
+            created_inds_this_row["Material"] = material_ind
+            context.store_individual_data(material_ind, row)
 
         # --- 4. Process Production Request ---
         request_ind = process_production_request(row, context, property_mappings, all_created_individuals_by_uid, pass_num=1)
-        if request_ind: created_inds_this_row["ProductionRequest"] = request_ind
+        if request_ind: 
+            created_inds_this_row["ProductionRequest"] = request_ind
+            context.store_individual_data(request_ind, row)
 
         # --- 5. Process Events (EventRecord, TimeInterval, Shift, State, Reason) ---
+        # TKT-003: Verify appropriate resource is available based on EQUIPMENT_TYPE
+        if equipment_type == 'Equipment' and not equipment_ind:
+            row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE is 'Equipment' but no equipment resource is available. Event creation may fail.")
+        elif equipment_type == 'Line' and not line_ind:
+            row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE is 'Line' but no line resource is available. Event creation may fail.")
+        
         event_related_inds, event_context_out = process_event_related(
             row, context, property_mappings, all_created_individuals_by_uid,
             equipment_ind=equipment_ind,
@@ -102,9 +139,17 @@ def process_single_data_row_pass1(
             pass_num=1,
             row_num=row_num  # Pass the actual row number explicitly
         )
-        created_inds_this_row.update(event_related_inds)
+        # TKT-002: Store row data with event-related individuals
+        for entity_type, entity_ind in event_related_inds.items():
+            created_inds_this_row[entity_type] = entity_ind
+            context.store_individual_data(entity_ind, row)
+            
         if event_context_out: 
             event_context = event_context_out
+            # TKT-003: Validate event has correct resource type association
+            event_ind, resource_ind, resource_type = event_context
+            if equipment_type != resource_type:
+                row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE '{equipment_type}' does not match linked resource type '{resource_type}'. Event linking may be incorrect.")
         else:
             # TKT-006: Track critical failure if we expected events but none were created
             if 'EVENT_TYPE' in row and row.get('EVENT_TYPE', '').strip():
@@ -262,14 +307,27 @@ def process_structural_relationships(
                 # Key properties that might identify an EquipmentClass
                 identifiers = ["equipmentClassId", "equipmentClassName", "name"]
                 
-                # Log all EquipmentClass individuals with their identifiers for debugging
-                log.debug("EquipmentClass individuals available for linking:")
+                # TKT-005: Log all EquipmentClass individuals with their identifiers for debugging
+                log.debug("TKT-005: EquipmentClass individuals available for linking:")
                 for class_ind in class_individuals:
                     class_identifiers = []
                     
-                    # Collect all identifiers from the class individual
+                    # TKT-005: Prioritize equipmentClassId property as the key identifier
+                    # This property should be explicitly set during EquipmentClass creation
+                    eq_class_id = None
+                    if hasattr(class_ind, "equipmentClassId"):
+                        eq_class_id = getattr(class_ind, "equipmentClassId")
+                        if eq_class_id:
+                            if isinstance(eq_class_id, list) and eq_class_id:
+                                eq_class_id = eq_class_id[0]  # Use first value if it's a list
+                            class_identifiers.append(str(eq_class_id))
+                            # Add to identifier map with high priority
+                            classes_by_identifier[str(eq_class_id)] = class_ind
+                            log.debug(f"  TKT-005: Class {class_ind.name} has explicit equipmentClassId: {eq_class_id}")
+                    
+                    # Collect all other identifiers from the class individual
                     for id_prop in identifiers:
-                        if hasattr(class_ind, id_prop):
+                        if id_prop != "equipmentClassId" and hasattr(class_ind, id_prop):  # Skip equipmentClassId, already processed
                             id_value = getattr(class_ind, id_prop)
                             if id_value:
                                 if isinstance(id_value, list):
@@ -282,24 +340,27 @@ def process_structural_relationships(
                     if hasattr(class_ind, "name"):
                         name = class_ind.name
                         if name.startswith("EquipmentClass_"):
-                            class_identifiers.append(name[len("EquipmentClass_"):])
+                            clean_name = name[len("EquipmentClass_"):]
+                            class_identifiers.append(clean_name)
                     
                     # Add all identifiers to the lookup map
-                    log.debug(f"  Class {class_ind.name} identifiers: {class_identifiers}")
+                    log.debug(f"  TKT-005: Class {class_ind.name} all identifiers: {class_identifiers}")
                     for identifier in class_identifiers:
-                        classes_by_identifier[identifier] = class_ind
+                        if identifier not in classes_by_identifier:  # Don't overwrite equipmentClassId entries
+                            classes_by_identifier[identifier] = class_ind
                 
                 # Track linking results
                 equipment_linked = 0
                 equipment_already_linked = 0
                 equipment_not_linked = 0
                 
-                # Iterate through equipment individuals
+                # TKT-005: Iterate through equipment individuals to establish memberOfClass relationships
+                log.info("TKT-005: Processing Equipment-EquipmentClass memberOfClass relationships...")
                 for eq_ind in equipment_individuals:
                     # Check if this equipment already has a class link
                     current_class = getattr(eq_ind, member_of_class_prop.python_name, None)
                     if current_class:
-                        log.debug(f"Equipment {eq_ind.name} already linked to class {current_class.name}")
+                        log.debug(f"TKT-005: Equipment {eq_ind.name} already linked to class {current_class.name}")
                         equipment_already_linked += 1
                         continue
                     
@@ -312,13 +373,14 @@ def process_structural_relationships(
                     # Get the column that contains the Class name/ID (if specified in mapping)
                     class_id_column = eq_class_mapping.get("column")
                     if class_id_column:
-                        # Get data stored in the equipment individual
+                        # TKT-005: Use the get_individual_data method to retrieve stored data
                         eq_data = context.get_individual_data(eq_ind) or {}
                         class_value = eq_data.get(class_id_column)
                         
                         if class_value and str(class_value) in classes_by_identifier:
                             matching_class_ind = classes_by_identifier[str(class_value)]
                             match_method = f"Column '{class_id_column}'"
+                            log.info(f"TKT-005: Found matching class {matching_class_ind.name} via column value '{class_value}'")
                     
                     # Method 2: Try to parse class from equipment name if column value not found
                     if not matching_class_ind:
@@ -339,62 +401,32 @@ def process_structural_relationships(
                                     break
                         
                         if eq_name:
-                            # Key modification for TKT-001: Use parse_equipment_class to extract base class name
+                            # TKT-005: Use parse_equipment_class to extract equipment class type string
                             parsed_class = parse_equipment_class(equipment_name=eq_name)
                             if parsed_class and str(parsed_class) in classes_by_identifier:
                                 matching_class_ind = classes_by_identifier[str(parsed_class)]
                                 match_method = f"Parsed from name '{eq_name}'"
-                                log.info(f"[TKT-001] Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
-                    
-                    # Method 3: Try direct name matching for any remaining unlinked equipment
-                    if not matching_class_ind and hasattr(eq_ind, "name"):
-                        eq_name = eq_ind.name
-                        # Extract potential class name patterns from equipment name
-                        from .equipment import parse_equipment_class
-                        import re
-                        
-                        # Key modification for TKT-001: Handle line ID prefixes and trailing numbers
-                        # First remove any line ID prefix (like FIPCO009_)
-                        cleaned_name = re.sub(r'^(FIPCO|LINE)\d*_?', '', eq_name)
-                        # Then remove trailing numbers to get the class name
-                        base_name = re.sub(r'\d+$', '', cleaned_name)
-                        
-                        # Check if the cleaned base name is a known class
-                        if base_name in classes_by_identifier:
-                            matching_class_ind = classes_by_identifier[base_name]
-                            match_method = f"Cleaned name match from '{eq_name}' -> '{base_name}'"
-                            log.info(f"[TKT-001] Matched cleaned name '{base_name}' to equipment class from '{eq_name}'")
-                        
-                        # Try to match with known patterns like "_ClassType"
-                        if not matching_class_ind and "_" in eq_name:
-                            parts = eq_name.split("_")
-                            for part in parts:
-                                # Clean any trailing numbers from the part
-                                base_part = re.sub(r'\d+$', '', part)
-                                if base_part and base_part in classes_by_identifier:
-                                    matching_class_ind = classes_by_identifier[base_part]
-                                    match_method = f"Direct part match from '{eq_name}' (part: '{base_part}')"
-                                    log.info(f"[TKT-001] Found equipment class '{base_part}' in parts of '{eq_name}'")
-                                    break
+                                log.info(f"TKT-005: Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
                     
                     # Create the link if we found a matching class
                     if matching_class_ind:
                         try:
+                            # TKT-005: Use context.set_prop to link equipment to class via memberOfClass
                             context.set_prop(eq_ind, "memberOfClass", matching_class_ind)
                             links_created += 1
                             equipment_linked += 1
-                            log.info(f"Linked Equipment {eq_ind.name} to EquipmentClass {matching_class_ind.name} via {match_method}")
+                            log.info(f"TKT-005: Linked Equipment {eq_ind.name} to EquipmentClass {matching_class_ind.name} via {match_method}")
                             
                             # Record the link type for statistics
                             links_by_type["Equipment->Class"] = links_by_type.get("Equipment->Class", 0) + 1
                         except Exception as e:
-                            log.error(f"Error linking Equipment {eq_ind.name} to Class {matching_class_ind.name}: {e}")
+                            log.error(f"TKT-005: Error linking Equipment {eq_ind.name} to Class {matching_class_ind.name}: {e}")
                     else:
                         equipment_not_linked += 1
-                        log.warning(f"Could not determine appropriate class for Equipment {eq_ind.name}")
+                        log.warning(f"TKT-005: Could not determine appropriate class for Equipment {eq_ind.name}")
                 
                 # Log summary of Equipment-Class linking
-                log.info(f"Equipment-Class linking summary:")
+                log.info(f"TKT-005: Equipment-Class linking summary:")
                 log.info(f"  • Equipment already linked: {equipment_already_linked}")
                 log.info(f"  • Equipment newly linked: {equipment_linked}")
                 log.info(f"  • Equipment not linked: {equipment_not_linked}")
@@ -458,7 +490,7 @@ def process_structural_relationships(
                     
                     # Link equipment to lines
                     for eq_ind in equipment_individuals:
-                        # Get data stored in the equipment individual
+                        # TKT-002: Use the get_individual_data method to retrieve stored data for equipment
                         eq_data = context.get_individual_data(eq_ind) or {}
                         
                         # Get the line ID this equipment is part of
@@ -480,6 +512,7 @@ def process_structural_relationships(
                                     equipment_already_linked = current_line == line_ind
                             
                             if not equipment_already_linked:
+                                # TKT-002: Use context.set_prop to ensure property usage is tracked
                                 context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
                                 context.set_prop(line_ind, "hasEquipmentPart", eq_ind)
                                 links_created += 1
@@ -490,6 +523,10 @@ def process_structural_relationships(
                                 links_by_type["Equipment->Line"] = links_by_type.get("Equipment->Line", 0) + 1
                     
                     log.info(f"Created {equipment_line_links} Equipment-Line links")
+    
+    # TKT-002: Generate property usage report after all structural relationships are processed
+    log.info("TKT-002: Generating property usage report")
+    context.log_property_usage_report()
     
     # Log summary of links created
     for link_type, count in links_by_type.items():
