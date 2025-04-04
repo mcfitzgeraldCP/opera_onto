@@ -101,12 +101,13 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
         class_part = parts[-1]  # Take the part after the last underscore
 
         # Try to extract base class name by removing trailing digits
+        # ENHANCED: Use a more comprehensive regex to strip trailing numbers
         base_class = re.sub(r'\d+$', '', class_part)
 
         # Validate the base class name
         if base_class and re.search(r'[a-zA-Z]', base_class):
             # Further validate that this looks like an equipment class and not a line ID
-            if not base_class.startswith("FIPCO"):
+            if not re.match(r'^(FIPCO|LINE)\d*$', base_class, re.IGNORECASE):
                 # Check if this matches or is a substring of a known class
                 match_found = False
                 for known_class in KNOWN_EQUIPMENT_CLASSES:
@@ -127,31 +128,36 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
     
     # --- Method 3: Known Class Matching ---
     if not matched_class and equipment_name and isinstance(equipment_name, str):
+        # ENHANCED: Remove any line ID prefix first (FIPCO009)
+        cleaned_name = re.sub(r'^(FIPCO|LINE)\d*_?', '', equipment_name)
+        
+        # ENHANCED: First try to match the name after removing trailing numbers
+        base_name = re.sub(r'\d+$', '', cleaned_name)
+        
         # Attempt exact match with known classes (case-insensitive)
         for known_class in KNOWN_EQUIPMENT_CLASSES:
-            # Check if the equipment name IS the class name (with optional trailing digits)
-            class_pattern = re.compile(f"^{known_class}\\d*$", re.IGNORECASE)
-            if class_pattern.match(equipment_name):
+            # Check if the cleaned name matches the class name exactly
+            if base_name.lower() == known_class.lower():
                 match_method = "Known Class Exact Match"
-                matched_class = known_class
-                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}'")
+                matched_class = known_class  # Use the properly capitalized version from the list
+                pop_logger.debug(f"Matched equipment name '{equipment_name}' to known class '{matched_class}' after cleaning")
                 break
             
-            # Check if name starts with known class followed by numbers
-            if equipment_name.startswith(known_class):
-                # Check if what follows is just digits
-                remainder = equipment_name[len(known_class):]
-                if not remainder or remainder.isdigit() or remainder[0].isdigit():
+            # Check if cleaned name starts with known class
+            if base_name.lower().startswith(known_class.lower()):
+                # Ensure what follows isn't alphabetic (could be a longer but different class name)
+                remainder = base_name[len(known_class):].strip()
+                if not remainder or not re.search(r'[a-zA-Z]', remainder):
                     match_method = "Known Class Prefix Match"
                     matched_class = known_class
-                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix")
+                    pop_logger.debug(f"Extracted equipment class '{matched_class}' from '{equipment_name}' via prefix after cleaning")
                     break
             
             # Check if a known class is embedded within the name
-            if known_class in equipment_name:
-                match_method = "Known Class Substring Match"
+            if known_class.lower() in base_name.lower():
+                match_method = "Known Class Substring Match" 
                 matched_class = known_class
-                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}'")
+                pop_logger.debug(f"Found equipment class '{matched_class}' within '{equipment_name}' after cleaning")
                 break
     
     # --- Method 4: Equipment Model Inspection (if available) ---
@@ -160,7 +166,7 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
         
         # Look for known classes in the model information
         for known_class in KNOWN_EQUIPMENT_CLASSES:
-            if known_class in model_to_use:
+            if known_class.lower() in model_to_use.lower():
                 match_method = "Model-Based Match"
                 matched_class = known_class
                 pop_logger.debug(f"Extracted equipment class '{matched_class}' from model '{model_to_use}'")
@@ -169,8 +175,11 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
     # --- Method 5: Generic Extraction (most permissive, last resort) ---
     if not matched_class and equipment_name and isinstance(equipment_name, str):
         # Enhanced string extraction with more thorough validation
+        # ENHANCED: Remove any line ID prefix first
+        cleaned_name = re.sub(r'^(FIPCO|LINE)\d*_?', '', equipment_name)
+        
         # Try to extract a class-like string if it has proper capitalization
-        words = re.findall(r'[A-Z][a-zA-Z]*', equipment_name)
+        words = re.findall(r'[A-Z][a-zA-Z]*', cleaned_name)
         if words:
             candidate_classes = []
             for word in words:
@@ -335,8 +344,8 @@ def process_equipment_and_class(
     # CRITICAL FIX: Use the class base name as the unique identifier
     # This ensures only one EquipmentClass individual per type (e.g., one :Filler)
     try:
-        # Key modification for TKT-002-2b: Use eq_class_base_name directly as unique ID 
-        # rather than creating a new base with "EquipmentClass_" prefix
+        # Key modification for TKT-001: Use eq_class_base_name directly as unique ID 
+        # rather than using the full equipment name
         eq_class_unique_id = eq_class_base_name
         
         pop_logger.debug(f"Creating/retrieving EquipmentClass individual with unique ID: '{eq_class_unique_id}'")
@@ -431,6 +440,42 @@ def process_equipment_and_class(
                         pop_logger.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to class.")
                 elif not eq_class_ind:
                     pop_logger.error(f"CRITICAL: Failed to establish memberOfClass link - missing class individual for '{eq_class_base_name}'")
+                
+                # TKT-002: Set sequencePosition property on the Equipment individual based on its class
+                # First check if the sequencePosition property exists
+                sequence_position_prop = context.get_prop("sequencePosition")
+                if sequence_position_prop:
+                    # Determine sequence position from equipment class
+                    position_value = None
+                    
+                    # Try to get line ID for line-specific sequence positions
+                    line_id = None
+                    if line_ind:
+                        line_id_prop = context.get_prop("lineId")
+                        if line_id_prop:
+                            line_id = getattr(line_ind, line_id_prop.python_name, None)
+                    
+                    # First check if there's a line-specific sequence
+                    from ontology_generator.config import LINE_SPECIFIC_EQUIPMENT_SEQUENCE
+                    if line_id and line_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE and eq_class_base_name in LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id]:
+                        position_value = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(eq_class_base_name)
+                        pop_logger.debug(f"Using line-specific sequence position {position_value} for {eq_class_base_name} on line {line_id}")
+                    
+                    # Otherwise, use the default sequence from DEFAULT_EQUIPMENT_SEQUENCE
+                    if position_value is None:
+                        from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
+                        position_value = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
+                        if position_value:
+                            pop_logger.debug(f"Using default sequence position {position_value} for {eq_class_base_name}")
+                    
+                    # Set the sequencePosition if we found a value
+                    if position_value is not None:
+                        context.set_prop(eq_ind, "sequencePosition", position_value)
+                        pop_logger.debug(f"Set sequencePosition={position_value} for equipment {eq_id} of class {eq_class_base_name}")
+                    else:
+                        pop_logger.warning(f"No sequence position found for equipment class {eq_class_base_name}")
+                else:
+                    pop_logger.warning(f"Required property 'sequencePosition' not found. Cannot set sequence position.")
                 
                 # 2. Link equipment to its production line if available
                 if eq_ind and line_ind:

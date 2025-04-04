@@ -45,12 +45,12 @@ def get_equipment_sequence_for_line(onto: Ontology, line_individual: Thing) -> L
     # Get required properties
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == "equipmentIsUpstreamOf":
+        if prop.name == "isImmediatelyUpstreamOf":
             equipment_is_upstream_of = prop
             break
     
     if not equipment_is_upstream_of:
-        analysis_logger.warning("Property 'equipmentIsUpstreamOf' not found in ontology")
+        analysis_logger.warning("Property 'isImmediatelyUpstreamOf' not found in ontology")
         return []
     
     # Get all equipment on this line
@@ -256,10 +256,10 @@ def analyze_equipment_sequences(onto: Ontology) -> Tuple[Dict[str, List[Thing]],
         analysis_logger.warning("Equipment class not found in ontology")
         return {}, {"error": "Equipment class not found"}
         
-    # Get the "equipmentIsUpstreamOf" property
+    # Get the "isImmediatelyUpstreamOf" property
     equipment_is_upstream_of = None
     for prop in onto.object_properties():
-        if prop.name == "equipmentIsUpstreamOf":
+        if prop.name == "isImmediatelyUpstreamOf":
             equipment_is_upstream_of = prop
             break
             

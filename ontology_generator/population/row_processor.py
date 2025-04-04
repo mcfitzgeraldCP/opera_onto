@@ -339,10 +339,12 @@ def process_structural_relationships(
                                     break
                         
                         if eq_name:
+                            # Key modification for TKT-001: Use parse_equipment_class to extract base class name
                             parsed_class = parse_equipment_class(equipment_name=eq_name)
                             if parsed_class and str(parsed_class) in classes_by_identifier:
                                 matching_class_ind = classes_by_identifier[str(parsed_class)]
                                 match_method = f"Parsed from name '{eq_name}'"
+                                log.info(f"[TKT-001] Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
                     
                     # Method 3: Try direct name matching for any remaining unlinked equipment
                     if not matching_class_ind and hasattr(eq_ind, "name"):
@@ -351,22 +353,28 @@ def process_structural_relationships(
                         from .equipment import parse_equipment_class
                         import re
                         
+                        # Key modification for TKT-001: Handle line ID prefixes and trailing numbers
+                        # First remove any line ID prefix (like FIPCO009_)
+                        cleaned_name = re.sub(r'^(FIPCO|LINE)\d*_?', '', eq_name)
+                        # Then remove trailing numbers to get the class name
+                        base_name = re.sub(r'\d+$', '', cleaned_name)
+                        
+                        # Check if the cleaned base name is a known class
+                        if base_name in classes_by_identifier:
+                            matching_class_ind = classes_by_identifier[base_name]
+                            match_method = f"Cleaned name match from '{eq_name}' -> '{base_name}'"
+                            log.info(f"[TKT-001] Matched cleaned name '{base_name}' to equipment class from '{eq_name}'")
+                        
                         # Try to match with known patterns like "_ClassType"
-                        if "_" in eq_name:
+                        if not matching_class_ind and "_" in eq_name:
                             parts = eq_name.split("_")
                             for part in parts:
-                                if part and part in classes_by_identifier:
-                                    matching_class_ind = classes_by_identifier[part]
-                                    match_method = f"Direct part match from '{eq_name}'"
-                                    break
-                        
-                        # Try extracting capital word sequences that might be class names
-                        if not matching_class_ind:
-                            words = re.findall(r'[A-Z][a-zA-Z]*', eq_name)
-                            for word in words:
-                                if word and word in classes_by_identifier:
-                                    matching_class_ind = classes_by_identifier[word]
-                                    match_method = f"Capital word match from '{eq_name}'"
+                                # Clean any trailing numbers from the part
+                                base_part = re.sub(r'\d+$', '', part)
+                                if base_part and base_part in classes_by_identifier:
+                                    matching_class_ind = classes_by_identifier[base_part]
+                                    match_method = f"Direct part match from '{eq_name}' (part: '{base_part}')"
+                                    log.info(f"[TKT-001] Found equipment class '{base_part}' in parts of '{eq_name}'")
                                     break
                     
                     # Create the link if we found a matching class

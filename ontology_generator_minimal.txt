@@ -575,6 +575,8 @@ import logging
 DEFAULT_ONTOLOGY_IRI = 'http://example.com/manufacturing_ontology.owl'
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 SPEC_PARENT_CLASS_COLUMN = 'Parent Class'
+DEFAULT_EVENT_LINKING_BUFFER_MINUTES = 5
+DEFAULT_EVENT_DURATION_HOURS = 2
 SPEC_COL_ENTITY = 'Proposed OWL Entity'
 SPEC_COL_PROPERTY = 'Proposed OWL Property'
 SPEC_COL_PROP_TYPE = 'OWL Property Type'
@@ -959,7 +961,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if prop_name in ['classIsUpstreamOf', 'classIsDownstreamOf', 'defaultSequencePosition']:
                 logger.info(f'Skipping deprecated class-level property: {prop_name}')
                 continue
-            if prop_name in ['sequencePosition', 'isImmediatelyUpstreamOf', 'isImmediatelyDownstreamOf', 'isParallelWith', 'isPartOfProductionLine', 'memberOfClass']:
+            if prop_name in ['sequencePosition', 'isImmediatelyUpstreamOf', 'isImmediatelyDownstreamOf', 'isPartOfProductionLine', 'memberOfClass']:
                 logger.debug(f'Skipping duplicate definition of instance-level property: {prop_name}')
                 continue
             prop_type_str = row.get(SPEC_COL_PROP_TYPE, '').strip()
@@ -1151,7 +1153,7 @@ import time as timing
 from datetime import datetime, date, time
 from typing import List, Dict, Any, Optional, Tuple
 from owlready2 import World, Ontology, sync_reasoner, Thing, OwlReadyInconsistentOntologyError, locstr, default_world, ThingClass, FunctionalProperty, InverseFunctionalProperty, TransitiveProperty, SymmetricProperty, AsymmetricProperty, ReflexiveProperty, IrreflexiveProperty, Nothing
-from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map, DEFAULT_EQUIPMENT_SEQUENCE
+from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map, DEFAULT_EQUIPMENT_SEQUENCE, DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
 from ontology_generator.utils.logging import main_logger, configure_logging, analysis_logger
 from ontology_generator.definition import parse_specification, define_ontology_structure, create_selective_classes, parse_property_mappings, validate_property_mappings, read_data
 from ontology_generator.population import setup_equipment_instance_relationships, link_equipment_events_to_line_events
@@ -1408,10 +1410,10 @@ def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, 
     except Exception as seq_exc:
         logger.error(f'Error during sequence relationship setup: {seq_exc}', exc_info=True)
 
-def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger):
+def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger, event_buffer_minutes=None):
     logger.info('Linking equipment events to line events...')
     try:
-        links_made = link_equipment_events_to_line_events(onto, created_events_context, defined_classes, defined_properties)
+        links_made = link_equipment_events_to_line_events(onto, created_events_context, defined_classes, defined_properties, event_buffer_minutes)
         logger.info(f'Event linking pass created {links_made} links.')
     except Exception as link_exc:
         logger.error(f'Error during event linking pass: {link_exc}', exc_info=True)
@@ -1533,7 +1535,7 @@ def _save_ontology_file(onto, world, output_owl_path, save_format, world_db_path
         save_failed = True
     return save_failed
 
-def main_ontology_generation(spec_file_path: str, data_file_path: str, output_owl_path: str, ontology_iri: str=DEFAULT_ONTOLOGY_IRI, save_format: str='rdfxml', use_reasoner: bool=False, world_db_path: Optional[str]=None, reasoner_report_max_entities: int=10, reasoner_report_verbose: bool=False, analyze_population: bool=True, strict_adherence: bool=False, skip_classes: List[str]=None, optimize_ontology: bool=False) -> bool:
+def main_ontology_generation(spec_file_path: str, data_file_path: str, output_owl_path: str, ontology_iri: str=DEFAULT_ONTOLOGY_IRI, save_format: str='rdfxml', use_reasoner: bool=False, world_db_path: Optional[str]=None, reasoner_report_max_entities: int=10, reasoner_report_verbose: bool=False, analyze_population: bool=True, strict_adherence: bool=False, skip_classes: List[str]=None, optimize_ontology: bool=False, event_buffer_minutes: Optional[int]=None) -> bool:
     start_time = timing.time()
     main_logger.info('--- Ontology Generation Process Started ---')
 
@@ -1553,6 +1555,7 @@ def main_ontology_generation(spec_file_path: str, data_file_path: str, output_ow
     args.strict_adherence = strict_adherence
     args.skip_classes = skip_classes
     args.optimize_ontology = optimize_ontology
+    args.event_buffer_minutes = event_buffer_minutes
     world = None
     onto = None
     population_successful = False
@@ -1578,14 +1581,14 @@ def main_ontology_generation(spec_file_path: str, data_file_path: str, output_ow
             _run_analysis_and_optimization(onto, defined_classes, specification, args.optimize_ontology, args.output_file, main_logger)
         elif not args.analyze_population:
             main_logger.warning('Skipping ontology population analysis as requested.')
-        if population_successful and created_eq_classes and eq_class_positions:
+        if population_successful and created_eq_classes:
             _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
         elif population_successful:
-            main_logger.warning('Skipping sequence relationship setup: No EquipmentClass info available.')
-        if population_successful and created_events_context:
-            _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger)
-        elif population_successful:
-            main_logger.warning('Skipping event linking: No event context available.')
+            main_logger.warning('Skipping sequence relationship setup: No EquipmentClass individuals found during population.')
+        if created_events_context:
+            _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger, args.event_buffer_minutes)
+        else:
+            main_logger.warning('No event context data available for linking. Event linking skipped.')
         if args.reasoner and population_successful:
             reasoning_successful = _run_reasoning_phase(onto, world, args.worlddb, args.max_report_entities, args.full_report, main_logger)
         elif args.reasoner and (not population_successful):
@@ -1714,6 +1717,7 @@ def main():
     parser.add_argument('--optimize', action='store_true', dest='optimize_ontology', help='Generate detailed optimization recommendations.')
     parser.add_argument('--test-mappings', action='store_true', help='Test the property mapping functionality only, without generating the ontology.')
     parser.add_argument('--analyze-sequences', metavar='OWL_FILE', help='Analyze equipment sequences in an existing ontology file.')
+    parser.add_argument('--event-buffer', type=int, default=None, metavar='MINUTES', help=f'Time buffer in minutes for event linking (default: {DEFAULT_EVENT_LINKING_BUFFER_MINUTES}).')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose (DEBUG level) logging.')
     parser.add_argument('-q', '--quiet', action='store_true', help='Suppress INFO level logging.')
     args = parser.parse_args()
@@ -1729,7 +1733,7 @@ def main():
     elif args.quiet:
         log_level = logging.WARNING
     configure_logging(log_level=log_level)
-    success = main_ontology_generation(args.spec_file, args.data_file, args.output_file, args.iri, args.format, args.reasoner, args.worlddb, reasoner_report_max_entities=args.max_report_entities, reasoner_report_verbose=args.full_report, analyze_population=args.analyze_population, strict_adherence=args.strict_adherence, skip_classes=args.skip_classes, optimize_ontology=args.optimize_ontology)
+    success = main_ontology_generation(args.spec_file, args.data_file, args.output_file, args.iri, args.format, args.reasoner, args.worlddb, reasoner_report_max_entities=args.max_report_entities, reasoner_report_verbose=args.full_report, analyze_population=args.analyze_population, strict_adherence=args.strict_adherence, skip_classes=args.skip_classes, optimize_ontology=args.optimize_ontology, event_buffer_minutes=args.event_buffer)
     if success:
         main_logger.info('Ontology generation process completed.')
         sys.exit(0)
@@ -2695,17 +2699,17 @@ def process_event_record(row: Dict[str, Any], context: PopulationContext, proper
             else:
                 pop_logger.warning(f"Row {row_num}: Property 'duringShift' not found. Cannot link event to shift.")
         if material_ind:
-            involves_material_prop = context.get_prop('usesMaterial')
-            if involves_material_prop:
-                context.set_prop(event_ind, 'usesMaterial', material_ind)
+            consumed_material_prop = context.get_prop('consumedMaterial')
+            if consumed_material_prop:
+                context.set_prop(event_ind, 'consumedMaterial', material_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'usesMaterial' not found. Cannot link event to material.")
+                pop_logger.warning(f"Row {row_num}: Property 'consumedMaterial' not found. Cannot link event to material.")
         if request_ind:
-            involves_request_prop = context.get_prop('forRequest')
-            if involves_request_prop:
-                context.set_prop(event_ind, 'forRequest', request_ind)
+            associated_request_prop = context.get_prop('associatedRequest')
+            if associated_request_prop:
+                context.set_prop(event_ind, 'associatedRequest', request_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'forRequest' not found. Cannot link event to production request.")
+                pop_logger.warning(f"Row {row_num}: Property 'associatedRequest' not found. Cannot link event to production request.")
     event_context = (event_ind, resource_ind, resource_type) if event_ind else None
     return (event_ind, event_context)
 
@@ -2760,8 +2764,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Set, Optional
 from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 from ontology_generator.utils.logging import link_logger
+from ontology_generator.config import DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
 
-def link_equipment_events_to_line_events(onto: Ontology, created_events_context: List[Tuple[Thing, Thing, str]], defined_classes: Dict[str, ThingClass], defined_properties: Dict[str, PropertyClass]) -> int:
+def link_equipment_events_to_line_events(onto: Ontology, created_events_context: List[Tuple[Thing, Thing, str]], defined_classes: Dict[str, ThingClass], defined_properties: Dict[str, PropertyClass], event_buffer_minutes: Optional[int]=None) -> int:
     link_logger.info('Starting second pass: Linking equipment events to line events (Enhanced Relaxed Temporal Logic)...')
     cls_EventRecord = defined_classes.get('EventRecord')
     cls_ProductionLine = defined_classes.get('ProductionLine')
@@ -2777,11 +2782,11 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
     if not all([cls_EventRecord, cls_ProductionLine, cls_Equipment, prop_isPartOfLineEvent, prop_startTime, prop_endTime]):
         link_logger.error('Missing essential classes or properties (EventRecord, ProductionLine, Equipment, isPartOfLineEvent, startTime, endTime) for linking. Aborting.')
         return 0
-    TIME_BUFFER_MINUTES = 5
+    TIME_BUFFER_MINUTES = event_buffer_minutes if event_buffer_minutes is not None else DEFAULT_EVENT_LINKING_BUFFER_MINUTES
     time_buffer = timedelta(minutes=TIME_BUFFER_MINUTES)
-    DEFAULT_EVENT_DURATION_HOURS = 2
-    default_duration = timedelta(hours=DEFAULT_EVENT_DURATION_HOURS)
-    link_logger.info(f'Using temporal linking parameters: Buffer={TIME_BUFFER_MINUTES} minutes, Default Duration={DEFAULT_EVENT_DURATION_HOURS} hours')
+    DEFAULT_DURATION_HOURS = DEFAULT_EVENT_DURATION_HOURS
+    default_duration = timedelta(hours=DEFAULT_DURATION_HOURS)
+    link_logger.info(f'Using temporal linking parameters: Buffer={TIME_BUFFER_MINUTES} minutes, Default Duration={DEFAULT_DURATION_HOURS} hours')
     line_events_by_line: Dict[Thing, List[Tuple[Thing, Optional[datetime], Optional[datetime]]]] = defaultdict(list)
     equipment_events_to_link: List[Tuple[Thing, Thing, Optional[datetime], Optional[datetime]]] = []
     missing_start_count = 0
@@ -2889,10 +2894,10 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
             event_details = {'event_id': eq_id, 'line': line_ind.name, 'start_time': eq_start, 'end_time': eq_end, 'inferred_end_time': inferred_eq_end, 'potential_parents_count': len(potential_parents), 'nearest_line_event': None, 'nearest_line_event_gap': None, 'failure_reason': None}
             if not potential_parents:
                 failure_categories['no_line_events'] += 1
-                event_details['failure_reason'] = 'No line events found for this line'
+                event_details['failure_reason'] = 'No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation.'
                 failed_eq_events.append(event_details)
                 failed_events += 1
-                link_logger.warning(f'Equipment event {eq_id} has no potential parent line events (line {line_ind.name} has no events)')
+                link_logger.warning(f'Equipment event {eq_id} has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line {line_ind.name}. Verify source data.')
                 continue
             nearest_line_event = None
             min_gap = timedelta(days=999)
@@ -3425,6 +3430,12 @@ def _safe_sort_by_position(items, default_position=999999):
 
 def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict[str, ThingClass], defined_properties: Dict[str, PropertyClass], property_is_functional: Dict[str, bool], equipment_class_positions: Dict[str, int]):
     pop_logger.info('Setting up INSTANCE-LEVEL equipment relationships within production lines...')
+    if not equipment_class_positions:
+        pop_logger.warning("Equipment class positions dictionary is empty. We'll still process equipment instances that have sequence positions set directly.")
+    else:
+        pop_logger.info(f'Using {len(equipment_class_positions)} equipment class positions for processing.')
+        for class_name, position in sorted(equipment_class_positions.items(), key=lambda x: x[1]):
+            pop_logger.debug(f"  • Class '{class_name}' has position {position}")
     context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
     cls_Equipment = context.get_class('Equipment')
     cls_ProductionLine = context.get_class('ProductionLine')
@@ -3800,3 +3811,5 @@ def sanitize_name(name: Any) -> str:
         safe_name = f'UnnamedData_{fallback_hash}'
         pop_logger.warning(f"Sanitized name for '{name_str}' became empty or invalid. Using fallback hash: {safe_name}")
     return safe_name
+
+

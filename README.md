@@ -31,6 +31,11 @@ ontology_generator/
     └── types.py              # Type conversion utilities
 ```
 
+## Documentation
+
+- [Migration Guide](migration_guide.md): Information for migrating from previous versions
+- [Event Linking Guide](docs/event_linking_guide.md): Detailed information about event linking functionality and parameters
+
 ## Requirements
 
 - Python 3.6+
@@ -61,6 +66,7 @@ python -m ontology_generator.main spec_file data_file output_file [options]
 - `--strict-adherence`: Only create classes explicitly defined in the specification
 - `--skip-classes`: List of class names to skip during ontology creation
 - `--optimize`: Generate detailed optimization recommendations
+- `--event-buffer`: Time buffer in minutes for event linking (default: 5)
 - `--test-mappings`: Test the property mapping functionality only
 - `-v, --verbose`: Enable verbose (DEBUG level) logging
 - `-q, --quiet`: Suppress INFO level logging
@@ -114,3 +120,13 @@ To test the property mapping functionality without generating an ontology:
 ```bash
 python -m ontology_generator.main spec.csv data.csv output.owl --test-mappings
 ```
+
+## Event Linking
+
+When working with sample datasets or data with timing gaps, you may need to adjust the event buffer to improve linking success:
+
+```bash
+python -m ontology_generator.main spec.csv data.csv output.owl --event-buffer 15
+```
+
+This increases the time window for matching equipment events to line events from the default 5 minutes to 15 minutes. See the [Event Linking Guide](docs/event_linking_guide.md) for detailed information.
