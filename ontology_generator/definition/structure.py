@@ -403,13 +403,13 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
         if prop_name in spec_property_types:
             expected_type = spec_property_types[prop_name]
             # Simple type check between expected and actual property type
-            if expected_type == 'ObjectProperty' and not isinstance(prop_obj, ObjectPropertyClass):
+            if expected_type == 'ObjectProperty' and not isinstance(prop_obj, ObjectProperty):
                 logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
-            elif expected_type == 'DatatypeProperty' and not isinstance(prop_obj, DataPropertyClass):
+            elif expected_type == 'DatatypeProperty' and not isinstance(prop_obj, DataProperty):
                 logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
     
     # Log total property counts
-    logger.info(f"TKT-002: Defined {len(defined_properties)} total properties ({len([p for p in defined_properties.values() if isinstance(p, ObjectPropertyClass)])} object properties, {len([p for p in defined_properties.values() if isinstance(p, DataPropertyClass)])} data properties)")
+    logger.info(f"TKT-002: Defined {len(defined_properties)} total properties ({len([p for p in defined_properties.values() if isinstance(p, ObjectProperty)])} object properties, {len([p for p in defined_properties.values() if isinstance(p, DataProperty)])} data properties)")
     
     logger.info("Ontology structure definition complete.")
     return defined_classes, defined_properties, property_is_functional

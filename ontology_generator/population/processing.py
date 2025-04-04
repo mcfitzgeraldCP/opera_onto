@@ -26,7 +26,8 @@ RowProcessingResult = Tuple[
 def process_single_data_row(row: Dict[str, Any],
                             row_num: int,
                             context: PopulationContext,
-                            property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None) \
+                            property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
+                            all_created_individuals_by_uid: Dict[Tuple[str, str], Thing] = None) \
                             -> RowProcessingResult:
     """
     Processes a single data row to create ontology individuals and relationships.
@@ -36,6 +37,7 @@ def process_single_data_row(row: Dict[str, Any],
         row_num: The original row number (for logging).
         context: The PopulationContext object.
         property_mappings: The parsed property mappings.
+        all_created_individuals_by_uid: Registry of created individuals for reuse.
 
     Returns:
         A tuple containing:
@@ -48,7 +50,12 @@ def process_single_data_row(row: Dict[str, Any],
     proc_logger.debug(f"--- Processing Row {row_num} ---")
     try:
         # 1. Process Asset Hierarchy -> plant, area, pcell, line individuals
-        plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(row, context, property_mappings)
+        plant_ind, area_ind, pcell_ind, line_ind = process_asset_hierarchy(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid
+        )
         if not plant_ind:  # Plant is essential
             raise ValueError("Failed to establish Plant individual, cannot proceed with row.")
 
@@ -68,7 +75,12 @@ def process_single_data_row(row: Dict[str, Any],
             proc_logger.debug(f"Row {row_num}: Identified as Line record for: {line_ind.name}")
 
         elif eq_type == 'Equipment':
-            equipment_ind, eq_class_ind, eq_class_name = process_equipment(row, context, line_ind, property_mappings)
+            equipment_ind, eq_class_ind, eq_class_name = process_equipment(
+                row=row, 
+                context=context, 
+                line_ind=line_ind, 
+                property_mappings=property_mappings
+            )
             if equipment_ind:
                 resource_individual = equipment_ind
                 resource_base_id = f"Eq_{equipment_ind.name}"
@@ -91,17 +103,27 @@ def process_single_data_row(row: Dict[str, Any],
             # Continue processing other parts, but event linking will fail later
 
         # 3. Process Material
-        material_ind = process_material(row, context, property_mappings)
+        material_ind = process_material(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid
+        )
 
         # 4. Process Production Request
-        request_ind = process_production_request(row, context, property_mappings)
+        request_ind = process_production_request(
+            row=row, 
+            context=context, 
+            property_mappings=property_mappings,
+            all_created_individuals_by_uid=all_created_individuals_by_uid
+        )
 
         # 5. Process Shift
         shift_ind = process_shift(
             row=row, 
             context=context, 
             property_mappings=property_mappings,
-            all_created_individuals_by_uid=None,  # We don't have this in this context
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
             pass_num=1
         )
 
@@ -110,14 +132,14 @@ def process_single_data_row(row: Dict[str, Any],
             row=row, 
             context=context, 
             property_mappings=property_mappings,
-            all_created_individuals_by_uid=None,  # We don't have this in this context
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
             pass_num=1
         )
         reason_ind = process_reason(
             row=row, 
             context=context, 
             property_mappings=property_mappings,
-            all_created_individuals_by_uid=None,  # We don't have this in this context
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
             pass_num=1
         )
 
@@ -128,7 +150,7 @@ def process_single_data_row(row: Dict[str, Any],
             resource_base_id=resource_base_id, 
             row_num=row_num, 
             property_mappings=property_mappings,
-            all_created_individuals_by_uid=None,  # We don't have this in this context
+            all_created_individuals_by_uid=all_created_individuals_by_uid,
             pass_num=1
         )
 
@@ -140,7 +162,7 @@ def process_single_data_row(row: Dict[str, Any],
                 row=row,
                 context=context,
                 property_mappings=property_mappings,
-                all_created_individuals_by_uid=None,  # We don't have this in this context
+                all_created_individuals_by_uid=all_created_individuals_by_uid,
                 time_interval_ind=time_interval_ind,
                 shift_ind=shift_ind,
                 state_ind=state_ind,
@@ -250,7 +272,7 @@ def populate_ontology_from_data(onto: Ontology,
         
         # Process row and gather context/info
         success, event_context, eq_class_info = process_single_data_row(
-            row, row_num, context, property_mappings
+            row, row_num, context, property_mappings, all_created_individuals_by_uid
         )
         
         if not success:

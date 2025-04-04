@@ -570,3 +570,42 @@ def process_equipment_and_class(
             pop_logger.error(f"Error creating Equipment '{eq_id}': {e}")
     
     return eq_ind, eq_class_ind, eq_class_info_out
+
+def process_equipment(
+    row: Dict[str, Any],
+    context: PopulationContext,
+    line_ind: Optional[Thing] = None,
+    property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
+) -> Tuple[Optional[Thing], Optional[Thing], Optional[str]]:
+    """
+    Process equipment data to create/retrieve Equipment and EquipmentClass individuals.
+    
+    This is a wrapper around process_equipment_and_class to maintain backward compatibility.
+    
+    Args:
+        row: The data row/dict being processed.
+        context: The population context with ontology, classes and properties.
+        line_ind: Optional production line individual to link to (if available).
+        property_mappings: Property mappings dictionary for populating individuals.
+    
+    Returns:
+        Tuple: (equipment_ind, equipment_class_ind, equipment_class_name)
+               - equipment_ind: Created/retrieved Equipment individual (or None)
+               - equipment_class_ind: Created/retrieved EquipmentClass individual (or None)
+               - equipment_class_name: Name of the equipment class (or None)
+    """
+    all_created_individuals_by_uid = {}  # Create empty registry for the single call
+    
+    eq_ind, eq_class_ind, eq_class_info = process_equipment_and_class(
+        row=row,
+        context=context,
+        property_mappings=property_mappings,
+        all_created_individuals_by_uid=all_created_individuals_by_uid,
+        line_ind=line_ind,
+        pass_num=1
+    )
+    
+    # Extract the class name from the tuple if available
+    eq_class_name = eq_class_info[0] if eq_class_info and len(eq_class_info) > 0 else None
+    
+    return eq_ind, eq_class_ind, eq_class_name
