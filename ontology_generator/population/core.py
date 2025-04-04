@@ -148,13 +148,16 @@ def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_f
                 pop_logger.debug(f"Set functional property {individual.name}.{prop.name} = {repr(value)}")
         else:
             # Non-Functional: Use append, check if value already exists.
-            current_values = getattr(individual, prop_name, [])
-            if not isinstance(current_values, list):  # Ensure it's a list for append
-                current_values = [current_values] if current_values is not None else []
-
+            # Initialize the attribute if it doesn't exist yet
+            if not hasattr(individual, prop_name) or getattr(individual, prop_name) is None:
+                # For non-functional properties, initialize with an empty list
+                setattr(individual, prop_name, [])
+            
+            # Now safely append the value to the list
+            current_values = getattr(individual, prop_name)
+            # Check if value already exists to avoid duplicates
             if value not in current_values:
-                # owlready handles adding to the list via direct attribute access
-                getattr(individual, prop_name).append(value)
+                current_values.append(value)
                 pop_logger.debug(f"Appended non-functional property {individual.name}.{prop.name} = {repr(value)}")
 
     except Exception as e:
@@ -248,20 +251,24 @@ def get_or_create_individual(
         return None
 
     class_name_str = onto_class.name
+    
+    # Use the provided base identifier for the registry key
+    # This follows the naming rules specified in the ticket
     registry_key = (class_name_str, sanitized_name_base)
 
     # Check registry first
     if registry_key in registry:
         existing_individual = registry[registry_key]
         pop_logger.debug(f"Found existing individual '{existing_individual.name}' (Key: {registry_key}) in registry.")
-        # Optionally add labels even if found? Decide based on requirements.
-        # if add_labels:
-        #     for label in add_labels:
-        #         if label and label not in existing_individual.label:
-        #             existing_individual.label.append(label)
+        # Add labels if found and labels provided
+        if add_labels:
+            for label in add_labels:
+                if label and label not in existing_individual.label:
+                    existing_individual.label.append(str(label))
         return existing_individual
 
     # --- If not found, create ---
+    # Generate standardized IRI names based on class type
     individual_name = f"{class_name_str}_{sanitized_name_base}"
 
     try:
@@ -385,6 +392,11 @@ def apply_object_property_mappings(
                 logger.debug(f"EventRecord {individual.name} already has involvesResource set to {individual.involvesResource.name if hasattr(individual.involvesResource, 'name') else individual.involvesResource}")
                 # Skip this property if already set
                 continue
+            else:
+                # If missing both column and target_link_context, skip with a more specific message
+                if not col_name and not link_context_key:
+                    logger.debug(f"Skipping {entity_name}.{prop_name} in Pass 2 since it's handled in Pass 1 directly and missing column/target_link_context")
+                    continue
 
         # Find the target individual
         target_individual: Optional[Thing] = None

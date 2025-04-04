@@ -134,13 +134,88 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
     properties_to_process = [row for row in specification if row.get('Proposed OWL Property')]
     temp_inverse_map: Dict[str, str] = {} # Stores {prop_name: inverse_name}
 
+    # Define instance-level equipment sequence properties if not in specification
+    with onto:
+        # Define instance-level sequence properties for Equipment
+        if defined_classes.get("Equipment") and "sequencePosition" not in defined_properties:
+            logger.info("Adding instance-level equipment sequence properties")
+            
+            # Get Equipment class
+            cls_Equipment = defined_classes.get("Equipment")
+            cls_ProductionLine = defined_classes.get("ProductionLine")
+            cls_EquipmentClass = defined_classes.get("EquipmentClass")
+            
+            if not cls_Equipment:
+                logger.error("Equipment class not found. Cannot define instance-level sequence properties.")
+            else:
+                # 1. sequencePosition (DataProperty)
+                prop_sequencePosition = types.new_class("sequencePosition", (DataProperty, FunctionalProperty))
+                prop_sequencePosition.domain = [cls_Equipment]
+                prop_sequencePosition.range = [int]
+                prop_sequencePosition.comment = ["Position of equipment instance in production sequence"]
+                defined_properties["sequencePosition"] = prop_sequencePosition
+                property_is_functional["sequencePosition"] = True
+                logger.info("Defined property: sequencePosition")
+                
+                # 2. isImmediatelyUpstreamOf (ObjectProperty) with its inverse
+                if cls_Equipment:
+                    prop_isImmediatelyUpstreamOf = types.new_class("isImmediatelyUpstreamOf", (ObjectProperty,))
+                    prop_isImmediatelyUpstreamOf.domain = [cls_Equipment]
+                    prop_isImmediatelyUpstreamOf.range = [cls_Equipment]
+                    prop_isImmediatelyUpstreamOf.comment = ["Links to the immediate downstream equipment in sequence"]
+                    defined_properties["isImmediatelyUpstreamOf"] = prop_isImmediatelyUpstreamOf
+                    property_is_functional["isImmediatelyUpstreamOf"] = False
+                    logger.info("Defined property: isImmediatelyUpstreamOf")
+                    
+                    # Define inverse
+                    prop_isImmediatelyDownstreamOf = types.new_class("isImmediatelyDownstreamOf", (ObjectProperty,))
+                    prop_isImmediatelyDownstreamOf.domain = [cls_Equipment]
+                    prop_isImmediatelyDownstreamOf.range = [cls_Equipment]
+                    prop_isImmediatelyDownstreamOf.comment = ["Links to the immediate upstream equipment in sequence"]
+                    defined_properties["isImmediatelyDownstreamOf"] = prop_isImmediatelyDownstreamOf
+                    property_is_functional["isImmediatelyDownstreamOf"] = False
+                    logger.info("Defined property: isImmediatelyDownstreamOf")
+                    
+                    # Set inverses
+                    prop_isImmediatelyUpstreamOf.inverse_property = prop_isImmediatelyDownstreamOf
+                    prop_isImmediatelyDownstreamOf.inverse_property = prop_isImmediatelyUpstreamOf
+                
+                # 3. isPartOfProductionLine (ObjectProperty)
+                if cls_Equipment and cls_ProductionLine:
+                    prop_isPartOfProductionLine = types.new_class("isPartOfProductionLine", (ObjectProperty,))
+                    prop_isPartOfProductionLine.domain = [cls_Equipment]
+                    prop_isPartOfProductionLine.range = [cls_ProductionLine]
+                    prop_isPartOfProductionLine.comment = ["Links equipment to its production line"]
+                    defined_properties["isPartOfProductionLine"] = prop_isPartOfProductionLine
+                    property_is_functional["isPartOfProductionLine"] = False
+                    logger.info("Defined property: isPartOfProductionLine")
+                
+                # 4. memberOfClass (ObjectProperty)
+                if cls_Equipment and cls_EquipmentClass:
+                    prop_memberOfClass = types.new_class("memberOfClass", (ObjectProperty, FunctionalProperty))
+                    prop_memberOfClass.domain = [cls_Equipment]
+                    prop_memberOfClass.range = [cls_EquipmentClass]
+                    prop_memberOfClass.comment = ["Links equipment instance to its equipment class"]
+                    defined_properties["memberOfClass"] = prop_memberOfClass
+                    property_is_functional["memberOfClass"] = True
+                    logger.info("Defined property: memberOfClass")
+
     with onto:
         # Define properties first without inverse, handle inverse in a second pass
         for row in properties_to_process:
             prop_name = row.get('Proposed OWL Property','').strip()
             if not prop_name or prop_name in defined_properties:
                 continue # Skip empty or already defined properties
-
+                
+            # Skip deprecated class-level sequence properties
+            if prop_name in ["classIsUpstreamOf", "classIsDownstreamOf", "defaultSequencePosition"]:
+                logger.info(f"Skipping deprecated class-level property: {prop_name}")
+                continue
+            
+            # Ensure instance-level equipment sequence properties are properly created
+            if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf", "isParallelWith"]:
+                logger.info(f"Creating instance-level equipment property: {prop_name}")
+                
             prop_type_str = row.get('OWL Property Type', '').strip()
             domain_str = row.get('Domain', '').strip()
             range_str = row.get('Target/Range (xsd:) / Target Class', '').strip()

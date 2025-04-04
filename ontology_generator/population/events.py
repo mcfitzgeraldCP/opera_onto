@@ -173,7 +173,9 @@ def process_time_interval(
     row_num: int,
     property_mappings: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
     all_created_individuals_by_uid: IndividualRegistry = None,
-    pass_num: int = 1
+    pass_num: int = 1,
+    infer_missing_end_time: bool = False,  # New parameter to optionally infer missing end times
+    default_duration_hours: int = 2  # Default duration for inferring end times
 ) -> Optional[Thing]:
     """
     Processes TimeInterval from a row (Pass 1: Create/Data Props).
@@ -181,6 +183,20 @@ def process_time_interval(
     Uses resource_base_id and row_num for unique naming.
     
     If startTime is missing, creates a robust fallback name using resource ID and row number.
+    
+    Args:
+        row: The data row
+        context: The population context
+        resource_base_id: The base ID for the resource (equipment/line)
+        row_num: The row number for unique naming
+        property_mappings: The property mappings
+        all_created_individuals_by_uid: The registry of created individuals
+        pass_num: The current pass number
+        infer_missing_end_time: If True, infer end times for intervals with missing end times
+        default_duration_hours: Default duration in hours to use for inferring end times
+        
+    Returns:
+        The created interval individual
     """
     if not property_mappings or "TimeInterval" not in property_mappings:
         pop_logger.debug("Property mappings for 'TimeInterval' not provided. Skipping interval processing.")
@@ -206,6 +222,7 @@ def process_time_interval(
     start_time_str = None
     end_time_str = None
     valid_start_time = False
+    valid_end_time = False
     
     # Try to extract startTime value (even if we'll use a fallback name, we want the data property)
     if has_start_mapping and start_col:
@@ -218,7 +235,9 @@ def process_time_interval(
     # Try to extract endTime if available
     if end_col:
         end_time_str = safe_cast(row.get(end_col), str)
-        if not end_time_str:
+        if end_time_str:
+            valid_end_time = True
+        else:
             pop_logger.debug(f"Row {row_num}: No endTime value in column '{end_col}'.")
 
     # Create a robust unique base name
@@ -226,7 +245,7 @@ def process_time_interval(
         # Create a safe start time string for naming
         safe_start_time_str = start_time_str.replace(":", "").replace("+", "plus").replace(" ", "T")
         interval_unique_base = f"Interval_{resource_base_id}_{safe_start_time_str}_Row{row_num}"
-        end_label_part = f"to {end_time_str}" if end_time_str else "(No End Time)"
+        end_label_part = f"to {end_time_str}" if valid_end_time else "(No End Time)"
         interval_labels = [f"Interval for {resource_base_id} starting {start_time_str} {end_label_part}"]
     else:
         # Robust fallback naming when no valid start time exists
@@ -245,6 +264,38 @@ def process_time_interval(
         has_start_prop = hasattr(interval_ind, 'startTime') and interval_ind.startTime
         if not has_start_prop:
             pop_logger.warning(f"Row {row_num}: TimeInterval {interval_ind.name} created but startTime property not set. This may cause linking issues.")
+        
+        # Check if endTime is missing and infer it if requested
+        if infer_missing_end_time and has_start_prop:
+            has_end_prop = hasattr(interval_ind, 'endTime') and interval_ind.endTime
+            
+            if not has_end_prop:
+                from datetime import timedelta
+                # Infer endTime based on startTime + default duration
+                start_time = interval_ind.startTime
+                if isinstance(start_time, datetime):
+                    inferred_end_time = start_time + timedelta(hours=default_duration_hours)
+                    
+                    # Set the inferred end time
+                    prop_endTime = context.get_prop("endTime")
+                    if prop_endTime:
+                        context.set_prop(interval_ind, "endTime", inferred_end_time)
+                        pop_logger.info(f"Row {row_num}: Inferred missing endTime for {interval_ind.name}: {inferred_end_time} "
+                                        f"(startTime + {default_duration_hours} hours)")
+                        
+                        # Add a flag to indicate this is an inferred end time
+                        # Store as a comment if available
+                        if hasattr(interval_ind, 'comment'):
+                            if isinstance(interval_ind.comment, list):
+                                interval_ind.comment.append(f"Inferred endTime: startTime + {default_duration_hours} hours")
+                            else:
+                                interval_ind.comment = [interval_ind.comment, f"Inferred endTime: startTime + {default_duration_hours} hours"]
+                        else:
+                            interval_ind.comment = [f"Inferred endTime: startTime + {default_duration_hours} hours"]
+                    else:
+                        pop_logger.warning(f"Row {row_num}: Cannot infer endTime - 'endTime' property not found in ontology")
+                else:
+                    pop_logger.warning(f"Row {row_num}: Cannot infer endTime - startTime is not a valid datetime")
 
     return interval_ind
 
@@ -289,13 +340,19 @@ def process_event_record(
     equipment_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
     primary_resource_ind = None
     resource_id_for_name = None
+    resource_type_name = "unknown"  # For logging purposes
 
     # Clear decision based on EQUIPMENT_TYPE
     if equipment_type == 'Line':
         if line_ind:
             primary_resource_ind = line_ind
+            resource_type_name = "ProductionLine"
             # Try to get a stable ID for the name
-            resource_id_for_name = line_ind.lineId[0] if hasattr(line_ind, 'lineId') and line_ind.lineId else line_ind.name
+            line_id = getattr(line_ind, "lineId", None)
+            if isinstance(line_id, list) and line_id:
+                resource_id_for_name = line_id[0]
+            else:
+                resource_id_for_name = str(line_id) if line_id else line_ind.name
             pop_logger.debug(f"Identified event for Line: {resource_id_for_name} based on EQUIPMENT_TYPE='{equipment_type}'")
         else:
             pop_logger.warning(f"Row indicates a Line event (EQUIPMENT_TYPE='{equipment_type}'), but no Line individual found. Skipping event.")
@@ -303,8 +360,13 @@ def process_event_record(
     elif equipment_type == 'Equipment':
         if equipment_ind:
             primary_resource_ind = equipment_ind
+            resource_type_name = "Equipment"
             # Try to get a stable ID for the name
-            resource_id_for_name = equipment_ind.equipmentId[0] if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId else equipment_ind.name
+            equipment_id = getattr(equipment_ind, "equipmentId", None)
+            if isinstance(equipment_id, list) and equipment_id:
+                resource_id_for_name = equipment_id[0]
+            else:
+                resource_id_for_name = str(equipment_id) if equipment_id else equipment_ind.name
             pop_logger.debug(f"Identified event for Equipment: {resource_id_for_name} based on EQUIPMENT_TYPE='{equipment_type}'")
         else:
             pop_logger.warning(f"Row indicates an Equipment event (EQUIPMENT_TYPE='{equipment_type}'), but no Equipment individual found. Skipping event.")
@@ -316,15 +378,30 @@ def process_event_record(
         # Fallback logic - check which resources are available
         if equipment_ind:
             primary_resource_ind = equipment_ind
-            resource_id_for_name = equipment_ind.equipmentId[0] if hasattr(equipment_ind, 'equipmentId') and equipment_ind.equipmentId else equipment_ind.name
+            resource_type_name = "Equipment"
+            equipment_id = getattr(equipment_ind, "equipmentId", None)
+            if isinstance(equipment_id, list) and equipment_id:
+                resource_id_for_name = equipment_id[0]
+            else:
+                resource_id_for_name = str(equipment_id) if equipment_id else equipment_ind.name
             pop_logger.debug(f"Defaulting to Equipment: {resource_id_for_name} (unknown EQUIPMENT_TYPE='{equipment_type}')")
         elif line_ind:
             primary_resource_ind = line_ind
-            resource_id_for_name = line_ind.lineId[0] if hasattr(line_ind, 'lineId') and line_ind.lineId else line_ind.name
+            resource_type_name = "ProductionLine"
+            line_id = getattr(line_ind, "lineId", None)
+            if isinstance(line_id, list) and line_id:
+                resource_id_for_name = line_id[0]
+            else:
+                resource_id_for_name = str(line_id) if line_id else line_ind.name
             pop_logger.debug(f"Defaulting to Line: {resource_id_for_name} (unknown EQUIPMENT_TYPE='{equipment_type}')")
         else:
             pop_logger.warning(f"Cannot determine primary resource for event (EQUIPMENT_TYPE='{equipment_type}'). Skipping event.")
             return None, None
+
+    # Validate that the resource was correctly identified
+    if not primary_resource_ind:
+        pop_logger.error(f"Failed to identify valid primary resource for event. EQUIPMENT_TYPE='{equipment_type}'. Skipping event.")
+        return None, None
 
     # --- Check Dependencies (Time Interval) --- 
     if not time_interval_ind:
@@ -359,7 +436,7 @@ def process_event_record(
 
     # Use row_num in the unique base name for robustness
     event_unique_base = f"Event_{resource_id_for_name}_{start_time_str}_{row_num}"
-    event_labels = [f"Event for {resource_id_for_name} at {start_time_str} (Row: {row_num})"]
+    event_labels = [f"Event for {resource_type_name} '{resource_id_for_name}' at {start_time_str} (Row: {row_num})"]
     # Add state/reason descriptions to label if available?
     if state_ind and hasattr(state_ind, 'stateDescription') and state_ind.stateDescription:
         # Handle potential locstr or list
@@ -378,11 +455,17 @@ def process_event_record(
         # Apply data properties
         apply_data_property_mappings(event_ind, property_mappings["EventRecord"], row, context, "EventRecord", pop_logger)
 
-        # ALWAYS link the primary resource in Pass 1
+        # ALWAYS link the primary resource in Pass 1 - this is critical for ProductionLineOrEquipment union
         involves_resource_prop = context.get_prop("involvesResource")
         if involves_resource_prop:
-            context.set_prop(event_ind, "involvesResource", primary_resource_ind)
-            pop_logger.debug(f"Linked event {event_ind.name} directly to primary resource {primary_resource_ind.name} via involvesResource")
+            # Check if already linked to avoid duplicate relationships
+            current_resource = getattr(event_ind, involves_resource_prop.python_name, None)
+            if current_resource is None:
+                # Link to the determined primary resource (either Line or Equipment)
+                context.set_prop(event_ind, "involvesResource", primary_resource_ind)
+                pop_logger.info(f"Linked event {event_ind.name} to {resource_type_name} '{resource_id_for_name}' via involvesResource")
+            else:
+                pop_logger.debug(f"Event {event_ind.name} already linked to resource {getattr(current_resource, '_name', str(current_resource))}, not changing")
         else:
             pop_logger.error(f"Cannot find involvesResource property in ontology. Event {event_ind.name} resource link not set.")
 
@@ -404,7 +487,9 @@ def process_event_related(
     material_ind: Optional[Thing] = None,
     request_ind: Optional[Thing] = None,
     pass_num: int = 1,
-    row_num: int = -1  # Add row_num parameter with default value
+    row_num: int = -1,  # Add row_num parameter with default value
+    infer_missing_end_times: bool = True,  # Control whether to infer missing end times
+    default_duration_hours: int = 2  # Default duration for inferred end times
 ) -> Tuple[RowIndividuals, Optional[Tuple]]:
     """
     Orchestrates the processing of all event-related individuals for a row in a given pass.
@@ -424,6 +509,8 @@ def process_event_related(
         request_ind: Optional production request for context.
         pass_num: Current population pass.
         row_num: Original row number from the source data for robust naming.
+        infer_missing_end_times: If True, infer missing end times for time intervals.
+        default_duration_hours: Default duration in hours to use for inferring end times.
 
     Returns:
         Tuple: (created_individuals_dict, event_context_tuple)
@@ -462,8 +549,11 @@ def process_event_related(
     shift_ind = process_shift(row, context, property_mappings, all_created_individuals_by_uid, pass_num)
     if shift_ind: created_inds["Shift"] = shift_ind
 
-    # Pass the actual row number to process_time_interval
-    time_interval_ind = process_time_interval(row, context, resource_base_id, actual_row_num, property_mappings, all_created_individuals_by_uid, pass_num)
+    # Pass the actual row number and inference parameters to process_time_interval
+    time_interval_ind = process_time_interval(
+        row, context, resource_base_id, actual_row_num, property_mappings, all_created_individuals_by_uid, pass_num,
+        infer_missing_end_time=infer_missing_end_times, default_duration_hours=default_duration_hours
+    )
     if time_interval_ind: created_inds["TimeInterval"] = time_interval_ind
 
     state_ind = process_state(row, context, property_mappings, all_created_individuals_by_uid, pass_num)

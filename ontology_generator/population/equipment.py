@@ -41,27 +41,28 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
     - FIPCO009_Filler2 -> Filler (trailing numbers are removed)
     - CasePacker2 -> CasePacker (trailing numbers are removed)
     - FIPCO009_CaseFormer3 -> CaseFormer (trailing numbers are removed)
+    - LINE_CLASS (FIPCO009_Filler) -> Filler
+    - CLASS (Filler) -> Filler
+    - LINE_CLASS# (FIPCO009_Filler2) -> Filler
+    - CLASS# (Filler2) -> Filler
     """
+    from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
+    
     # Skip processing immediately if equipment_type is 'Line'
     if equipment_type and equipment_type.lower() == 'line':
         pop_logger.warning(f"'{equipment_name}' is a Line type - not a valid equipment class")
         return None
         
-    # Known equipment class patterns (standard equipment types)
-    # NOTE: This is a hard-coded list for safety during the proof of concept phase.
-    # TODO: In the future, this will be expanded or replaced with a more flexible mechanism
-    # for equipment class identification (e.g., from configuration or database).
-    known_equipment_classes = [
-        "Filler", "Cartoner", "Bundler", "CaseFormer", "CasePacker", 
-        "CaseSealer", "Palletizer"
-    ]
+    # Get known equipment class patterns from config for consistency
+    # This ensures we're using the same list that's used for sequencing
+    known_equipment_classes = list(DEFAULT_EQUIPMENT_SEQUENCE.keys())
     
     # --- Parse from EQUIPMENT_NAME ---
     if equipment_name and isinstance(equipment_name, str):
-        # Case 1: Names with underscores (FIPCO009_Filler)
+        # Case 1: Names with underscores (LINE_CLASS format: FIPCO009_Filler)
         if '_' in equipment_name:
             parts = equipment_name.split('_')
-            class_part = parts[-1]
+            class_part = parts[-1]  # Take the part after the last underscore
 
             # Try to extract base class name by removing trailing digits
             base_class = re.sub(r'\d+$', '', class_part)
@@ -70,13 +71,20 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
             if base_class and re.search(r'[a-zA-Z]', base_class):
                 # Further validate that this looks like an equipment class and not a line ID
                 if not base_class.startswith("FIPCO"):
+                    # Check if this matches or is a substring of a known class
+                    for known_class in known_equipment_classes:
+                        if base_class == known_class or known_class.startswith(base_class):
+                            pop_logger.debug(f"Parsed equipment class '{known_class}' from '{equipment_name}'")
+                            return known_class
+                    
+                    # If we get here, we found a valid class name that's not in the known list
                     pop_logger.debug(f"Parsed equipment class '{base_class}' from '{equipment_name}'")
                     return base_class
                 else:
                     pop_logger.warning(f"Part after underscore '{base_class}' looks like a line ID, not a valid equipment class")
         
-        # Case 2: Check for equipment names that match known classes with potential trailing numbers
-        # First try exact/direct matching
+        # Case 2: Direct CLASS or CLASS# format - check against known classes first (exact match or with trailing numbers)
+        # Attempt an exact match with known classes (case-insensitive)
         for known_class in known_equipment_classes:
             # Check if the equipment name IS the class name (with optional trailing digits)
             class_pattern = re.compile(f"^{known_class}\\d*$", re.IGNORECASE)
@@ -84,22 +92,43 @@ def parse_equipment_class(equipment_name: Optional[str], equipment_type: Optiona
                 pop_logger.debug(f"Matched equipment name '{equipment_name}' to class '{known_class}'")
                 return known_class
             
-            # Alternatively check if name starts with known class
+            # Alternatively check if name starts with known class followed by numbers
             if equipment_name.startswith(known_class):
                 # Check if what follows is just digits
                 remainder = equipment_name[len(known_class):]
                 if not remainder or remainder.isdigit() or remainder[0].isdigit():
                     pop_logger.debug(f"Extracted equipment class '{known_class}' from '{equipment_name}'")
                     return known_class
-            
-            # Also look for known class within the name
+        
+        # Case 3: Check for known class patterns embedded within the name
+        # This is a more permissive check, only used if the more specific checks above fail
+        for known_class in known_equipment_classes:
             if known_class in equipment_name:
-                # Only use this if we can't determine a more specific match
+                # Extract the position of the class name
+                start_pos = equipment_name.find(known_class)
+                end_pos = start_pos + len(known_class)
+                
+                # Check if the class name is followed by digits
+                if end_pos < len(equipment_name) and equipment_name[end_pos].isdigit():
+                    # We found a CLASS# pattern
+                    pop_logger.debug(f"Found equipment class '{known_class}' with trailing digits in '{equipment_name}'")
+                    return known_class
+                
+                # If no trailing digits, treat as embedded class name
                 pop_logger.debug(f"Found equipment class '{known_class}' within '{equipment_name}'")
                 return known_class
         
-        # Case 3: Handle model-specific patterns in equipment name
-        # Not returning any special model names as classes, as requested
+        # Case 4: Generic extraction for unknown class patterns
+        # Try to extract a class-like string if it starts with capital letter and has no spaces
+        # Only do this if we couldn't find any match with known classes
+        words = re.findall(r'[A-Z][a-zA-Z]*', equipment_name)
+        if words:
+            for word in words:
+                # Look for words that might be equipment classes (proper noun-like)
+                if len(word) > 3 and word not in ['LINE', 'FIPCO']:
+                    base_class = re.sub(r'\d+$', '', word)
+                    pop_logger.debug(f"Extracted potential equipment class '{base_class}' from '{equipment_name}'")
+                    return base_class
         
         # Log that we couldn't extract a class
         pop_logger.debug(f"Could not extract valid equipment class from EQUIPMENT_NAME '{equipment_name}'")
@@ -131,7 +160,7 @@ def process_equipment_and_class(
         Tuple: (equipment_ind, equipment_class_ind, equipment_class_info)
                - equipment_ind: Created/retrieved Equipment individual (or None)
                - equipment_class_ind: Created/retrieved EquipmentClass individual (or None)
-               - equipment_class_info: (Optional) Tuple with class name, individual, and position
+               - equipment_class_info: (Optional) Tuple with class name, individual, and sequence info
     """
     # Get required classes
     cls_Equipment = context.get_class("Equipment")
@@ -151,14 +180,24 @@ def process_equipment_and_class(
     
     # Check EQUIPMENT_TYPE to determine if we should process equipment or skip
     eq_type = row.get('EQUIPMENT_TYPE', '').strip() if 'EQUIPMENT_TYPE' in row else 'Equipment'
-    if eq_type.lower() != 'equipment':
-        # Skip non-equipment types
+    
+    # If this is a Line type entry, don't create Equipment - it's handled by ProductionLine processing
+    if eq_type.lower() == 'line':
+        pop_logger.debug(f"EQUIPMENT_TYPE is 'Line' for '{eq_name}' - skipping Equipment instance creation.")
         return None, None, None
     
-    # Get equipment ID mappings if defined, otherwise default to EQUIPMENT_NAME
+    # Get equipment identifiers - EQUIPMENT_ID is critical for uniquely identifying the equipment instance
+    eq_id = row.get('EQUIPMENT_ID', '').strip() if 'EQUIPMENT_ID' in row else None
+    if not eq_id:
+        pop_logger.warning(f"Missing EQUIPMENT_ID for equipment named '{eq_name}'. Cannot create unique Equipment instance.")
+        return None, None, None
+
+    # Get equipment ID mappings if defined, otherwise default to EQUIPMENT_ID
     eq_id_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentId')
-    eq_id_col = eq_id_map.get('column') if eq_id_map else 'EQUIPMENT_NAME'
-    eq_id_value = row.get(eq_id_col, eq_name).strip() if eq_id_col in row else eq_name
+    eq_id_col = eq_id_map.get('column') if eq_id_map else 'EQUIPMENT_ID'
+    eq_id_value = row.get(eq_id_col, eq_id).strip() if eq_id_col in row else eq_id
+    
+    # --- EQUIPMENT CLASS IDENTIFICATION ---
     
     # Create/retrieve equipment class from equipment name/type
     eq_class_id_map = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('equipmentClassId')
@@ -194,153 +233,128 @@ def process_equipment_and_class(
         eq_class_base_name = "GenericEquipment"
         eq_class_id_value = "GenericEquipment"  # Use generic value
     
-    # Optionally add the original EQUIPMENT_NAME as a label if we parsed
+    # Set proper label for equipment class - use the parsed/determined type name
+    # This is the primary label for EquipmentClass
+    eq_class_labels = [eq_class_base_name]
+    
+    # Optionally add the original EQUIPMENT_NAME as a supplementary label if we parsed
     if is_parsed_from_name and eq_class_id_value and eq_class_id_value != eq_class_base_name:
-        if eq_class_id_value not in eq_class_labels:
-            eq_class_labels.append(f"Source Name: {eq_class_id_value}")
-    # Optionally add name from dedicated name column if different from ID source and base name
-    elif eq_class_name_map and eq_class_name_map.get('column') != eq_class_col:
-        class_name_val = safe_cast(row.get(eq_class_name_map['column']), str)
-        if class_name_val and class_name_val not in eq_class_labels:
-             eq_class_labels.append(class_name_val)
-
-    eq_class_ind = get_or_create_individual(cls_EquipmentClass, eq_class_base_name, context.onto, all_created_individuals_by_uid, add_labels=eq_class_labels)
-
-    # Ensure the equipmentClassId data property is set with the correct base name
-    prop_equipmentClassId = context.get_prop("equipmentClassId")
-    if eq_class_ind and prop_equipmentClassId:
-        context.set_prop(eq_class_ind, "equipmentClassId", eq_class_base_name)
-        pop_logger.debug(f"Explicitly set equipmentClassId='{eq_class_base_name}' on individual {eq_class_ind.name}")
-
-    # Initialize sequence position to None
-    eq_class_pos = None
-
-    if eq_class_ind and pass_num == 1 and "EquipmentClass" in property_mappings:
-        # Get property for sequence position
-        prop_defaultSequencePosition = context.get_prop("defaultSequencePosition")
-        if not prop_defaultSequencePosition:
-            pop_logger.warning(f"Property 'defaultSequencePosition' not found in ontology. Sequence relationships won't be established.")
+        eq_class_labels.append(f"Source Name: {eq_class_id_value}")
+    
+    # --- EQUIPMENT CLASS INDIVIDUAL CREATION ---
+    
+    # Create the EquipmentClass individual using a stable identifier
+    try:
+        eq_class_ind = get_or_create_individual(
+            cls_EquipmentClass, 
+            eq_class_base_name, 
+            context.onto, 
+            all_created_individuals_by_uid, 
+            add_labels=eq_class_labels
+        )
         
-        # PRIORITY 1: First check if sequence position is already set on the individual
-        if prop_defaultSequencePosition:
-            current_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-            if current_pos is not None:
-                eq_class_pos = safe_cast(current_pos, int)
-                pop_logger.debug(f"Equipment class '{eq_class_base_name}' already has sequence position {eq_class_pos}")
-        
-        # PRIORITY 2: Check if there's a mapping for defaultSequencePosition in the data
-        sequence_pos_mapping = property_mappings.get('EquipmentClass', {}).get('data_properties', {}).get('defaultSequencePosition')
-        sequence_pos_column = sequence_pos_mapping.get('column') if sequence_pos_mapping else None
-        
-        # Try to get sequence position from mapped column if available and position not already set
-        if eq_class_pos is None and sequence_pos_column and sequence_pos_column in row:
-            raw_pos_from_data = row.get(sequence_pos_column)
-            # Use safe_cast to convert to integer
-            pos_from_data = safe_cast(raw_pos_from_data, int)
-            if pos_from_data is not None:
-                # Set the position directly from data
-                if prop_defaultSequencePosition:
-                    context.set_prop(eq_class_ind, "defaultSequencePosition", pos_from_data)
-                eq_class_pos = pos_from_data
-                pop_logger.info(f"Set sequence position {pos_from_data} for equipment class '{eq_class_base_name}' from column '{sequence_pos_column}'")
-            else:
-                pop_logger.debug(f"Column '{sequence_pos_column}' exists but value '{raw_pos_from_data}' could not be cast to int")
-        
-        # Apply all other mapped data properties
-        apply_data_property_mappings(eq_class_ind, property_mappings["EquipmentClass"], row, context, "EquipmentClass", pop_logger)
-        
-        # PRIORITY 3: If no position was set from mapped column, try config
-        if eq_class_pos is None:
-            # Check if position was set by apply_data_property_mappings
-            raw_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-            eq_class_pos = safe_cast(raw_pos, int) if raw_pos is not None else None
+        if not eq_class_ind:
+            pop_logger.error(f"Failed to create/retrieve EquipmentClass individual for '{eq_class_base_name}'")
             
-            # If still no position, try using the default from config
-            if eq_class_pos is None:
-                from ontology_generator.config import DEFAULT_EQUIPMENT_SEQUENCE
-                
-                # Try exact match first
-                if eq_class_base_name in DEFAULT_EQUIPMENT_SEQUENCE:
-                    default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(eq_class_base_name)
-                    pop_logger.info(f"Using default sequence position {default_pos} for equipment class '{eq_class_base_name}' from config.DEFAULT_EQUIPMENT_SEQUENCE")
-                    # Set the position in the individual
-                    if prop_defaultSequencePosition:
-                        context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
-                    eq_class_pos = default_pos
-                else:
-                    # Try to extract generic class (e.g., "Filler" from "FIPCO009_Filler")
-                    generic_class = None
-                    
-                    # Extract from name with underscore (FIPCO009_Filler)
-                    if '_' in eq_class_base_name:
-                        parts = eq_class_base_name.split('_')
-                        class_part = parts[-1]
-                        # Remove trailing digits
-                        generic_class = re.sub(r'\d+$', '', class_part)
-                    
-                    # If no generic class yet, try matching against known class types
-                    if not generic_class or generic_class not in DEFAULT_EQUIPMENT_SEQUENCE:
-                        for known_class in DEFAULT_EQUIPMENT_SEQUENCE.keys():
-                            if known_class in eq_class_base_name:
-                                generic_class = known_class
-                                break
-                    
-                    # Check if we found a generic class in DEFAULT_EQUIPMENT_SEQUENCE
-                    if generic_class and generic_class in DEFAULT_EQUIPMENT_SEQUENCE:
-                        default_pos = DEFAULT_EQUIPMENT_SEQUENCE.get(generic_class)
-                        pop_logger.info(f"Using default sequence position {default_pos} for generic class '{generic_class}' extracted from '{eq_class_base_name}'")
-                        # Set the position in the individual
-                        if prop_defaultSequencePosition:
-                            context.set_prop(eq_class_ind, "defaultSequencePosition", default_pos)
-                        eq_class_pos = default_pos
-                    else:
-                        pop_logger.warning(f"No sequence position available for equipment class '{eq_class_base_name}' - not in mapped column or config defaults")
-                        pop_logger.warning(f"Add '{eq_class_base_name}' to DEFAULT_EQUIPMENT_SEQUENCE in config.py with an appropriate position value")
+        # Ensure the equipmentClassId data property is set with the correct base name
+        prop_equipmentClassId = context.get_prop("equipmentClassId")
+        if eq_class_ind and prop_equipmentClassId:
+            context.set_prop(eq_class_ind, "equipmentClassId", eq_class_base_name)
+            pop_logger.debug(f"Explicitly set equipmentClassId='{eq_class_base_name}' on individual {eq_class_ind.name}")
         
-        # Prepare info for tracking
-        eq_class_info_out = (eq_class_base_name, eq_class_ind, eq_class_pos)
+    except Exception as e:
+        pop_logger.error(f"Error creating EquipmentClass individual for '{eq_class_base_name}': {e}")
+        eq_class_ind = None
+    
+    # --- EQUIPMENT INDIVIDUAL CREATION ---
+    
+    # Create descriptive labels for Equipment individual
+    equipment_labels = []
+    
+    # Get line information for more descriptive labels
+    line_id = None
+    if line_ind:
+        line_id = getattr(line_ind, "lineId", None)
+        if not line_id and hasattr(line_ind, "name"):
+            # Extract from name if attribute not set
+            line_name = line_ind.name
+            if "ProductionLine_" in line_name:
+                line_id = line_name.replace("ProductionLine_", "")
+    
+    # Build the primary descriptive label
+    if eq_id_value and eq_class_base_name and line_id:
+        equipment_labels.append(f"Equipment {eq_id_value} ({eq_class_base_name}) on Line {line_id}")
+    elif eq_id_value and eq_class_base_name:
+        equipment_labels.append(f"Equipment {eq_id_value} ({eq_class_base_name})")
+    elif eq_id_value:
+        equipment_labels.append(f"Equipment {eq_id_value}")
+    
+    # Add equipment name as secondary label if available and different from ID
+    if eq_name and eq_name != eq_id_value:
+        equipment_labels.append(eq_name)
+    
+    # Always append the ID as a label for easy reference
+    if eq_id_value not in equipment_labels:
+        equipment_labels.append(eq_id_value)
+
+    # Create equipment individual using ID as the base identifier
+    # This ensures uniqueness even when multiple equipment of the same class exist
+    try:
+        eq_ind = get_or_create_individual(
+            cls_Equipment, 
+            eq_id_value, 
+            context.onto, 
+            all_created_individuals_by_uid, 
+            add_labels=equipment_labels
+        )
         
-        # Add some validation logging to verify the position was properly set
-        final_pos = getattr(eq_class_ind, "defaultSequencePosition", None)
-        if final_pos is not None:
-            pop_logger.debug(f"Verified equipment class '{eq_class_base_name}' has defaultSequencePosition set to {final_pos}")
-        else:
-            pop_logger.warning(f"Equipment class '{eq_class_base_name}' still has no defaultSequencePosition after all attempts")
+        if not eq_ind:
+            pop_logger.error(f"Failed to create/retrieve Equipment individual for '{eq_id_value}'")
+            return None, None, None
             
-        # Create equipment individual if we have a class
-        eq_ind = get_or_create_individual(cls_Equipment, eq_id_value, context.onto, all_created_individuals_by_uid)
+        # Set the equipmentId data property
+        prop_equipmentId = context.get_prop("equipmentId")
+        if eq_ind and prop_equipmentId:
+            context.set_prop(eq_ind, "equipmentId", eq_id_value)
+            pop_logger.debug(f"Set equipmentId='{eq_id_value}' on individual {eq_ind.name}")
         
-        # Set basic equipment properties
-        if eq_ind and pass_num == 1 and "Equipment" in property_mappings:
-            # Set equipmentId property
-            prop_equipmentId = context.get_prop("equipmentId")
-            if prop_equipmentId:
-                context.set_prop(eq_ind, "equipmentId", eq_id_value)
-            
-            # Link equipment to equipment class
+        # Set the equipmentName data property
+        prop_equipmentName = context.get_prop("equipmentName")
+        if eq_ind and prop_equipmentName and eq_name:
+            context.set_prop(eq_ind, "equipmentName", eq_name)
+            pop_logger.debug(f"Set equipmentName='{eq_name}' on individual {eq_ind.name}")
+        
+        # Link Equipment to EquipmentClass via memberOfClass (only in pass 1)
+        if pass_num == 1 and eq_ind and eq_class_ind:
             prop_memberOfClass = context.get_prop("memberOfClass")
-            if prop_memberOfClass and eq_class_ind:
+            if prop_memberOfClass:
+                # Set the memberOfClass relationship
                 context.set_prop(eq_ind, "memberOfClass", eq_class_ind)
-                pop_logger.debug(f"Linked Equipment {eq_ind.name} to EquipmentClass {eq_class_ind.name}")
-            
-            # Link equipment to production line
-            if line_ind:
-                prop_isPartOfProductionLine = context.get_prop("isPartOfProductionLine")
-                if prop_isPartOfProductionLine:
-                    # Store line ID in Equipment for use in post-processing
-                    line_id = getattr(line_ind, "lineId", line_ind.name)
+                pop_logger.debug(f"Linked Equipment {eq_ind.name} to EquipmentClass {eq_class_ind.name} via memberOfClass")
+            else:
+                pop_logger.error(f"Cannot link Equipment to EquipmentClass: memberOfClass property not found")
+        
+        # Link Equipment to ProductionLine via isPartOfProductionLine (only in pass 1)
+        if pass_num == 1 and eq_ind and line_ind:
+            prop_isPartOfProductionLine = context.get_prop("isPartOfProductionLine")
+            if prop_isPartOfProductionLine:
+                context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
+                pop_logger.debug(f"Linked Equipment {eq_ind.name} to ProductionLine {line_ind.name} via isPartOfProductionLine")
+                
+                # Also set the associatedLineId data property for easy reference
+                prop_associatedLineId = context.get_prop("associatedLineId")
+                if prop_associatedLineId and line_id:
                     context.set_prop(eq_ind, "associatedLineId", line_id)
-                    
-                    # Link equipment to line
-                    context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
-                    pop_logger.debug(f"Linked Equipment {eq_ind.name} to ProductionLine {line_ind.name}")
-            
-            # Apply mapped data properties
-            apply_data_property_mappings(eq_ind, property_mappings["Equipment"], row, context, "Equipment", pop_logger)
-            
-            # Only apply object properties in Pass 2
-            if pass_num == 2:
-                apply_object_property_mappings(eq_ind, property_mappings["Equipment"], row, context, "Equipment", pop_logger)
-
-    # Return both created/retrieved individuals
+                    pop_logger.debug(f"Set associatedLineId='{line_id}' on Equipment {eq_ind.name}")
+    
+    except Exception as e:
+        pop_logger.error(f"Error creating Equipment individual for '{eq_id_value}': {e}")
+        eq_ind = None
+    
+    # Prepare info for tracking - we don't need to track defaultSequencePosition anymore
+    if eq_class_base_name and eq_class_ind:
+        eq_class_info_out = (eq_class_base_name, eq_class_ind, None)
+    else:
+        eq_class_info_out = None
+    
     return eq_ind, eq_class_ind, eq_class_info_out

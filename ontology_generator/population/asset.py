@@ -74,7 +74,20 @@ def process_asset_hierarchy(
         pop_logger.error(f"Missing or invalid Plant ID in column '{plant_id_col}'. Skipping Plant creation.")
         return None, None, None, None  # Plant is essential
 
-    plant_labels = [plant_id]
+    # Create descriptive labels for Plant
+    plant_labels = []
+    
+    # Primary label: Plant ID (required)
+    plant_labels.append(plant_id)
+    
+    # Add descriptive label if available
+    plant_name_map = property_mappings.get('Plant', {}).get('data_properties', {}).get('plantName')
+    if plant_name_map and plant_name_map.get('column'):
+        plant_name = safe_cast(row.get(plant_name_map.get('column')), str)
+        if plant_name and plant_name != plant_id:
+            plant_labels.append(f"{plant_name}")
+    
+    # Create or retrieve Plant individual using plant_id as the base identifier
     plant_ind = get_or_create_individual(cls_Plant, plant_id, context.onto, all_created_individuals_by_uid, add_labels=plant_labels)
 
     if plant_ind and pass_num == 1 and "Plant" in property_mappings:
@@ -82,11 +95,6 @@ def process_asset_hierarchy(
     elif not plant_ind:
          pop_logger.error(f"Failed to create/retrieve Plant individual for ID '{plant_id}'. Cannot proceed with hierarchy.")
          return None, None, None, None
-    # elif pass_num == 1: # Mappings missing or wrong pass
-    #      pop_logger.warning(f"No property mappings found for Plant '{plant_id}' or wrong pass ({pass_num}). Only basic individual created/retrieved.")
-    #      # Ensure ID is set if mapping was missing but creation succeeded (redundant if get_or_create works)
-    #      # if not getattr(plant_ind, "plantId", None):
-    #      #     context.set_prop(plant_ind, "plantId", plant_id)
 
     # --- Area ---
     area_id_map = property_mappings.get('Area', {}).get('data_properties', {}).get('areaId')
@@ -101,27 +109,26 @@ def process_asset_hierarchy(
         return plant_ind, None, None, None
     area_id = safe_cast(raw_area_id, str)
 
-    # Need plant_id for unique name
-    plant_id_for_name = plant_id # Already checked plant_id exists
-    area_unique_base = f"{plant_id_for_name}_{area_id}"
-    area_labels = [area_id]
-    area_ind = get_or_create_individual(cls_Area, area_unique_base, context.onto, all_created_individuals_by_uid, add_labels=area_labels)
+    # Create descriptive labels for Area
+    area_labels = []
+    
+    # Primary label: Area ID (required)
+    area_labels.append(area_id)
+    
+    # Add descriptive label with hierarchy information
+    if plant_id:
+        area_labels.append(f"Area {area_id} in Plant {plant_id}")
+    
+    # Create or retrieve Area individual using area_id as the base identifier
+    area_ind = get_or_create_individual(cls_Area, area_id, context.onto, all_created_individuals_by_uid, add_labels=area_labels)
 
     if area_ind and pass_num == 1 and "Area" in property_mappings:
         # Linking to Plant (locatedInPlant) happens in Pass 2 via apply_object_property_mappings
         apply_data_property_mappings(area_ind, property_mappings["Area"], row, context, "Area", pop_logger)
     elif not area_ind:
-         pop_logger.warning(f"Failed to create/retrieve Area individual for base '{area_unique_base}'. Skipping ProcessCell/Line creation.")
+         pop_logger.warning(f"Failed to create/retrieve Area individual for ID '{area_id}'. Skipping ProcessCell/Line creation.")
          # Return what we have so far
          return plant_ind, None, None, None
-    # elif pass_num == 1: # Mappings missing or wrong pass
-    #      pop_logger.warning(f"No property mappings found for Area '{area_id}' or wrong pass ({pass_num}). Only basic individual created/retrieved.")
-         # Ensure ID is set and link to plant if possible (DEFER LINKING)
-         # if not getattr(area_ind, "areaId", None):
-         #     context.set_prop(area_ind, "areaId", area_id)
-         # if plant_ind and not getattr(area_ind, "locatedInPlant", None):
-         #     pop_logger.warning(f"Manually linking Area '{area_id}' to Plant '{plant_id}' due to missing mapping.") # DEFER/REMOVE
-         #     context.set_prop(area_ind, "locatedInPlant", plant_ind) # DEFER/REMOVE
 
     # --- ProcessCell ---
     pcell_id_map = property_mappings.get('ProcessCell', {}).get('data_properties', {}).get('processCellId')
@@ -135,26 +142,27 @@ def process_asset_hierarchy(
         pop_logger.warning(f"Missing or invalid ProcessCell ID in column '{pcell_id_col}'. Skipping ProcessCell/Line creation.")
         return plant_ind, area_ind, None, None
 
-    # Need area_unique_base for unique name
-    area_base_for_name = area_unique_base # Already checked area_unique_base exists
-    pcell_unique_base = f"{area_base_for_name}_{pcell_id}"
-    pcell_labels = [pcell_id]
-    pcell_ind = get_or_create_individual(cls_ProcessCell, pcell_unique_base, context.onto, all_created_individuals_by_uid, add_labels=pcell_labels)
+    # Create descriptive labels for ProcessCell
+    pcell_labels = []
+    
+    # Primary label: ProcessCell ID (required)
+    pcell_labels.append(pcell_id)
+    
+    # Add descriptive label with hierarchy information
+    if plant_id and area_id:
+        pcell_labels.append(f"Process Cell {pcell_id} in Area {area_id}, Plant {plant_id}")
+    elif area_id:
+        pcell_labels.append(f"Process Cell {pcell_id} in Area {area_id}")
+    
+    # Create or retrieve ProcessCell individual using pcell_id as the base identifier
+    pcell_ind = get_or_create_individual(cls_ProcessCell, pcell_id, context.onto, all_created_individuals_by_uid, add_labels=pcell_labels)
 
     if pcell_ind and pass_num == 1 and "ProcessCell" in property_mappings:
         # Linking to Area (partOfArea) happens in Pass 2
         apply_data_property_mappings(pcell_ind, property_mappings["ProcessCell"], row, context, "ProcessCell", pop_logger)
     elif not pcell_ind:
-        pop_logger.warning(f"Failed to create/retrieve ProcessCell individual for base '{pcell_unique_base}'. Skipping Line creation.")
+        pop_logger.warning(f"Failed to create/retrieve ProcessCell individual for ID '{pcell_id}'. Skipping Line creation.")
         return plant_ind, area_ind, None, None
-    # elif pass_num == 1: # Mappings missing or wrong pass
-    #     pop_logger.warning(f"No property mappings found for ProcessCell '{pcell_id}' or wrong pass ({pass_num}). Only basic individual created/retrieved.")
-        # Ensure ID is set and link to area if possible (DEFER LINKING)
-        # if not getattr(pcell_ind, "processCellId", None):
-        #     context.set_prop(pcell_ind, "processCellId", pcell_id)
-        # if area_ind and not getattr(pcell_ind, "partOfArea", None):
-        #     pop_logger.warning(f"Manually linking ProcessCell '{pcell_id}' to Area '{area_id}' due to missing mapping.") # DEFER/REMOVE
-        #     context.set_prop(pcell_ind, "partOfArea", area_ind) # DEFER/REMOVE
 
     # --- ProductionLine ---
     line_id_map = property_mappings.get('ProductionLine', {}).get('data_properties', {}).get('lineId')
@@ -169,10 +177,26 @@ def process_asset_hierarchy(
         return plant_ind, area_ind, pcell_ind, None # Return created individuals up to this point
     else:
         line_id = safe_cast(raw_line_id, str)
-        # Need pcell_unique_base for unique name
-        pcell_base_for_name = pcell_unique_base # Already checked pcell_unique_base exists
-        line_unique_base = f"{pcell_base_for_name}_{line_id}"
-        line_labels = [line_id]
+        
+        # Use the line_id directly as the unique identifier for ProductionLine
+        # This follows the naming convention: #ProductionLine_{LINE_NAME}
+        line_unique_base = line_id
+        
+        # Create descriptive labels for the ProductionLine
+        line_labels = []
+        
+        # Primary label: Line ID (required)
+        line_labels.append(line_id)
+        
+        # Add a more descriptive label if we have plant/area information
+        if plant_id and area_id and pcell_id:
+            descriptive_label = f"Production Line {line_id} in {pcell_id}, {area_id}, {plant_id}"
+            line_labels.append(descriptive_label)
+        elif plant_id and pcell_id:
+            descriptive_label = f"Production Line {line_id} in {pcell_id}, {plant_id}"
+            line_labels.append(descriptive_label)
+        
+        # Create or retrieve the ProductionLine individual
         line_ind = get_or_create_individual(cls_ProductionLine, line_unique_base, context.onto, all_created_individuals_by_uid, add_labels=line_labels)
 
         if line_ind and pass_num == 1 and "ProductionLine" in property_mappings:
@@ -237,16 +261,25 @@ def process_material(
         pop_logger.debug(f"No Material ID found in column '{mat_id_col}', skipping material creation.")
         return None
 
-    # Try to get description for label
+    # Create descriptive labels for Material
+    mat_labels = []
+    
+    # Try to get description for primary label
     mat_desc_map = property_mappings['Material'].get('data_properties', {}).get('materialDescription')
     mat_desc = None
     if mat_desc_map and mat_desc_map.get('column'):
-         mat_desc = safe_cast(row.get(mat_desc_map['column']), str)
-
-    mat_labels = [mat_id]
+        mat_desc = safe_cast(row.get(mat_desc_map['column']), str)
+    
+    # Primary label: Material description if available, otherwise ID
     if mat_desc:
         mat_labels.append(mat_desc)
+    mat_labels.append(f"Material {mat_id}")
+    
+    # Always ensure the ID is in the labels
+    if mat_id and f"ID:{mat_id}" not in mat_labels:
+        mat_labels.append(f"ID:{mat_id}")
 
+    # Create or retrieve Material individual using mat_id as the base identifier
     mat_ind = get_or_create_individual(cls_Material, mat_id, context.onto, all_created_individuals_by_uid, add_labels=mat_labels)
     if not mat_ind:
         pop_logger.error(f"Failed to create/retrieve Material individual for ID '{mat_id}'.")
@@ -255,10 +288,6 @@ def process_material(
     # Apply data properties in Pass 1
     if pass_num == 1:
         apply_data_property_mappings(mat_ind, property_mappings["Material"], row, context, "Material", pop_logger)
-        # Minimal check if ID wasn't set by mapping (redundant?)
-        # if not getattr(mat_ind, "materialId", None):
-        #      pop_logger.warning(f"Material.materialId was not set via mappings for {mat_id}, setting manually.")
-        #      context.set_prop(mat_ind, "materialId", mat_id)
 
     return mat_ind
 
@@ -306,16 +335,27 @@ def process_production_request(
         pop_logger.debug(f"No Production Request ID in column '{req_id_col}', skipping request creation.")
         return None
 
-    # Try to get description for label
+    # Create descriptive labels for ProductionRequest
+    req_labels = []
+    
+    # Try to get description for primary label
     req_desc_map = property_mappings['ProductionRequest'].get('data_properties', {}).get('requestDescription')
     req_desc = None
     if req_desc_map and req_desc_map.get('column'):
-         req_desc = safe_cast(row.get(req_desc_map['column']), str)
-
-    req_labels = [f"ID:{req_id}"]
+        req_desc = safe_cast(row.get(req_desc_map['column']), str)
+    
+    # Primary label: request description if available
     if req_desc:
-        req_labels.insert(0, req_desc) # Prepend description if available
-
+        req_labels.append(req_desc)
+    
+    # Add request ID-based label
+    req_labels.append(f"Production Request {req_id}")
+    
+    # Always ensure ID is in the labels
+    if f"ID:{req_id}" not in req_labels:
+        req_labels.append(f"ID:{req_id}")
+    
+    # Create or retrieve ProductionRequest individual using req_id as the base identifier
     req_ind = get_or_create_individual(cls_ProductionRequest, req_id, context.onto, all_created_individuals_by_uid, add_labels=req_labels)
     if not req_ind:
         pop_logger.error(f"Failed to create/retrieve ProductionRequest individual for ID '{req_id}'.")
@@ -324,11 +364,5 @@ def process_production_request(
     # Apply data properties in Pass 1
     if pass_num == 1:
         apply_data_property_mappings(req_ind, property_mappings["ProductionRequest"], row, context, "ProductionRequest", pop_logger)
-        # Minimal check if ID wasn't set by mapping
-        # if not getattr(req_ind, "requestId", None):
-        #      pop_logger.warning(f"ProductionRequest.requestId was not set via mappings for {req_id}, setting manually.")
-        #      context.set_prop(req_ind, "requestId", req_id)
-
-    # Note: Linking happens in Pass 2 via EventRecord mappings
 
     return req_ind

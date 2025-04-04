@@ -75,27 +75,64 @@ def safe_cast(value: Any, target_type: Type[T], default: Optional[T] = None) -> 
         if target_type is datetime:
             # --- Use dateutil.parser for robust parsing ---
             try:
+                # Check for common problematic patterns first
+                if value_str.lower() in ['', 'null', 'none', 'na', 'n/a', '?']:
+                    pop_logger.warning(f"Empty or null datetime value: {original_value_repr}")
+                    return default
+                
+                # Check for common malformed date patterns
+                if re.match(r'^\d{1,2}/\d{1,2}$', value_str):  # Just MM/DD with no year
+                    pop_logger.warning(f"Incomplete date without year: {original_value_repr}")
+                    return default
+                
+                # Additional cleanup for common issues that dateutil might misinterpret
+                cleaned_value = value_str
+                # Remove any double spaces that might confuse the parser
+                cleaned_value = re.sub(r'\s+', ' ', cleaned_value).strip()
+                
                 # No need for extensive pre-cleaning or format list with dateutil
                 # It handles various formats, including spaces and timezones
-                parsed_dt = dateutil_parser.parse(value_str)
+                parsed_dt = dateutil_parser.parse(cleaned_value)
+
+                # Capture parsing details for diagnostic logging
+                has_timezone = parsed_dt.tzinfo is not None
+                timezone_name = str(parsed_dt.tzinfo) if has_timezone else "None"
 
                 # dateutil returns an AWARE datetime if offset is present.
                 # owlready2 stores naive datetimes.
                 # Maintain existing behavior: make it naive (loses original offset info).
-                if parsed_dt.tzinfo:
-                    pop_logger.debug(f"Parsed datetime {original_value_repr} with timezone {parsed_dt.tzinfo}, storing as naive datetime.")
+                if has_timezone:
+                    pop_logger.debug(f"Parsed datetime {original_value_repr} with timezone {timezone_name}, storing as naive datetime.")
                     parsed_dt = parsed_dt.replace(tzinfo=None)
                 else:
                     pop_logger.debug(f"Parsed datetime {original_value_repr} without timezone, storing as naive datetime.")
 
-                pop_logger.debug(f"Successfully parsed datetime {original_value_repr} using dateutil -> {parsed_dt}")
+                pop_logger.debug(f"Successfully parsed datetime '{original_value_repr}' → {parsed_dt}")
                 return parsed_dt
 
             except (ParserError, ValueError, TypeError) as e:  # Catch errors from dateutil and potential downstream issues
-                pop_logger.warning(f"Could not parse datetime string {original_value_repr} using dateutil parser: {e}")
+                # Provide more detailed diagnostic information about the failed parse
+                pop_logger.warning(f"Could not parse datetime '{original_value_repr}': {e}")
+                
+                # Try some common patterns explicitly as a fallback
+                try:
+                    # Try to identify the pattern for better error reporting
+                    if '/' in value_str:
+                        pattern = "MM/DD/YYYY or DD/MM/YYYY"
+                    elif '-' in value_str:
+                        pattern = "YYYY-MM-DD"
+                    elif '.' in value_str:
+                        pattern = "DD.MM.YYYY"
+                    else:
+                        pattern = "unknown"
+                    
+                    pop_logger.warning(f"Original datetime string appears to use {pattern} format. Check data source for consistency.")
+                except:
+                    pass
+                    
                 return default
             except Exception as e:  # Catch any other unexpected errors
-                pop_logger.error(f"Unexpected error parsing datetime {original_value_repr} with dateutil: {e}", exc_info=False)
+                pop_logger.error(f"Unexpected error parsing datetime '{original_value_repr}': {e}", exc_info=False)
                 return default
             # --- End of dateutil parsing block ---
 

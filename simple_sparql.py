@@ -33,13 +33,17 @@ graph = onto.world.as_rdflib_graph()
 query = """
 PREFIX onto: <http://example.com/manufacturing_ontology.owl#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?individual 
+SELECT ?reasonDesc (COUNT(?reasonDesc) AS ?count)
 WHERE {
-    ?individual rdf:type onto:Area .
+  ?event rdf:type onto:EventRecord .
+  ?event onto:aeModelCategory "Unplanned" . # Note: Assumes "Unplanned" is the exact string.
+  ?event onto:eventHasReason ?reason .
+  ?reason onto:reasonDescription ?reasonDesc .
 }
-LIMIT 10
+GROUP BY ?reasonDesc
+ORDER BY DESC(?count)
+LIMIT 5
 """
 
 # Execute the query

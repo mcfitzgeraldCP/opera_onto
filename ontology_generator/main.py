@@ -388,11 +388,14 @@ def _run_analysis_and_optimization(onto, defined_classes, specification, optimiz
         # Continue despite analysis failure
 
 def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
-    logger.info("Setting up sequence relationships...")
+    logger.info("Setting up equipment instance relationships...")
     try:
+        # Remove class-level sequence relationship setup
         setup_equipment_sequence_relationships(onto, eq_class_positions, defined_classes, defined_properties, created_eq_classes)
+        
+        # Only set up instance-level relationships
         setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
-        logger.info("Sequence relationship setup complete.")
+        logger.info("Equipment instance sequence relationship setup complete.")
         
         # Add equipment sequence report generation
         sequence_report = generate_equipment_sequence_report(onto)
