@@ -218,9 +218,12 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 logger.info(f"Skipping deprecated class-level property: {prop_name}")
                 continue
             
-            # Ensure instance-level equipment sequence properties are properly created
-            if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf", "isParallelWith"]:
-                logger.info(f"Creating instance-level equipment property: {prop_name}")
+            # TKT-008: Skip redundant definition of instance-level sequence properties
+            # Since we already define these above if needed, just continue when they appear in the spec
+            if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf", "isParallelWith", 
+                             "isPartOfProductionLine", "memberOfClass"]:
+                logger.debug(f"Skipping duplicate definition of instance-level property: {prop_name}")
+                continue
                 
             prop_type_str = row.get(SPEC_COL_PROP_TYPE, '').strip()
             domain_str = row.get(SPEC_COL_DOMAIN, '').strip()

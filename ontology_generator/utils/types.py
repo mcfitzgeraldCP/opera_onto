@@ -205,5 +205,6 @@ def sanitize_name(name: Any) -> str:
     if not safe_name:
         fallback_hash = abs(hash(name_str))  # Hash the original string
         safe_name = f"UnnamedData_{fallback_hash}"
+        pop_logger.warning(f"Sanitized name for '{name_str}' became empty or invalid. Using fallback hash: {safe_name}")
         
     return safe_name

@@ -321,6 +321,13 @@ def apply_data_property_mappings(
     data_prop_mappings = mappings.get('data_properties', {})
 
     for prop_name, details in data_prop_mappings.items():
+        # TKT-003: Skip properties with no column specified
+        # These are programmatic/config properties like sequencePosition
+        # that will be populated elsewhere (not from data rows)
+        if 'column' not in details:
+            logger.debug(f"Skipping programmatic/config property {entity_name}.{prop_name} - no column specified in mapping")
+            continue
+            
         col_name = details.get('column')
         # Get cast type from mapping, default to string
         data_type_str = details.get('data_type', 'xsd:string')

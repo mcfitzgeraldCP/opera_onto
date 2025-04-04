@@ -27,7 +27,6 @@ from ontology_generator.definition import (
     parse_property_mappings, validate_property_mappings, read_data
 )
 from ontology_generator.population import (
-    setup_equipment_sequence_relationships, # Need these post-population steps
     setup_equipment_instance_relationships,
     link_equipment_events_to_line_events
 )
@@ -211,12 +210,19 @@ def populate_ontology_from_data(onto: Ontology,
 
     main_logger.info(f"Pass 2 Complete. Rows successfully linked: {pass2_successful_rows}, Rows failed/skipped linking: {pass2_failed_rows}.")
 
-    # Determine overall failed count (consider a row failed if it failed either pass?)
-    # For now, return Pass 1 failure count as it indicates primary data issues.
-    # The warnings originally reported were link failures (Pass 2 type issues).
-    final_failed_rows = pass1_failed_rows # Or potentially max(pass1_failed_rows, pass2_failed_rows) or other logic
+    # Determine overall failed count - TKT-006: Improve failure reporting
+    final_failed_rows = pass1_failed_rows  # Use the Pass 1 failures as the primary metric
 
-    main_logger.info(f"Ontology population complete. Final failed row count (based on Pass 1): {final_failed_rows}.")
+    # Report both pass failures if they differ significantly
+    if pass2_failed_rows > pass1_failed_rows:
+        main_logger.warning(f"Note: Pass 2 had {pass2_failed_rows - pass1_failed_rows} additional failures during linking phase.")
+    
+    if final_failed_rows > 0:
+        failure_rate = (final_failed_rows / len(data_rows)) * 100
+        main_logger.info(f"Ontology population complete with {final_failed_rows} failed rows ({failure_rate:.1f}% failure rate).")
+    else:
+        main_logger.info("Ontology population complete. All rows processed successfully.")
+        
     # Return collected contexts from Pass 1 and the registry
     return final_failed_rows, created_equipment_class_inds, equipment_class_positions, created_events_context, all_created_individuals_by_uid
 
@@ -390,9 +396,6 @@ def _run_analysis_and_optimization(onto, defined_classes, specification, optimiz
 def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
     logger.info("Setting up equipment instance relationships...")
     try:
-        # Remove class-level sequence relationship setup
-        setup_equipment_sequence_relationships(onto, eq_class_positions, defined_classes, defined_properties, created_eq_classes)
-        
         # Only set up instance-level relationships
         setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
         logger.info("Equipment instance sequence relationship setup complete.")

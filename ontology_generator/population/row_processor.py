@@ -49,6 +49,7 @@ def process_single_data_row_pass1(
     event_context = None
     eq_class_info = None
     success = True # Assume success unless critical failure
+    critical_event_failure = False # TKT-006: Track critical failures in event processing
 
     try:
         # Add row_num to the row dictionary for use by downstream processors
@@ -102,7 +103,14 @@ def process_single_data_row_pass1(
             row_num=row_num  # Pass the actual row number explicitly
         )
         created_inds_this_row.update(event_related_inds)
-        if event_context_out: event_context = event_context_out
+        if event_context_out: 
+            event_context = event_context_out
+        else:
+            # TKT-006: Track critical failure if we expected events but none were created
+            if 'EVENT_TYPE' in row and row.get('EVENT_TYPE', '').strip():
+                row_proc_logger.warning(f"Row {row_num} - Pass 1: Missing critical event context for event with type '{row.get('EVENT_TYPE')}'. Marking row as failed.")
+                critical_event_failure = True
+                # Don't return immediately, continue processing to gather all potential errors
 
         # --- 6. Process Person (Example) ---
         # person_ind = process_person(row, context, property_mappings, all_created_individuals_by_uid, pass_num=1)
@@ -118,6 +126,10 @@ def process_single_data_row_pass1(
         # Clean up row dictionary by removing temporary row_num 
         if 'row_num' in row:
             del row['row_num']
+
+    # TKT-006: Final success check including critical event failures
+    if critical_event_failure:
+        success = False
 
     return success, created_inds_this_row, event_context, eq_class_info
 
