@@ -18,7 +18,10 @@ from owlready2 import (
     ThingClass, FunctionalProperty, InverseFunctionalProperty, TransitiveProperty, SymmetricProperty, AsymmetricProperty, ReflexiveProperty, IrreflexiveProperty, Nothing
 )
 
-from ontology_generator.config import DEFAULT_ONTOLOGY_IRI, init_xsd_type_map, DEFAULT_EQUIPMENT_SEQUENCE
+from ontology_generator.config import (
+    DEFAULT_ONTOLOGY_IRI, init_xsd_type_map, DEFAULT_EQUIPMENT_SEQUENCE,
+    DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
+)
 from ontology_generator.utils.logging import (
     main_logger, configure_logging, analysis_logger
 )
@@ -409,11 +412,11 @@ def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, 
         logger.error(f"Error during sequence relationship setup: {seq_exc}", exc_info=True)
         # Log error but continue
 
-def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger):
+def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger, event_buffer_minutes=None):
     logger.info("Linking equipment events to line events...")
     try:
         links_made = link_equipment_events_to_line_events(
-            onto, created_events_context, defined_classes, defined_properties
+            onto, created_events_context, defined_classes, defined_properties, event_buffer_minutes
         )
         logger.info(f"Event linking pass created {links_made} links.")
     except Exception as link_exc:
@@ -591,7 +594,8 @@ def main_ontology_generation(spec_file_path: str,
                              analyze_population: bool = True,
                              strict_adherence: bool = False,
                              skip_classes: List[str] = None,
-                             optimize_ontology: bool = False
+                             optimize_ontology: bool = False,
+                             event_buffer_minutes: Optional[int] = None
                             ) -> bool:
     """
     Main function to generate the ontology by orchestrating helper functions.
@@ -619,6 +623,7 @@ def main_ontology_generation(spec_file_path: str,
     args.strict_adherence = strict_adherence
     args.skip_classes = skip_classes
     args.optimize_ontology = optimize_ontology
+    args.event_buffer_minutes = event_buffer_minutes
 
     world = None
     onto = None
@@ -671,18 +676,20 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.warning("Skipping ontology population analysis as requested.")
 
         # 9. Setup Sequence Relationships (Optional)
-        if population_successful and created_eq_classes and eq_class_positions:
+        if population_successful and created_eq_classes:
              _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
         elif population_successful:
-             main_logger.warning("Skipping sequence relationship setup: No EquipmentClass info available.")
+             main_logger.warning("Skipping sequence relationship setup: No EquipmentClass individuals found during population.")
         # No action needed if population failed, handled by checks below
 
         # 10. Link Events (Optional)
-        if population_successful and created_events_context:
-            _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger)
-        elif population_successful:
-             main_logger.warning("Skipping event linking: No event context available.")
-        # No action needed if population failed
+        if created_events_context:
+            _link_equipment_events(
+                onto, created_events_context, defined_classes, defined_properties, 
+                main_logger, args.event_buffer_minutes
+            )
+        else:
+            main_logger.warning("No event context data available for linking. Event linking skipped.")
 
         # 11. Apply Reasoning (Optional)
         if args.reasoner and population_successful:
@@ -905,6 +912,8 @@ def main():
     parser.add_argument("--optimize", action="store_true", dest="optimize_ontology", help="Generate detailed optimization recommendations.")
     parser.add_argument("--test-mappings", action="store_true", help="Test the property mapping functionality only, without generating the ontology.")
     parser.add_argument("--analyze-sequences", metavar="OWL_FILE", help="Analyze equipment sequences in an existing ontology file.")
+    parser.add_argument("--event-buffer", type=int, default=None, metavar="MINUTES", 
+                       help=f"Time buffer in minutes for event linking (default: {DEFAULT_EVENT_LINKING_BUFFER_MINUTES}).")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG level) logging.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress INFO level logging.")
 
@@ -939,7 +948,8 @@ def main():
         analyze_population=args.analyze_population,
         strict_adherence=args.strict_adherence,
         skip_classes=args.skip_classes,
-        optimize_ontology=args.optimize_ontology
+        optimize_ontology=args.optimize_ontology,
+        event_buffer_minutes=args.event_buffer
     )
     
     # Exit with appropriate code

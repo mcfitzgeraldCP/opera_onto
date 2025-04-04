@@ -16,6 +16,16 @@ DEFAULT_ONTOLOGY_IRI = "http://example.com/manufacturing_ontology.owl"
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 SPEC_PARENT_CLASS_COLUMN = 'Parent Class'  # Column name for hierarchy definition
 
+# Event Linking Configuration
+# Buffer time (in minutes) to allow for temporal matching of equipment and line events
+# Allows equipment events to be linked even if they start slightly before/after line events
+# Higher values will capture more relationships but might introduce false positives
+DEFAULT_EVENT_LINKING_BUFFER_MINUTES = 5
+
+# Default duration (in hours) to assume for events with missing end times
+# Used for temporal matching when end times are not available in the source data
+DEFAULT_EVENT_DURATION_HOURS = 2
+
 # -----------------------------------------------------------------------------
 # SPECIFICATION COLUMN NAMES
 # -----------------------------------------------------------------------------

@@ -220,7 +220,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             
             # TKT-008: Skip redundant definition of instance-level sequence properties
             # Since we already define these above if needed, just continue when they appear in the spec
-            if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf", "isParallelWith", 
+            if prop_name in ["sequencePosition", "isImmediatelyUpstreamOf", "isImmediatelyDownstreamOf",
                              "isPartOfProductionLine", "memberOfClass"]:
                 logger.debug(f"Skipping duplicate definition of instance-level property: {prop_name}")
                 continue

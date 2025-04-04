@@ -55,6 +55,14 @@ def setup_equipment_instance_relationships(onto: Ontology,
         equipment_class_positions: Dictionary mapping equipment class names to sequence positions
     """
     pop_logger.info("Setting up INSTANCE-LEVEL equipment relationships within production lines...")
+    
+    # Log about equipment class positions for diagnostics
+    if not equipment_class_positions:
+        pop_logger.warning("Equipment class positions dictionary is empty. We'll still process equipment instances that have sequence positions set directly.")
+    else:
+        pop_logger.info(f"Using {len(equipment_class_positions)} equipment class positions for processing.")
+        for class_name, position in sorted(equipment_class_positions.items(), key=lambda x: x[1]):
+            pop_logger.debug(f"  • Class '{class_name}' has position {position}")
 
     # Get context for properties/classes
     context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)

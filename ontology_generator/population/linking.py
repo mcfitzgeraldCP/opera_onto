@@ -10,11 +10,13 @@ from typing import Dict, List, Tuple, Set, Optional
 from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 
 from ontology_generator.utils.logging import link_logger
+from ontology_generator.config import DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
 
 def link_equipment_events_to_line_events(onto: Ontology,
                                         created_events_context: List[Tuple[Thing, Thing, str]],
                                         defined_classes: Dict[str, ThingClass],
-                                        defined_properties: Dict[str, PropertyClass]) -> int:
+                                        defined_properties: Dict[str, PropertyClass],
+                                        event_buffer_minutes: Optional[int] = None) -> int:
     """
     Second pass function to link equipment EventRecords to their containing line EventRecords,
     using relaxed temporal containment logic.
@@ -28,6 +30,8 @@ def link_equipment_events_to_line_events(onto: Ontology,
                                 where resource_type is "Equipment" or "Line"
         defined_classes: Dictionary of defined classes
         defined_properties: Dictionary of defined properties
+        event_buffer_minutes: Optional time buffer in minutes for temporal linking,
+                             overrides the default value if provided
         
     Returns:
         The number of links created
@@ -55,14 +59,14 @@ def link_equipment_events_to_line_events(onto: Ontology,
     # --- Configure Linking Parameters ---
     # Time buffer for edge cases: allows equipment events that start slightly before/after line events
     # This helps account for minor clock sync issues or timing discrepancies
-    TIME_BUFFER_MINUTES = 5
+    TIME_BUFFER_MINUTES = event_buffer_minutes if event_buffer_minutes is not None else DEFAULT_EVENT_LINKING_BUFFER_MINUTES
     time_buffer = timedelta(minutes=TIME_BUFFER_MINUTES)
     
     # Default duration to assume for events with missing end times
-    DEFAULT_EVENT_DURATION_HOURS = 2
-    default_duration = timedelta(hours=DEFAULT_EVENT_DURATION_HOURS)
+    DEFAULT_DURATION_HOURS = DEFAULT_EVENT_DURATION_HOURS
+    default_duration = timedelta(hours=DEFAULT_DURATION_HOURS)
     
-    link_logger.info(f"Using temporal linking parameters: Buffer={TIME_BUFFER_MINUTES} minutes, Default Duration={DEFAULT_EVENT_DURATION_HOURS} hours")
+    link_logger.info(f"Using temporal linking parameters: Buffer={TIME_BUFFER_MINUTES} minutes, Default Duration={DEFAULT_DURATION_HOURS} hours")
 
     # --- Prepare Lookups ---
     line_events_by_line: Dict[Thing, List[Tuple[Thing, Optional[datetime], Optional[datetime]]]] = defaultdict(list)
@@ -244,10 +248,10 @@ def link_equipment_events_to_line_events(onto: Ontology,
             # Check if there are no line events at all for this line
             if not potential_parents:
                 failure_categories["no_line_events"] += 1
-                event_details["failure_reason"] = "No line events found for this line"
+                event_details["failure_reason"] = "No line-level events (EQUIPMENT_TYPE=Line) found or indexed for this line. Possible data limitation."
                 failed_eq_events.append(event_details)
                 failed_events += 1
-                link_logger.warning(f"Equipment event {eq_id} has no potential parent line events (line {line_ind.name} has no events)")
+                link_logger.warning(f"Equipment event {eq_id} has no potential parent line events. No line-level events (EQUIPMENT_TYPE=Line) were found/indexed for line {line_ind.name}. Verify source data.")
                 continue
                 
             # Track nearest line event for diagnostic purposes

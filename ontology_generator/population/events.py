@@ -481,21 +481,21 @@ def process_event_record(
         
         # 6. Link to Material if available and context equipment/line supports it
         if material_ind:
-            # Check for involvesMaterial property existence
-            involves_material_prop = context.get_prop("usesMaterial")
-            if involves_material_prop:
-                context.set_prop(event_ind, "usesMaterial", material_ind)
+            # Check for involvesMaterial property existence (using consumedMaterial)
+            consumed_material_prop = context.get_prop("consumedMaterial")
+            if consumed_material_prop:
+                context.set_prop(event_ind, "consumedMaterial", material_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'usesMaterial' not found. Cannot link event to material.")
+                pop_logger.warning(f"Row {row_num}: Property 'consumedMaterial' not found. Cannot link event to material.")
         
         # 7. Link to ProductionRequest if available
         if request_ind:
-            # Check for involvesRequest property existence
-            involves_request_prop = context.get_prop("forRequest")
-            if involves_request_prop:
-                context.set_prop(event_ind, "forRequest", request_ind)
+            # Check for involvesRequest property existence (using associatedRequest)
+            associated_request_prop = context.get_prop("associatedRequest")
+            if associated_request_prop:
+                context.set_prop(event_ind, "associatedRequest", request_ind)
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'forRequest' not found. Cannot link event to production request.")
+                pop_logger.warning(f"Row {row_num}: Property 'associatedRequest' not found. Cannot link event to production request.")
     
     # Create event context tuple for post-processing
     event_context = (event_ind, resource_ind, resource_type) if event_ind else None
