@@ -566,6 +566,70 @@ def generate_enhanced_sequence_report(onto: Ontology) -> str:
 
 
 ===========================================
+FILE: ontology_generator/analyze_unused_properties.py
+===========================================
+
+import csv
+import os
+import sys
+
+def parse_spec_file(spec_file_path):
+    all_properties = []
+    try:
+        with open(spec_file_path, 'r', newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                prop_name = row.get('Proposed OWL Property', '').strip()
+                if prop_name and prop_name != 'N/A':
+                    all_properties.append(prop_name)
+    except Exception as e:
+        print(f'Error parsing specification file: {e}')
+        sys.exit(1)
+    return all_properties
+
+def parse_data_file(data_file_path):
+    data_columns = []
+    try:
+        with open(data_file_path, 'r', newline='', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            headers = next(reader)
+            data_columns = [col.strip() for col in headers]
+    except Exception as e:
+        print(f'Error parsing data file: {e}')
+        sys.exit(1)
+    return data_columns
+
+def analyze_properties(spec_file_path, undefined_properties):
+    defined_properties = parse_spec_file(spec_file_path)
+    if isinstance(undefined_properties, str):
+        undefined_props_list = [p.strip() for p in undefined_properties.split(',')]
+    else:
+        undefined_props_list = undefined_properties
+    potentially_unused = set(defined_properties) - set(undefined_props_list)
+    print(f'Total properties defined in specification: {len(defined_properties)}')
+    print(f'Properties being requested by code: {len(undefined_props_list)}')
+    print(f'Properties defined but not accessed: {len(potentially_unused)}')
+    print('\nPotentially unused properties:')
+    for prop in sorted(potentially_unused):
+        print(f'- {prop}')
+    return potentially_unused
+
+def main():
+    if len(sys.argv) < 3:
+        print('Usage: python analyze_unused_properties.py <spec_file_path> <list_of_undefined_properties>')
+        print('Example: python analyze_unused_properties.py ../Ontology_specifications/OPERA_ISA95_OWL_ONT_V25.csv "prop1, prop2, prop3"')
+        sys.exit(1)
+    spec_file_path = sys.argv[1]
+    undefined_properties = sys.argv[2]
+    if not os.path.exists(spec_file_path):
+        print(f'Error: Specification file not found at: {spec_file_path}')
+        sys.exit(1)
+    unused_properties = analyze_properties(spec_file_path, undefined_properties)
+if __name__ == '__main__':
+    main()
+
+
+===========================================
 FILE: ontology_generator/config.py
 ===========================================
 
@@ -921,54 +985,66 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if not cls_Equipment:
                 logger.error('Equipment class not found. Cannot define instance-level sequence properties.')
             else:
-                prop_sequencePosition = types.new_class('sequencePosition', (DataProperty, FunctionalProperty))
-                prop_sequencePosition.domain = [cls_Equipment]
-                prop_sequencePosition.range = [int]
-                prop_sequencePosition.comment = ['Position of equipment instance in production sequence']
-                defined_properties['sequencePosition'] = prop_sequencePosition
+                with onto:
+
+                    class sequencePosition(DataProperty, FunctionalProperty):
+                        domain = [cls_Equipment]
+                        range = [int]
+                        comment = ['Position of equipment instance in production sequence']
+                defined_properties['sequencePosition'] = onto.sequencePosition
                 property_is_functional['sequencePosition'] = True
                 logger.info('Defined property: sequencePosition')
                 if cls_Equipment:
-                    prop_isImmediatelyUpstreamOf = types.new_class('isImmediatelyUpstreamOf', (ObjectProperty,))
-                    prop_isImmediatelyUpstreamOf.domain = [cls_Equipment]
-                    prop_isImmediatelyUpstreamOf.range = [cls_Equipment]
-                    prop_isImmediatelyUpstreamOf.comment = ['Links to the immediate downstream equipment in sequence']
-                    defined_properties['isImmediatelyUpstreamOf'] = prop_isImmediatelyUpstreamOf
+                    with onto:
+
+                        class isImmediatelyUpstreamOf(ObjectProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_Equipment]
+                            comment = ['Links to the immediate downstream equipment in sequence']
+                    defined_properties['isImmediatelyUpstreamOf'] = onto.isImmediatelyUpstreamOf
                     property_is_functional['isImmediatelyUpstreamOf'] = False
                     logger.info('Defined property: isImmediatelyUpstreamOf')
-                    prop_isImmediatelyDownstreamOf = types.new_class('isImmediatelyDownstreamOf', (ObjectProperty,))
-                    prop_isImmediatelyDownstreamOf.domain = [cls_Equipment]
-                    prop_isImmediatelyDownstreamOf.range = [cls_Equipment]
-                    prop_isImmediatelyDownstreamOf.comment = ['Links to the immediate upstream equipment in sequence']
-                    defined_properties['isImmediatelyDownstreamOf'] = prop_isImmediatelyDownstreamOf
+                    with onto:
+
+                        class isImmediatelyDownstreamOf(ObjectProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_Equipment]
+                            comment = ['Links to the immediate upstream equipment in sequence']
+                    defined_properties['isImmediatelyDownstreamOf'] = onto.isImmediatelyDownstreamOf
                     property_is_functional['isImmediatelyDownstreamOf'] = False
                     logger.info('Defined property: isImmediatelyDownstreamOf')
-                    prop_isImmediatelyUpstreamOf.inverse_property = prop_isImmediatelyDownstreamOf
-                    prop_isImmediatelyDownstreamOf.inverse_property = prop_isImmediatelyUpstreamOf
+                    onto.isImmediatelyUpstreamOf.inverse_property = onto.isImmediatelyDownstreamOf
+                    onto.isImmediatelyDownstreamOf.inverse_property = onto.isImmediatelyUpstreamOf
                 if cls_Equipment and cls_ProductionLine:
-                    prop_isPartOfProductionLine = types.new_class('isPartOfProductionLine', (ObjectProperty,))
-                    prop_isPartOfProductionLine.domain = [cls_Equipment]
-                    prop_isPartOfProductionLine.range = [cls_ProductionLine]
-                    prop_isPartOfProductionLine.comment = ['Links equipment to its production line']
-                    defined_properties['isPartOfProductionLine'] = prop_isPartOfProductionLine
+                    with onto:
+
+                        class isPartOfProductionLine(ObjectProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_ProductionLine]
+                            comment = ['Links equipment to its production line']
+                    defined_properties['isPartOfProductionLine'] = onto.isPartOfProductionLine
                     property_is_functional['isPartOfProductionLine'] = False
                     logger.info('Defined property: isPartOfProductionLine')
                 if cls_Equipment and cls_EquipmentClass:
-                    prop_memberOfClass = types.new_class('memberOfClass', (ObjectProperty, FunctionalProperty))
-                    prop_memberOfClass.domain = [cls_Equipment]
-                    prop_memberOfClass.range = [cls_EquipmentClass]
-                    prop_memberOfClass.comment = ['Links equipment instance to its equipment class']
-                    defined_properties['memberOfClass'] = prop_memberOfClass
+                    with onto:
+
+                        class memberOfClass(ObjectProperty, FunctionalProperty):
+                            domain = [cls_Equipment]
+                            range = [cls_EquipmentClass]
+                            comment = ['Links equipment instance to its equipment class']
+                    defined_properties['memberOfClass'] = onto.memberOfClass
                     property_is_functional['memberOfClass'] = True
                     logger.info('Defined property: memberOfClass')
             if defined_classes.get('EquipmentClass') and 'equipmentClassId' not in defined_properties:
                 logger.info('Adding missing equipmentClassId property for EquipmentClass')
                 cls_EquipmentClass = defined_classes.get('EquipmentClass')
-                prop_equipmentClassId = types.new_class('equipmentClassId', (DataProperty, FunctionalProperty))
-                prop_equipmentClassId.domain = [cls_EquipmentClass]
-                prop_equipmentClassId.range = [str]
-                prop_equipmentClassId.comment = ['Identifier for the equipment class']
-                defined_properties['equipmentClassId'] = prop_equipmentClassId
+                with onto:
+
+                    class equipmentClassId(DataProperty, FunctionalProperty):
+                        domain = [cls_EquipmentClass]
+                        range = [str]
+                        comment = ['Identifier for the equipment class']
+                defined_properties['equipmentClassId'] = onto.equipmentClassId
                 property_is_functional['equipmentClassId'] = True
                 logger.info('Defined property: equipmentClassId')
     with onto:
@@ -990,16 +1066,17 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if not prop_type_str or not domain_str or (not range_str):
                 logger.warning(f"Skipping property '{prop_name}' due to missing type, domain, or range in spec.")
                 continue
-            parent_classes: List[type] = []
-            base_prop_type: Optional[type] = None
+            parent_classes = []
+            base_prop_type = None
             if prop_type_str == 'ObjectProperty':
                 base_prop_type = ObjectProperty
+                parent_classes.append(ObjectProperty)
             elif prop_type_str == 'DatatypeProperty':
                 base_prop_type = DataProperty
+                parent_classes.append(DataProperty)
             else:
                 logger.warning(f"Unknown property type '{prop_type_str}' for property '{prop_name}'. Skipping.")
                 continue
-            parent_classes.append(base_prop_type)
             is_functional = 'functional' in characteristics_str
             property_is_functional[prop_name] = is_functional
             if is_functional:
@@ -1017,9 +1094,10 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if 'irreflexive' in characteristics_str:
                 parent_classes.append(IrreflexiveProperty)
             try:
-                new_prop: PropertyClass = types.new_class(prop_name, tuple(parent_classes))
+                exec(f"\nwith onto:\n    class {prop_name}({', '.join([p.__name__ for p in parent_classes])}):\n        pass\n")
+                new_prop = getattr(onto, prop_name)
                 domain_class_names = [dc.strip() for dc in domain_str.split('|')]
-                prop_domain: List[ThingClass] = []
+                prop_domain = []
                 valid_domain_found = False
                 for dc_name in domain_class_names:
                     domain_class = defined_classes.get(dc_name)
@@ -1038,7 +1116,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                     logger.warning(f"No valid domain classes found for property '{prop_name}'. Skipping domain assignment.")
                 if base_prop_type is ObjectProperty:
                     range_class_names = [rc.strip() for rc in range_str.split('|')]
-                    prop_range: List[ThingClass] = []
+                    prop_range = []
                     valid_range_found = False
                     for rc_name in range_class_names:
                         range_class = defined_classes.get(rc_name)
@@ -1072,7 +1150,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 if comments:
                     new_prop.comment = comments
                 defined_properties[prop_name] = new_prop
-                logger.debug(f"Defined Property: {new_prop.iri} of type {prop_type_str} with characteristics {(' '.join([p.__name__ for p in parent_classes[1:]]) if len(parent_classes) > 1 else 'None')}")
+                logger.debug(f"Defined Property: {new_prop.iri} of type {prop_type_str} with characteristics {(', '.join([p.__name__ for p in parent_classes[1:]]) if len(parent_classes) > 1 else 'None')}")
                 if inverse_prop_name and base_prop_type is ObjectProperty:
                     temp_inverse_map[prop_name] = inverse_prop_name
             except Exception as e:
@@ -1112,7 +1190,9 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
             elif expected_type == 'DatatypeProperty' and (not isinstance(prop_obj, DataProperty)):
                 logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
-    logger.info(f'TKT-002: Defined {len(defined_properties)} total properties ({len([p for p in defined_properties.values() if isinstance(p, ObjectProperty)])} object properties, {len([p for p in defined_properties.values() if isinstance(p, DataProperty)])} data properties)')
+    object_props = [p for p in defined_properties.values() if isinstance(p, ObjectProperty)]
+    data_props = [p for p in defined_properties.values() if isinstance(p, DataProperty)]
+    logger.info(f'TKT-002: Defined {len(defined_properties)} total properties ({len(object_props)} object properties, {len(data_props)} data properties)')
     logger.info('Ontology structure definition complete.')
     return (defined_classes, defined_properties, property_is_functional)
 
@@ -1434,28 +1514,32 @@ def _run_analysis_and_optimization(onto, defined_classes, specification, optimiz
         logger.error(f'Error analyzing ontology population: {analysis_exc}', exc_info=False)
 
 def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
-    logger.info('Setting up equipment instance relationships...')
     try:
-        logger.info('TKT-006: Verifying Equipment.sequencePosition population and sequence linking...')
-        logger.info(f'TKT-006: Found {len(eq_class_positions)} equipment class positions for sequencing')
-        if eq_class_positions:
-            sample_classes = list(eq_class_positions.keys())[:3]
-            logger.info(f"TKT-006: Sample classes with positions: {', '.join([f'{cls}={eq_class_positions[cls]}' for cls in sample_classes])}")
-        relationships_created = setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
-        logger.info(f'TKT-006: Equipment instance sequence relationship setup complete. Created {relationships_created} relationships.')
-        sequence_report = generate_equipment_sequence_report(onto)
-        logger.info('Equipment sequence report generated.')
-        print(sequence_report)
-    except Exception as seq_exc:
-        logger.error(f'Error during sequence relationship setup: {seq_exc}', exc_info=True)
+        from ontology_generator.population.sequence import setup_equipment_instance_relationships
+        logger.info('Setting up equipment sequence relationships...')
+        ret_val = setup_equipment_instance_relationships(onto=onto, defined_classes=defined_classes, defined_properties=defined_properties, property_is_functional=property_is_functional, equipment_class_positions=eq_class_positions)
+        if isinstance(ret_val, tuple) and len(ret_val) >= 2:
+            relationships_count, seq_context = ret_val
+            logger.info(f'Created {relationships_count} equipment instance relationships.')
+            return seq_context
+        else:
+            relationships_count = ret_val
+            logger.info(f'Created {relationships_count} equipment instance relationships.')
+            return None
+    except Exception as e:
+        logger.error(f'Error during equipment sequence relationship setup: {e}', exc_info=True)
+        return None
 
 def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger, event_buffer_minutes=None):
-    logger.info('Linking equipment events to line events...')
     try:
-        links_made = link_equipment_events_to_line_events(onto, created_events_context, defined_classes, defined_properties, event_buffer_minutes)
-        logger.info(f'Event linking pass created {links_made} links.')
-    except Exception as link_exc:
-        logger.error(f'Error during event linking pass: {link_exc}', exc_info=True)
+        from ontology_generator.population.linking import link_equipment_events_to_line_events
+        logger.info('Linking equipment events to line events...')
+        links_created, link_context = link_equipment_events_to_line_events(onto, created_events_context, defined_classes, defined_properties, event_buffer_minutes)
+        logger.info(f'Created {links_created} links between equipment events and line events')
+        return link_context
+    except Exception as e:
+        logger.exception(f'Error during event linking: {e}')
+        return None
 
 def _process_structural_relationships(onto, data_rows, defined_classes, defined_properties, property_is_functional, property_mappings, all_created_individuals_by_uid, logger):
     logger.info('Processing structural relationships between entities...')
@@ -1627,11 +1711,21 @@ def main_ontology_generation(spec_file_path: str, data_file_path: str, output_ow
         elif not args.analyze_population:
             main_logger.warning('Skipping ontology population analysis as requested.')
         if population_successful and created_eq_classes:
-            _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
+            seq_context = _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, main_logger)
+            if seq_context and population_context:
+                main_logger.info('TKT-004: Updating property usage tracking with sequence relationship data')
+                for prop_name, count in seq_context._property_usage_count.items():
+                    if count > 0:
+                        population_context._property_usage_count[prop_name] = population_context._property_usage_count.get(prop_name, 0) + count
         elif population_successful:
             main_logger.warning('Skipping sequence relationship setup: No EquipmentClass individuals found during population.')
         if created_events_context:
-            _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger, args.event_buffer_minutes)
+            link_context = _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, main_logger, args.event_buffer_minutes)
+            if link_context and population_context:
+                main_logger.info('TKT-004: Updating property usage tracking with event linking data')
+                for prop_name, count in link_context._property_usage_count.items():
+                    if count > 0:
+                        population_context._property_usage_count[prop_name] = population_context._property_usage_count.get(prop_name, 0) + count
         else:
             main_logger.warning('No event context data available for linking. Event linking skipped.')
         if args.reasoner and population_successful:
@@ -2058,7 +2152,7 @@ class PopulationContext:
         self._property_usage_count[prop_name] = self._property_usage_count.get(prop_name, 0) + 1
         is_functional = self.property_is_functional.get(prop_name, False)
         try:
-            _set_property_value(individual, prop, value, is_functional)
+            _set_property_value(individual, prop, value, is_functional, self)
         except Exception as e:
             pop_logger.error(f"Error setting property '{prop_name}' on individual '{individual.name}' with value '{value}': {e}", exc_info=True)
 
@@ -2093,10 +2187,13 @@ class PopulationContext:
             pop_logger.warning(f"  TKT-002: {len(report['property_misses'])} undefined properties were requested: {', '.join(sorted(report['property_misses']))}")
         pop_logger.info(f"  Most used properties: {', '.join([f'{name} ({count})' for name, count in report['most_used'][:5]])}")
 
-def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_functional: bool) -> None:
+def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_functional: bool, context: Optional[PopulationContext]=None) -> None:
     if value is None:
         return
     prop_name = prop.python_name
+    if context is not None and hasattr(context, '_property_usage_count'):
+        prop_name_for_counter = prop.name
+        context._property_usage_count[prop_name_for_counter] = context._property_usage_count.get(prop_name_for_counter, 0) + 1
     try:
         if is_functional:
             current_value = getattr(individual, prop_name, None)
@@ -2157,21 +2254,40 @@ def get_or_create_individual(onto_class: ThingClass, individual_name_base: Any, 
         return existing_individual
     individual_name = f'{class_name_str}_{sanitized_name_base}'
     try:
+        existing_by_iri = onto.search_one(iri=f'{onto.base_iri}{individual_name}')
+        if not existing_by_iri:
+            existing_by_iri = onto.search_one(iri=f'*{individual_name}')
+        if existing_by_iri and isinstance(existing_by_iri, onto_class):
+            pop_logger.warning(f"TKT-003: Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Adding to registry and returning existing one.")
+            registry[registry_key] = existing_by_iri
+            if add_labels:
+                for label in add_labels:
+                    if label and label not in existing_by_iri.label:
+                        existing_by_iri.label.append(str(label))
+            return existing_by_iri
+        elif existing_by_iri:
+            pop_logger.error(f"Cannot create individual '{individual_name}': Name collision with existing individual '{existing_by_iri.name}' of different class ({type(existing_by_iri).__name__})")
+            return None
         with onto:
-            existing_by_name = onto.search_one(iri=f'*{individual_name}')
-            if existing_by_name and isinstance(existing_by_name, onto_class):
-                pop_logger.warning(f"Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Returning existing one and adding to registry.")
-                new_individual = existing_by_name
-            elif existing_by_name:
-                pop_logger.error(f"Cannot create individual '{individual_name}': Name collision with existing individual '{existing_by_name.name}' of different class ({type(existing_by_name).__name__})")
-                return None
-            else:
-                new_individual = onto_class(individual_name)
-                pop_logger.info(f"Created new individual '{individual_name}' (Class: {class_name_str}, Base: '{individual_name_base}')")
-                if add_labels:
-                    for label in add_labels:
-                        if label:
-                            new_individual.label.append(str(label))
+            double_check = onto.search_one(iri=f'{onto.base_iri}{individual_name}')
+            if double_check:
+                if isinstance(double_check, onto_class):
+                    pop_logger.warning(f"TKT-003: Race condition - individual '{individual_name}' was created between checks. Adding to registry and returning.")
+                    registry[registry_key] = double_check
+                    if add_labels:
+                        for label in add_labels:
+                            if label and label not in double_check.label:
+                                double_check.label.append(str(label))
+                    return double_check
+                else:
+                    pop_logger.error(f"Race condition - individual with name '{individual_name}' was created between checks with incompatible class. Cannot proceed.")
+                    return None
+            new_individual = onto_class(individual_name)
+            pop_logger.info(f"Created new individual '{individual_name}' (Class: {class_name_str}, Base: '{individual_name_base}')")
+            if add_labels:
+                for label in add_labels:
+                    if label:
+                        new_individual.label.append(str(label))
         registry[registry_key] = new_individual
         return new_individual
     except Exception as e:
@@ -2932,9 +3048,12 @@ from typing import Dict, List, Tuple, Set, Optional
 from owlready2 import Thing, Ontology, ThingClass, PropertyClass
 from ontology_generator.utils.logging import link_logger
 from ontology_generator.config import DEFAULT_EVENT_LINKING_BUFFER_MINUTES, DEFAULT_EVENT_DURATION_HOURS
+from ontology_generator.population.core import PopulationContext
 
-def link_equipment_events_to_line_events(onto: Ontology, created_events_context: List[Tuple[Thing, Thing, str]], defined_classes: Dict[str, ThingClass], defined_properties: Dict[str, PropertyClass], event_buffer_minutes: Optional[int]=None) -> int:
+def link_equipment_events_to_line_events(onto: Ontology, created_events_context: List[Tuple[Thing, Thing, str, Thing]], defined_classes: Dict[str, ThingClass], defined_properties: Dict[str, PropertyClass], event_buffer_minutes: Optional[int]=None) -> Tuple[int, Optional[PopulationContext]]:
     link_logger.info('Starting second pass: Linking equipment events to line events (Enhanced Relaxed Temporal Logic)...')
+    property_is_functional = {}
+    context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
     cls_EventRecord = defined_classes.get('EventRecord')
     cls_ProductionLine = defined_classes.get('ProductionLine')
     cls_Equipment = defined_classes.get('Equipment')
@@ -2948,7 +3067,12 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
     prop_eventId = defined_properties.get('eventId')
     if not all([cls_EventRecord, cls_ProductionLine, cls_Equipment, prop_isPartOfLineEvent, prop_startTime, prop_endTime]):
         link_logger.error('Missing essential classes or properties (EventRecord, ProductionLine, Equipment, isPartOfLineEvent, startTime, endTime) for linking. Aborting.')
-        return 0
+        return (0, None)
+    for prop_name, prop in defined_properties.items():
+        if hasattr(prop, 'functional') and prop.functional:
+            property_is_functional[prop_name] = True
+        else:
+            property_is_functional[prop_name] = False
     TIME_BUFFER_MINUTES = event_buffer_minutes if event_buffer_minutes is not None else DEFAULT_EVENT_LINKING_BUFFER_MINUTES
     time_buffer = timedelta(minutes=TIME_BUFFER_MINUTES)
     DEFAULT_DURATION_HOURS = DEFAULT_EVENT_DURATION_HOURS
@@ -2968,7 +3092,7 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
     skipped_intervals = 0
     equipment_event_ids = {}
     line_event_ids = {}
-    for event_ind, resource_ind, resource_type in created_events_context:
+    for event_ind, resource_ind, resource_type, _associated_line_ind in created_events_context:
         if resource_type == 'Line' and (not isinstance(resource_ind, cls_ProductionLine)):
             link_logger.warning(f"Event {event_ind.name} has resource_type 'Line' but the resource is not a ProductionLine. Skipping.")
             skipped_wrong_type_count += 1
@@ -3166,30 +3290,16 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
                             is_valid_resource_types = False
                         if not is_valid_resource_types:
                             continue
-                        current_parents = getattr(eq_event_ind, prop_isPartOfLineEvent.python_name, [])
-                        if not isinstance(current_parents, list):
-                            current_parents = [current_parents] if current_parents is not None else []
-                        line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
-                        if line_event_ind not in current_parents:
-                            getattr(eq_event_ind, prop_isPartOfLineEvent.python_name).append(line_event_ind)
-                            links_created += 1
-                            linking_methods_used[link_method] += 1
-                            link_logger.info(f'Linked ({link_method}): {eq_id} isPartOfLineEvent {line_id}')
-                            if prop_hasDetailedEquipmentEvent:
-                                current_children = getattr(line_event_ind, prop_hasDetailedEquipmentEvent.python_name, [])
-                                if not isinstance(current_children, list):
-                                    current_children = [current_children] if current_children is not None else []
-                                if eq_event_ind not in current_children:
-                                    getattr(line_event_ind, prop_hasDetailedEquipmentEvent.python_name).append(eq_event_ind)
-                                    link_logger.debug(f'Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}')
-                            parent_found = True
-                            linked_events += 1
-                            break
-                        else:
-                            link_logger.debug(f'Link already exists: {eq_id} isPartOfLineEvent {line_id}. Skipping append.')
-                            parent_found = True
-                            linked_events += 1
-                            break
+                        context.set_prop(eq_event_ind, 'isPartOfLineEvent', line_event_ind)
+                        links_created += 1
+                        linking_methods_used[link_method] += 1
+                        link_logger.info(f'Linked ({link_method}): {eq_id} isPartOfLineEvent {line_id}')
+                        if prop_hasDetailedEquipmentEvent:
+                            context.set_prop(line_event_ind, 'hasDetailedEquipmentEvent', eq_event_ind)
+                            link_logger.debug(f'Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}')
+                        parent_found = True
+                        linked_events += 1
+                        break
                     except Exception as e:
                         line_id = line_event_ids.get(line_event_ind, line_event_ind.name)
                         link_logger.error(f'Error linking equipment event {eq_id} to line event {line_id}: {e}')
@@ -3273,7 +3383,7 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
             if suggested_buffer > 0:
                 print(f'  Consider increasing buffer from {TIME_BUFFER_MINUTES} to {suggested_buffer} minutes')
     print(f'=== END EVENT LINKING RESULTS ===\n')
-    return links_created
+    return (links_created, context)
 
 
 ===========================================
@@ -3519,110 +3629,10 @@ def process_structural_relationships(context: PopulationContext, property_mappin
     links_created = 0
     links_by_type = {}
     structural_properties = ['isPartOfProductionLine', 'hasEquipmentPart', 'memberOfClass']
-    if 'Equipment' in property_mappings and 'object_properties' in property_mappings['Equipment']:
-        log.info('Processing Equipment.memberOfClass structural relationships...')
-        equipment_individuals = [ind for uid, ind in all_created_individuals_by_uid.items() if uid[0] == 'Equipment']
-        log.info(f'Found {len(equipment_individuals)} Equipment individuals for class linking')
-        class_individuals = [ind for uid, ind in all_created_individuals_by_uid.items() if uid[0] == 'EquipmentClass']
-        log.info(f'Found {len(class_individuals)} EquipmentClass individuals for linking')
-        eq_class_mapping = property_mappings['Equipment']['object_properties'].get('memberOfClass')
-        if eq_class_mapping and equipment_individuals and class_individuals:
-            member_of_class_prop = context.get_prop('memberOfClass')
-            if not member_of_class_prop:
-                log.error(f"CRITICAL: Required property 'memberOfClass' not found. Cannot link equipment to classes.")
-            else:
-                classes_by_identifier = {}
-                identifiers = ['equipmentClassId', 'equipmentClassName', 'name']
-                log.debug('TKT-005: EquipmentClass individuals available for linking:')
-                for class_ind in class_individuals:
-                    class_identifiers = []
-                    eq_class_id = None
-                    if hasattr(class_ind, 'equipmentClassId'):
-                        eq_class_id = getattr(class_ind, 'equipmentClassId')
-                        if eq_class_id:
-                            if isinstance(eq_class_id, list) and eq_class_id:
-                                eq_class_id = eq_class_id[0]
-                            class_identifiers.append(str(eq_class_id))
-                            classes_by_identifier[str(eq_class_id)] = class_ind
-                            log.debug(f'  TKT-005: Class {class_ind.name} has explicit equipmentClassId: {eq_class_id}')
-                    for id_prop in identifiers:
-                        if id_prop != 'equipmentClassId' and hasattr(class_ind, id_prop):
-                            id_value = getattr(class_ind, id_prop)
-                            if id_value:
-                                if isinstance(id_value, list):
-                                    for val in id_value:
-                                        class_identifiers.append(str(val))
-                                else:
-                                    class_identifiers.append(str(id_value))
-                    if hasattr(class_ind, 'name'):
-                        name = class_ind.name
-                        if name.startswith('EquipmentClass_'):
-                            clean_name = name[len('EquipmentClass_'):]
-                            class_identifiers.append(clean_name)
-                    log.debug(f'  TKT-005: Class {class_ind.name} all identifiers: {class_identifiers}')
-                    for identifier in class_identifiers:
-                        if identifier not in classes_by_identifier:
-                            classes_by_identifier[identifier] = class_ind
-                equipment_linked = 0
-                equipment_already_linked = 0
-                equipment_not_linked = 0
-                log.info('TKT-005: Processing Equipment-EquipmentClass memberOfClass relationships...')
-                for eq_ind in equipment_individuals:
-                    current_class = getattr(eq_ind, member_of_class_prop.python_name, None)
-                    if current_class:
-                        log.debug(f'TKT-005: Equipment {eq_ind.name} already linked to class {current_class.name}')
-                        equipment_already_linked += 1
-                        continue
-                    matching_class_ind = None
-                    match_method = None
-                    class_id_column = eq_class_mapping.get('column')
-                    if class_id_column:
-                        eq_data = context.get_individual_data(eq_ind) or {}
-                        class_value = eq_data.get(class_id_column)
-                        if class_value and str(class_value) in classes_by_identifier:
-                            matching_class_ind = classes_by_identifier[str(class_value)]
-                            match_method = f"Column '{class_id_column}'"
-                            log.info(f"TKT-005: Found matching class {matching_class_ind.name} via column value '{class_value}'")
-                    if not matching_class_ind:
-                        from .equipment import parse_equipment_class
-                        name_props = ['equipmentName', 'name']
-                        eq_name = None
-                        for prop in name_props:
-                            if hasattr(eq_ind, prop):
-                                prop_value = getattr(eq_ind, prop)
-                                if prop_value:
-                                    if isinstance(prop_value, list) and prop_value:
-                                        eq_name = prop_value[0]
-                                    else:
-                                        eq_name = prop_value
-                                    break
-                        if eq_name:
-                            parsed_class = parse_equipment_class(equipment_name=eq_name)
-                            if parsed_class and str(parsed_class) in classes_by_identifier:
-                                matching_class_ind = classes_by_identifier[str(parsed_class)]
-                                match_method = f"Parsed from name '{eq_name}'"
-                                log.info(f"TKT-005: Successfully parsed equipment class '{parsed_class}' from equipment name '{eq_name}'")
-                    if matching_class_ind:
-                        try:
-                            context.set_prop(eq_ind, 'memberOfClass', matching_class_ind)
-                            links_created += 1
-                            equipment_linked += 1
-                            log.info(f'TKT-005: Linked Equipment {eq_ind.name} to EquipmentClass {matching_class_ind.name} via {match_method}')
-                            links_by_type['Equipment->Class'] = links_by_type.get('Equipment->Class', 0) + 1
-                        except Exception as e:
-                            log.error(f'TKT-005: Error linking Equipment {eq_ind.name} to Class {matching_class_ind.name}: {e}')
-                    else:
-                        equipment_not_linked += 1
-                        log.warning(f'TKT-005: Could not determine appropriate class for Equipment {eq_ind.name}')
-                log.info(f'TKT-005: Equipment-Class linking summary:')
-                log.info(f'  • Equipment already linked: {equipment_already_linked}')
-                log.info(f'  • Equipment newly linked: {equipment_linked}')
-                log.info(f'  • Equipment not linked: {equipment_not_linked}')
-                log.info(f'  • Total equipment processed: {len(equipment_individuals)}')
+    log.info('TKT-005: Skipping Equipment.memberOfClass structural relationships (handled in Pass 1 via process_equipment_and_class)')
     if 'Equipment' in property_mappings and 'object_properties' in property_mappings['Equipment']:
         log.info('Processing Equipment.isPartOfProductionLine structural relationships...')
-        if 'equipment_individuals' not in locals():
-            equipment_individuals = [ind for uid, ind in all_created_individuals_by_uid.items() if uid[0] == 'Equipment']
+        equipment_individuals = [ind for uid, ind in all_created_individuals_by_uid.items() if uid[0] == 'Equipment']
         line_individuals = [ind for uid, ind in all_created_individuals_by_uid.items() if uid[0] == 'ProductionLine']
         eq_line_mapping = property_mappings['Equipment']['object_properties'].get('isPartOfProductionLine')
         if eq_line_mapping and equipment_individuals and line_individuals:
@@ -3799,14 +3809,14 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
                         if line_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE and equipment_class_id in LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id]:
                             position = LINE_SPECIFIC_EQUIPMENT_SEQUENCE[line_id].get(equipment_class_id)
                             pop_logger.info(f'TKT-006: Found position {position} for {eq_id} using line-specific config for class {equipment_class_id}')
-                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
                             equipment_with_positions.append((equipment_inst, position, eq_id))
                             total_equipment_with_sequence_position += 1
                             continue
                         if equipment_class_id in DEFAULT_EQUIPMENT_SEQUENCE:
                             position = DEFAULT_EQUIPMENT_SEQUENCE.get(equipment_class_id)
                             pop_logger.info(f'TKT-006: Found position {position} for {eq_id} using default config for class {equipment_class_id}')
-                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True)
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
                             equipment_with_positions.append((equipment_inst, position, eq_id))
                             total_equipment_with_sequence_position += 1
                             continue
@@ -3828,10 +3838,10 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
                     pop_logger.error(f'Detected self-reference attempt for equipment {up_id} on line {line_id}. Skipping this link.')
                     continue
                 try:
-                    _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False)
+                    _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False, context=context)
                     pop_logger.debug(f'TKT-006: Created relationship: {up_id} (pos {upstream_pos}) isImmediatelyUpstreamOf {down_id} (pos {downstream_pos})')
                     if prop_isImmediatelyDownstreamOf:
-                        _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False)
+                        _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False, context=context)
                         pop_logger.debug(f'TKT-006: Created inverse relationship: {down_id} isImmediatelyDownstreamOf {up_id}')
                     relationships_created += 1
                 except Exception as e:
@@ -3858,7 +3868,7 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
                                     pop_logger.error(f'TKT-007: Detected self-reference attempt for parallel equipment {eq1_id} on line {line_id}. Skipping this link.')
                                     continue
                                 try:
-                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False)
+                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False, context=context)
                                     pop_logger.debug(f'TKT-007: Created parallel relationship: {eq1_id} isParallelWith {eq2_id} (position {pos})')
                                     parallel_relationships += 1
                                 except Exception as e:
@@ -3913,7 +3923,122 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
     pop_logger.info(f'TKT-006: Successfully established {total_relationships} instance-level equipment relationships')
     if prop_isParallelWith:
         pop_logger.info(f'TKT-007: Successfully established {total_parallel_relationships} parallel equipment relationships')
-    return total_relationships
+    return (total_relationships, context)
+
+
+===========================================
+FILE: ontology_generator/run_tests.py
+===========================================
+
+import os
+import sys
+import logging
+import importlib
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('test_runner')
+
+def run_all_tests():
+    logger.info('=== Running all tests for ontology_generator ===')
+    tests_to_run = [('ontology_generator.utils.types', '_test_sanitize_name'), ('ontology_generator.tests.test_registry_sync', 'test_registry_synchronization')]
+    passed = 0
+    failed = 0
+    for module_path, function_name in tests_to_run:
+        try:
+            logger.info(f'Running {module_path}.{function_name}')
+            module = importlib.import_module(module_path)
+            test_func = getattr(module, function_name)
+            result = test_func()
+            if isinstance(result, tuple) and len(result) == 2:
+                test_passed, test_failed = result
+                if test_failed == 0:
+                    logger.info(f'✓ {module_path}.{function_name} passed ({test_passed} subtests passed)')
+                    passed += 1
+                else:
+                    logger.error(f'✗ {module_path}.{function_name} failed ({test_passed} passed, {test_failed} failed)')
+                    failed += 1
+            elif result is True:
+                logger.info(f'✓ {module_path}.{function_name} passed')
+                passed += 1
+            else:
+                logger.error(f'✗ {module_path}.{function_name} failed or returned unexpected value')
+                failed += 1
+        except Exception as e:
+            logger.error(f'Error running {module_path}.{function_name}: {e}', exc_info=True)
+            failed += 1
+    logger.info(f'=== Test run complete: {passed} passed, {failed} failed ===')
+    return failed == 0
+if __name__ == '__main__':
+    success = run_all_tests()
+    sys.exit(0 if success else 1)
+
+
+===========================================
+FILE: ontology_generator/tests/__init__.py
+===========================================
+
+
+
+
+===========================================
+FILE: ontology_generator/tests/test_registry_sync.py
+===========================================
+
+import os
+import sys
+import logging
+from typing import Dict, Tuple, Any
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from owlready2 import World, Ontology, Thing, ThingClass
+from ontology_generator.population.core import get_or_create_individual
+from ontology_generator.utils.types import sanitize_name
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('test_registry_sync')
+
+def test_registry_synchronization():
+    logger.info('Starting TKT-003 registry synchronization test')
+    world = World()
+    onto = world.get_ontology('http://test.org/tkt003-test')
+    with onto:
+
+        class TestClass(Thing):
+            pass
+    registry: Dict[Tuple[str, str], Thing] = {}
+    logger.info('Test Case 1: Creating individual directly in the ontology (bypassing registry)')
+    test_id = 'Test123'
+    sanitized_id = sanitize_name(test_id)
+    individual_name = f'TestClass_{sanitized_id}'
+    with onto:
+        direct_individual = TestClass(individual_name)
+        logger.info(f'Created individual directly: {direct_individual.name}')
+    found_by_search = onto.search_one(iri=f'*{individual_name}')
+    in_registry = any((k[1] == sanitized_id for k in registry.keys()))
+    logger.info(f'Individual exists in ontology: {found_by_search is not None}')
+    logger.info(f'Individual exists in registry: {in_registry}')
+    assert found_by_search is not None, 'Individual should exist in ontology'
+    assert not in_registry, 'Individual should not exist in registry yet'
+    logger.info('Test Case 2: Attempting to get/create the same individual via get_or_create_individual')
+    retrieved_individual = get_or_create_individual(onto_class=TestClass, individual_name_base=test_id, onto=onto, registry=registry, add_labels=['Test Label'])
+    found_by_search_after = onto.search_one(iri=f'*{individual_name}')
+    in_registry_after = any((k[1] == sanitized_id for k in registry.keys()))
+    registry_entry = next((v for k, v in registry.items() if k[1] == sanitized_id), None)
+    logger.info(f'Individual exists in ontology after get_or_create: {found_by_search_after is not None}')
+    logger.info(f'Individual exists in registry after get_or_create: {in_registry_after}')
+    logger.info(f'Registry entry is the same as original individual: {registry_entry is direct_individual}')
+    assert found_by_search_after is not None, 'Individual should still exist in ontology'
+    assert in_registry_after, 'Individual should now exist in registry'
+    assert registry_entry is direct_individual, 'Registry should contain the original individual'
+    assert retrieved_individual is direct_individual, 'get_or_create_individual should return the original individual'
+    individuals_of_class = list(onto.search(type=TestClass))
+    logger.info(f'Total individuals of TestClass: {len(individuals_of_class)}')
+    assert len(individuals_of_class) == 1, 'There should be exactly one individual of TestClass'
+    has_label = 'Test Label' in retrieved_individual.label
+    logger.info(f'Individual has added label: {has_label}')
+    assert has_label, "The individual should have the label 'Test Label'"
+    logger.info('TKT-003 registry synchronization test completed successfully!')
+    return True
+if __name__ == '__main__':
+    success = test_registry_synchronization()
+    sys.exit(0 if success else 1)
 
 
 ===========================================
@@ -4151,5 +4276,47 @@ def sanitize_name(name: Any) -> str:
         safe_name = f'UnnamedData_{fallback_hash}'
         pop_logger.warning(f"Sanitized name for '{name_str}' became empty or invalid. Using fallback hash: {safe_name}")
     return safe_name
+
+def _test_sanitize_name():
+    test_cases = [(None, 'unnamed', 'None value'), ('', 'unnamed', 'Empty string'), ('   ', 'unnamed', 'Whitespace only'), ('Simple', 'Simple', 'Simple alphanumeric'), ('Simple Name', 'Simple_Name', 'Spaces to underscore'), ('Name-With-Hyphens', 'Name-With-Hyphens', 'Preserve hyphens'), ('Name.With.Dots', 'Name.With.Dots', 'Preserve periods'), ('Name_With_Underscores', 'Name_With_Underscores', 'Preserve underscores'), ('123StartsWithNumber', '_123StartsWithNumber', 'Prepend underscore to numbers'), ('-StartsWithHyphen', '_-StartsWithHyphen', 'Prepend underscore to hyphen'), ('Special@#$%^&*()Chars', 'Special_____Chars', 'Replace special chars with underscores'), ('<>:"/\\|?*', '________', 'All special chars become underscores'), ('Mixed<>:"/\\|?*AndLetters', 'Mixed________AndLetters', 'Mixed content'), ('Üñîçøδê', '____', 'Unicode characters'), ('   Trim   Spaces   ', 'Trim___Spaces', 'Trim and collapse spaces'), ('<all special>', '_all_special_', 'Special chars at boundaries')]
+    passed = 0
+    failed = 0
+    print('\n===== TESTING sanitize_name FUNCTION =====')
+    for i, (input_val, expected, desc) in enumerate(test_cases):
+        result = sanitize_name(input_val)
+        if result == expected:
+            passed += 1
+            print(f'✓ Test {i + 1}: {desc}')
+        else:
+            failed += 1
+            print(f'✗ Test {i + 1}: {desc}')
+            print(f'  Input: {repr(input_val)}')
+            print(f'  Expected: {repr(expected)}')
+            print(f'  Got: {repr(result)}')
+    consistency_check = sanitize_name('Test String')
+    for i in range(5):
+        if sanitize_name('Test String') != consistency_check:
+            failed += 1
+            print(f'✗ Consistency check failed on iteration {i + 1}')
+            break
+    else:
+        passed += 1
+        print('✓ Consistency check passed')
+    print('\nHash fallback test (unpredictable output):')
+    empty_after_clean = '!@#$%^&*()'
+    fallback_result = sanitize_name(empty_after_clean)
+    print(f'Input: {repr(empty_after_clean)}')
+    print(f'Result: {repr(fallback_result)}')
+    if fallback_result.startswith('UnnamedData_'):
+        passed += 1
+        print('✓ Hash fallback test passed')
+    else:
+        failed += 1
+        print('✗ Hash fallback test failed')
+    print(f'\nTests complete: {passed} passed, {failed} failed')
+    print('========================================\n')
+    return (passed, failed)
+if __name__ == '__main__':
+    _test_sanitize_name()
 
 

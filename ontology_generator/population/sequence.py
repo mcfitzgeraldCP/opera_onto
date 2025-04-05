@@ -53,12 +53,20 @@ def setup_equipment_instance_relationships(onto: Ontology,
         defined_properties: Dictionary of defined properties
         property_is_functional: Dictionary indicating whether properties are functional
         equipment_class_positions: Dictionary mapping equipment class names to sequence positions
+        
+    Returns:
+        Tuple of (number of relationships created, context with property usage tracking)
     """
     pop_logger.info("Setting up INSTANCE-LEVEL equipment relationships within production lines...")
     
-    # Log about equipment class positions for diagnostics
+    # TKT-004: Use DEFAULT_EQUIPMENT_SEQUENCE if equipment_class_positions is empty
     if not equipment_class_positions:
-        pop_logger.warning("Equipment class positions dictionary is empty. We'll still process equipment instances that have sequence positions set directly.")
+        pop_logger.warning("Equipment class positions dictionary is empty. Using DEFAULT_EQUIPMENT_SEQUENCE as fallback.")
+        equipment_class_positions = DEFAULT_EQUIPMENT_SEQUENCE.copy()
+    
+    # Log equipment class positions for diagnostics
+    if not equipment_class_positions:
+        pop_logger.warning("Equipment class positions dictionary is still empty after fallback. We'll still process equipment instances that have sequence positions set directly.")
     else:
         pop_logger.info(f"Using {len(equipment_class_positions)} equipment class positions for processing.")
         for class_name, position in sorted(equipment_class_positions.items(), key=lambda x: x[1]):
@@ -88,18 +96,22 @@ def setup_equipment_instance_relationships(onto: Ontology,
     required_components = [
         cls_Equipment, cls_ProductionLine, cls_EquipmentClass,
         prop_isPartOfProductionLine, prop_memberOfClass, prop_equipmentClassId,
-        prop_equipmentId, prop_sequencePosition, prop_isImmediatelyUpstreamOf
+        prop_sequencePosition, prop_isImmediatelyUpstreamOf
     ]
     
     missing_components = [name for i, name in enumerate([
         "Equipment", "ProductionLine", "EquipmentClass",
         "isPartOfProductionLine", "memberOfClass", "equipmentClassId",
-        "equipmentId", "sequencePosition", "isImmediatelyUpstreamOf"
+        "sequencePosition", "isImmediatelyUpstreamOf"
     ]) if not required_components[i]]
+    
+    # TKT-004: Make equipmentId property optional for sequencing - we can use the instance name as fallback
+    if not prop_equipmentId:
+        pop_logger.warning("TKT-004: 'equipmentId' property not found. Using instance names instead.")
     
     if missing_components:
         pop_logger.error(f"Missing required components for equipment sequencing: {', '.join(missing_components)}")
-        return
+        return 0, context
     
     # TKT-007: Check if isParallelWith property exists
     if not prop_isParallelWith:
@@ -138,12 +150,12 @@ def setup_equipment_instance_relationships(onto: Ontology,
         
         # More detailed logging when missing EquipmentClass link
         if not equipment_class_ind:
-            eq_id = getattr(equipment_inst, prop_equipmentId.python_name, equipment_inst.name)
+            eq_id = getattr(equipment_inst, "name", "unknown")
             pop_logger.warning(f"Equipment {eq_id} has no memberOfClass relationship. Skipping for sequence setup.")
             continue
         
         if not isinstance(equipment_class_ind, cls_EquipmentClass):
-            eq_id = getattr(equipment_inst, prop_equipmentId.python_name, equipment_inst.name)
+            eq_id = getattr(equipment_inst, "name", "unknown")
             pop_logger.warning(f"Equipment {eq_id} linked to non-EquipmentClass '{equipment_class_ind}'. Skipping for sequence setup.")
             continue
         
@@ -177,9 +189,10 @@ def setup_equipment_instance_relationships(onto: Ontology,
     
     def safe_get_equipment_id(equipment: Thing) -> str:
         """Helper to safely get equipmentId or fallback to name for sorting."""
-        equipment_id = getattr(equipment, prop_equipmentId.python_name, None)
-        if equipment_id:
-            return str(equipment_id)
+        if prop_equipmentId:
+            equipment_id = getattr(equipment, prop_equipmentId.python_name, None)
+            if equipment_id:
+                return str(equipment_id)
         return equipment.name
     
     with onto:
@@ -237,6 +250,17 @@ def setup_equipment_instance_relationships(onto: Ontology,
                             pop_logger.info(f"TKT-006: Found position {position} for {eq_id} using default config for class {equipment_class_id}")
                             
                             # Set the position on the equipment individual - TKT-004: Pass context
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
+                            equipment_with_positions.append((equipment_inst, position, eq_id))
+                            total_equipment_with_sequence_position += 1
+                            continue
+                        
+                        # TKT-004: Try using the equipment class positions we were given
+                        if equipment_class_id in equipment_class_positions:
+                            position = equipment_class_positions.get(equipment_class_id)
+                            pop_logger.info(f"TKT-004: Found position {position} for {eq_id} using provided equipment_class_positions for class {equipment_class_id}")
+                            
+                            # Set the position on the equipment individual
                             _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
                             equipment_with_positions.append((equipment_inst, position, eq_id))
                             total_equipment_with_sequence_position += 1

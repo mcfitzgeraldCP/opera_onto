@@ -287,7 +287,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if prop_type_str == 'ObjectProperty':
                 base_prop_type = ObjectProperty
                 parent_classes.append(ObjectProperty)
-            elif prop_type_str == 'DatatypeProperty':
+            elif prop_type_str in ['DataProperty', 'DatatypeProperty']:  # Accept both
                 base_prop_type = DataProperty
                 parent_classes.append(DataProperty)
             else:
@@ -314,15 +314,40 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
                 parent_classes.append(IrreflexiveProperty)
 
             try:
-                # TKT-001: Fix - Create property using class definition syntax within onto context
-                # This creates a property instance rather than a property class
-                exec(f"""
-with onto:
-    class {prop_name}({', '.join([p.__name__ for p in parent_classes])}):
-        pass
-""")
-                # Get the created property instance
-                new_prop = getattr(onto, prop_name)
+                # TKT-001: Fix - Create property directly using owlready2 proper mechanisms
+                with onto:
+                    # Create property class based on the base type
+                    if base_prop_type is ObjectProperty:
+                        # For ObjectProperty
+                        if is_functional:
+                            class_def = types.new_class(prop_name, (ObjectProperty, FunctionalProperty))
+                        else:
+                            class_def = types.new_class(prop_name, (ObjectProperty,))
+                        
+                        # Add other characteristics if needed
+                        characteristics = []
+                        if 'inversefunctional' in characteristics_str: characteristics.append(InverseFunctionalProperty)
+                        if 'transitive' in characteristics_str: characteristics.append(TransitiveProperty)
+                        if 'symmetric' in characteristics_str: characteristics.append(SymmetricProperty)
+                        if 'asymmetric' in characteristics_str: characteristics.append(AsymmetricProperty)
+                        if 'reflexive' in characteristics_str: characteristics.append(ReflexiveProperty)
+                        if 'irreflexive' in characteristics_str: characteristics.append(IrreflexiveProperty)
+                        
+                        if characteristics:
+                            # Update bases if more characteristics are needed
+                            new_bases = list(class_def.__bases__)
+                            new_bases.extend(characteristics)
+                            class_def.__bases__ = tuple(new_bases)
+                            
+                    elif base_prop_type is DataProperty:
+                        # For DataProperty
+                        if is_functional:
+                            class_def = types.new_class(prop_name, (DataProperty, FunctionalProperty))
+                        else:
+                            class_def = types.new_class(prop_name, (DataProperty,))
+                    
+                    # Store the property in our registry
+                    new_prop = class_def
 
                 # Set Domain
                 domain_class_names = [dc.strip() for dc in domain_str.split('|')]
@@ -435,11 +460,11 @@ with onto:
     for prop_name, prop_obj in defined_properties.items():
         if prop_name in spec_property_types:
             expected_type = spec_property_types[prop_name]
-            # Simple type check between expected and actual property type
-            if expected_type == 'ObjectProperty' and not isinstance(prop_obj, ObjectProperty):
-                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
-            elif expected_type == 'DatatypeProperty' and not isinstance(prop_obj, DataProperty):
-                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
+            # TKT-002: Fix - Use isinstance() or issubclass() to check property types correctly
+            if expected_type == 'ObjectProperty' and not (isinstance(prop_obj, ObjectProperty) or issubclass(prop_obj, ObjectProperty)):
+                logger.warning(f"TKT-002: Property '{prop_name}' is not an instance of ObjectProperty as specified")
+            elif expected_type in ['DataProperty', 'DatatypeProperty'] and not (isinstance(prop_obj, DataProperty) or issubclass(prop_obj, DataProperty)):
+                logger.warning(f"TKT-002: Property '{prop_name}' is not an instance of DataProperty as specified")
     
     # Log total property counts
     object_props = [p for p in defined_properties.values() if isinstance(p, ObjectProperty)]

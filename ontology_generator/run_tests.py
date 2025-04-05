@@ -21,6 +21,8 @@ def run_all_tests():
         # Import path, test function name
         ("ontology_generator.utils.types", "_test_sanitize_name"),
         ("ontology_generator.tests.test_registry_sync", "test_registry_synchronization"),
+        # TKT-001: Add test for property definition
+        ("ontology_generator.tests.test_property_definition", "test_property_definition"),
     ]
     
     passed = 0

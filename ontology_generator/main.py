@@ -428,25 +428,45 @@ def _run_analysis_and_optimization(onto, defined_classes, specification, optimiz
         # Continue despite analysis failure
 
 def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, defined_classes, defined_properties, property_is_functional, logger):
-    """Setup equipment sequence relationships if any equipment classes were created."""
+    """
+    Setup equipment instance sequence relationships using the sequence module.
+    
+    Args:
+        onto: The ontology object
+        created_eq_classes: Dict of equipment classes created during population
+        eq_class_positions: Dict of equipment class positions from population
+        defined_classes: Dict of all defined classes
+        defined_properties: Dict of all defined properties
+        property_is_functional: Dict indicating whether properties are functional
+        logger: Logger instance
+        
+    Returns:
+        PopulationContext or None: The population context with property usage tracking if available
+    """
     try:
-        # Import here to avoid circular imports
+        # Import the sequence module
         from ontology_generator.population.sequence import setup_equipment_instance_relationships
         
         logger.info("Setting up equipment sequence relationships...")
         
-        # Setup instance-level relationships (upstream/downstream)
-        # TKT-004: Handle the updated return tuple including the context
+        # TKT-004: Ensure consistent type for created_eq_classes and eq_class_positions
+        if not isinstance(created_eq_classes, dict):
+            logger.warning("TKT-004: Expected dict for created_eq_classes, converting to empty dict")
+            created_eq_classes = {}
+            
+        if not isinstance(eq_class_positions, dict):
+            logger.warning("TKT-004: Expected dict for eq_class_positions, converting to empty dict")
+            eq_class_positions = {}
+            
+        logger.info(f"Found {len(created_eq_classes)} equipment classes and {len(eq_class_positions)} sequence positions")
+        
+        # Call the function to setup equipment instance relationships
         ret_val = setup_equipment_instance_relationships(
-            onto=onto,
-            defined_classes=defined_classes,
-            defined_properties=defined_properties,
-            property_is_functional=property_is_functional,
-            equipment_class_positions=eq_class_positions
+            onto, defined_classes, defined_properties, property_is_functional, eq_class_positions
         )
         
-        # TKT-004: Unpack return value which now includes both the relationship count and the context
-        if isinstance(ret_val, tuple) and len(ret_val) >= 2:
+        # TKT-004: Handle both old and new return value formats
+        if isinstance(ret_val, tuple) and len(ret_val) == 2:
             relationships_count, seq_context = ret_val
             logger.info(f"Created {relationships_count} equipment instance relationships.")
             # Return the sequence context for property usage tracking

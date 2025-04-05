@@ -131,6 +131,13 @@ def link_equipment_events_to_line_events(onto: Ontology,
         # Get time interval using the occursDuring property
         time_interval_ind = None
         if prop_occursDuring:
+            # TKT-004: Check if property is properly initialized
+            if not hasattr(prop_occursDuring, 'python_name'):
+                event_id = getattr(event_ind, 'name', 'unknown')
+                link_logger.error(f"TKT-004: Property 'occursDuring' is not properly initialized - missing python_name attribute. Cannot access time interval for event {event_id}")
+                skipped_intervals += 1
+                continue
+                
             time_interval_ind = getattr(event_ind, prop_occursDuring.python_name, None)
             # Handle potential lists (owlready2 might return a list for object properties)
             if isinstance(time_interval_ind, list) and time_interval_ind:
@@ -148,6 +155,19 @@ def link_equipment_events_to_line_events(onto: Ontology,
         
         # Try to get start and end times safely
         try:
+            # TKT-004: Check if start/end time properties are properly initialized
+            if not hasattr(prop_startTime, 'python_name'):
+                event_id = getattr(event_ind, 'name', 'unknown')
+                link_logger.error(f"TKT-004: Property 'startTime' is not properly initialized - missing python_name attribute. Cannot access start time for event {event_id}")
+                skipped_intervals += 1
+                continue
+                
+            if not hasattr(prop_endTime, 'python_name'):
+                event_id = getattr(event_ind, 'name', 'unknown')
+                link_logger.error(f"TKT-004: Property 'endTime' is not properly initialized - missing python_name attribute. Cannot access end time for event {event_id}")
+                skipped_intervals += 1
+                continue
+            
             start_time = getattr(time_interval_ind, prop_startTime.python_name, None)
             end_time = getattr(time_interval_ind, prop_endTime.python_name, None)
             processed_intervals += 1
@@ -182,6 +202,13 @@ def link_equipment_events_to_line_events(onto: Ontology,
             # It's an equipment event, find its associated line
             associated_line_ind = None
             if prop_isPartOfProductionLine:
+                # TKT-004: Check if property is properly initialized
+                if not hasattr(prop_isPartOfProductionLine, 'python_name'):
+                    event_id = getattr(event_ind, 'name', 'unknown')
+                    equipment_id = getattr(resource_ind, 'name', 'unknown')
+                    link_logger.error(f"TKT-004: Property 'isPartOfProductionLine' is not properly initialized - missing python_name attribute. Cannot find associated line for equipment {equipment_id} in event {event_id}")
+                    continue
+                    
                 associated_line_ind = getattr(resource_ind, prop_isPartOfProductionLine.python_name, None)
                 # Handle potential lists (owlready2 might return a list for object properties)
                 if isinstance(associated_line_ind, list) and associated_line_ind:
@@ -426,6 +453,13 @@ def link_equipment_events_to_line_events(onto: Ontology,
                 if link:
                     try:
                         # TKT-003: Verify both events have the correct resource types before linking
+                        # TKT-004: Check if property is properly initialized
+                        if not hasattr(prop_involvesResource, 'python_name'):
+                            eq_id = getattr(eq_event_ind, 'name', 'unknown')
+                            line_id = getattr(line_event_ind, 'name', 'unknown')
+                            link_logger.error(f"TKT-004: Property 'involvesResource' is not properly initialized - missing python_name attribute. Cannot verify resource types for events {eq_id} and {line_id}")
+                            continue
+                            
                         eq_resource = getattr(eq_event_ind, prop_involvesResource.python_name, None)
                         line_resource = getattr(line_event_ind, prop_involvesResource.python_name, None)
                         
@@ -451,6 +485,13 @@ def link_equipment_events_to_line_events(onto: Ontology,
                         if not is_valid_resource_types:
                             continue
                         
+                        # TKT-004: Check if property is properly initialized
+                        if not hasattr(prop_isPartOfLineEvent, 'python_name'):
+                            eq_id = getattr(eq_event_ind, 'name', 'unknown')
+                            line_id = getattr(line_event_ind, 'name', 'unknown')
+                            link_logger.error(f"TKT-004: Property 'isPartOfLineEvent' is not properly initialized - missing python_name attribute. Cannot create link between events {eq_id} and {line_id}")
+                            continue
+                        
                         # Link: Equipment Event ---isPartOfLineEvent---> Line Event
                         context.set_prop(eq_event_ind, "isPartOfLineEvent", line_event_ind)
                         links_created += 1
@@ -459,8 +500,12 @@ def link_equipment_events_to_line_events(onto: Ontology,
 
                         # Optional: Link inverse if property exists
                         if prop_hasDetailedEquipmentEvent:
-                            context.set_prop(line_event_ind, "hasDetailedEquipmentEvent", eq_event_ind)
-                            link_logger.debug(f"Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}")
+                            # TKT-004: Check if property is properly initialized
+                            if not hasattr(prop_hasDetailedEquipmentEvent, 'python_name'):
+                                link_logger.warning(f"TKT-004: Property 'hasDetailedEquipmentEvent' is not properly initialized - missing python_name attribute. Skipping inverse link.")
+                            else:
+                                context.set_prop(line_event_ind, "hasDetailedEquipmentEvent", eq_event_ind)
+                                link_logger.debug(f"Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}")
 
                         parent_found = True
                         linked_events += 1

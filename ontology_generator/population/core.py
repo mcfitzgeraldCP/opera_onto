@@ -391,7 +391,7 @@ def get_or_create_individual(
         if existing_by_iri and isinstance(existing_by_iri, onto_class):
             # TKT-003: Add the individual to the registry and return it
             # This handles cases where individuals were created outside the registry
-            pop_logger.warning(f"TKT-003: Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Adding to registry and returning existing one.")
+            pop_logger.debug(f"TKT-003: Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Adding to registry and returning existing one.")
             registry[registry_key] = existing_by_iri
             
             # Add labels if provided
@@ -413,7 +413,7 @@ def get_or_create_individual(
             if double_check:
                 # Another thread/process created it while we were checking
                 if isinstance(double_check, onto_class):
-                    pop_logger.warning(f"TKT-003: Race condition - individual '{individual_name}' was created between checks. Adding to registry and returning.")
+                    pop_logger.debug(f"TKT-003: Race condition - individual '{individual_name}' was created between checks. Adding to registry and returning.")
                     registry[registry_key] = double_check
                     
                     # Add labels if provided
