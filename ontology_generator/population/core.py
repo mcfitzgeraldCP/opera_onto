@@ -308,6 +308,10 @@ def set_prop_if_col_exists(
     # Set the property
     context.set_prop(individual, prop_name, value)
     
+    # TKT-004: Add specific success logging for equipmentModel property
+    if prop_name == 'equipmentModel':
+        logger.info(f"TKT-004: Successfully set equipmentModel = '{value}' (from column {col_name}) on {individual.name}")
+    
     # TKT-006: Add specific debug logging for AE model metrics
     ae_metrics = [
         'downtimeMinutes', 
@@ -319,7 +323,7 @@ def set_prop_if_col_exists(
     ]
     
     if prop_name in ae_metrics:
-        logger.debug(f"TKT-006: Successfully set AE model metric {prop_name} = {value} (from column {col_name}) on {individual.name}")
+        logger.debug(f"TKT-006: Successfully set AE model metric {prop_name} from column {col_name} on {individual.name}")
     
     return True
 
@@ -491,6 +495,14 @@ def apply_data_property_mappings(
             logger.warning(f"Data property mapping for {entity_name}.{prop_name} is missing 'column'. Skipping.")
             continue
 
+        # TKT-004: Add specific debug logging for equipmentModel property
+        if prop_name == 'equipmentModel':
+            if col_name in row:
+                raw_value = row.get(col_name)
+                logger.info(f"TKT-004: Found equipmentModel column '{col_name}' with value '{raw_value}' for {entity_name} {individual.name}")
+            else:
+                logger.warning(f"TKT-004: equipmentModel column '{col_name}' not found in row data for {entity_name} {individual.name}")
+
         # Use helper function to handle casting, existence check, and setting
         set_prop_if_col_exists(
             context=context,
@@ -502,6 +514,19 @@ def apply_data_property_mappings(
             target_type=target_type,
             logger=logger
         )
+
+        # TKT-006: Add specific debug logging for AE model metrics
+        ae_metrics = [
+            'downtimeMinutes', 
+            'runTimeMinutes', 
+            'effectiveRuntimeMinutes',
+            'goodProductionQuantity',
+            'rejectProductionQuantity',
+            'allMaintenanceTimeMinutes'
+        ]
+        
+        if prop_name in ae_metrics:
+            logger.debug(f"TKT-006: Successfully set AE model metric {prop_name} from column {col_name} on {individual.name}")
 
 def apply_object_property_mappings(
     individual: Thing,

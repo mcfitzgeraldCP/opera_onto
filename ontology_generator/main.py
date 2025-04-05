@@ -30,8 +30,7 @@ from ontology_generator.definition import (
     parse_property_mappings, validate_property_mappings, read_data
 )
 from ontology_generator.population import (
-    setup_equipment_instance_relationships,
-    link_equipment_events_to_line_events
+    setup_equipment_instance_relationships
 )
 from ontology_generator.analysis import (
     analyze_ontology_population, generate_population_report,
@@ -491,96 +490,44 @@ def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, 
         logger.error(f"Error during equipment sequence relationship setup: {e}", exc_info=True)
         return population_context  # TKT-009: Return the original context even on error
 
-def _link_equipment_events(onto, created_events_context, defined_classes, defined_properties, logger, event_buffer_minutes=None, population_context=None):
-    """
-    Link equipment events to line events if event context is available.
-    
-    Args:
-        onto: The ontology object
-        created_events_context: List of tuples with event context information
-        defined_classes: Dict of all defined classes
-        defined_properties: Dict of all defined properties
-        logger: Logger instance
-        event_buffer_minutes: Optional buffer time in minutes for event linking
-        population_context: The population context for property usage tracking
-        
-    Returns:
-        PopulationContext or None: The context with updated property usage tracking
-    """
-    try:
-        # Import the linking module
-        from ontology_generator.population.linking import link_equipment_events_to_line_events
-        
-        logger.info("Linking equipment events to line events...")
-        
-        # TKT-009: Pass the population_context to the linking function if available
-        if population_context:
-            logger.info("TKT-009: Passing existing population context to event linking")
-            # Call with context
-            links_created, link_context = link_equipment_events_to_line_events(
-                onto,
-                created_events_context,
-                defined_classes,
-                defined_properties,
-                event_buffer_minutes,
-                population_context
-            )
-            # Return the original context
-            return population_context
-        else:
-            # Original behavior (without context)
-            # TKT-004: Updated to handle both return values
-            links_created, link_context = link_equipment_events_to_line_events(
-                onto,
-                created_events_context,
-                defined_classes,
-                defined_properties,
-                event_buffer_minutes
-            )
-            
-            logger.info(f"Created {links_created} links between equipment events and line events")
-            return link_context
-    except Exception as e:
-        logger.exception(f"Error during event linking: {e}")
-        return population_context  # TKT-009: Return the original context even on error
-
-def _process_structural_relationships(onto, data_rows, defined_classes, defined_properties, property_is_functional, property_mappings, all_created_individuals_by_uid, logger):
-    """
-    Process structural relationships between entities after all individuals have been created.
-    This is specifically for relationships that can't be established during row-by-row processing.
-    
-    Args:
-        onto: The ontology being populated
-        data_rows: The data rows (used for referencing column information)
-        defined_classes: Dictionary of defined classes
-        defined_properties: Dictionary of defined properties 
-        property_is_functional: Dictionary indicating whether properties are functional
-        property_mappings: Parsed property mappings
-        all_created_individuals_by_uid: Registry of all created individuals
-        logger: Logger to use
-    
-    Returns:
-        int: Number of structural links created
-    """
-    logger.info("Processing structural relationships between entities...")
-    try:
-        # Import the function from row_processor
-        from ontology_generator.population.row_processor import process_structural_relationships
-        from ontology_generator.population.core import PopulationContext
-        
-        # Create the context
-        context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
-        
-        # Call the structural relationship processor
-        links_created = process_structural_relationships(
-            context, property_mappings, all_created_individuals_by_uid, logger
-        )
-        
-        logger.info(f"Structural relationship processing complete. Created {links_created} links.")
-        return links_created
-    except Exception as e:
-        logger.error(f"Error processing structural relationships: {e}", exc_info=True)
-        return 0  # Indicate no links were created due to error
+# TKT-BUG-005: Commented out function as it's redundant and ineffective
+# def _process_structural_relationships(onto, data_rows, defined_classes, defined_properties, property_is_functional, property_mappings, all_created_individuals_by_uid, logger):
+#     """
+#     Process structural relationships between entities after all individuals have been created.
+#     This is specifically for relationships that can't be established during row-by-row processing.
+#     
+#     Args:
+#         onto: The ontology being populated
+#         data_rows: The data rows (used for referencing column information)
+#         defined_classes: Dictionary of defined classes
+#         defined_properties: Dictionary of defined properties 
+#         property_is_functional: Dictionary indicating whether properties are functional
+#         property_mappings: Parsed property mappings
+#         all_created_individuals_by_uid: Registry of all created individuals
+#         logger: Logger to use
+#     
+#     Returns:
+#         int: Number of structural links created
+#     """
+#     logger.info("Processing structural relationships between entities...")
+#     try:
+#         # Import the function from row_processor
+#         from ontology_generator.population.row_processor import process_structural_relationships
+#         from ontology_generator.population.core import PopulationContext
+#         
+#         # Create the context
+#         context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
+#         
+#         # Call the structural relationship processor
+#         links_created = process_structural_relationships(
+#             context, property_mappings, all_created_individuals_by_uid, logger
+#         )
+#         
+#         logger.info(f"Structural relationship processing complete. Created {links_created} links.")
+#         return links_created
+#     except Exception as e:
+#         logger.error(f"Error processing structural relationships: {e}", exc_info=True)
+#         return 0  # Indicate no links were created due to error
 
 def _run_reasoning_phase(onto, world, world_db_path, reasoner_report_max_entities, reasoner_report_verbose, logger):
     logger.info("Applying reasoner (ensure HermiT or compatible reasoner is installed)...")
@@ -805,12 +752,15 @@ def main_ontology_generation(spec_file_path: str,
         # 7. Process Structural Relationships (NEW STEP)
         # Establish relationships that span multiple rows (like Equipment -> ProductionLine) 
         # and don't fit the row-by-row Pass 2 model
-        structural_links = _process_structural_relationships(
-            onto, data_rows, defined_classes, defined_properties, property_is_functional,
-            property_mappings, all_created_individuals_by_uid, main_logger
-        )
-        
-        main_logger.info(f"Created {structural_links} structural links between entities.")
+        # TKT-BUG-005: This step is redundant or non-functional for properties like isPartOfProductionLine
+        # (handled by sequencing) and ineffective for hierarchy links (addressed in TKT-BUG-004)
+        # Removing to simplify logic and logs.
+        #structural_links = _process_structural_relationships(
+        #    onto, data_rows, defined_classes, defined_properties, property_is_functional,
+        #    property_mappings, all_created_individuals_by_uid, main_logger
+        #)
+        #
+        #main_logger.info(f"Created {structural_links} structural links between entities.")
                 
         # 8. Setup Equipment Sequence Relationships (Using PopulationContext for property tracking)
         seq_context = _setup_sequence_relationships(
@@ -826,27 +776,14 @@ def main_ontology_generation(spec_file_path: str,
             main_logger.info("TKT-009: Logging property usage after sequence relationship setup (using population context)")
             population_context.log_property_usage_report()
         
-        # 9. Link Equipment Events to Line Events
-        if created_events_context:
-            # TKT-009: Pass population_context to _link_equipment_events
-            link_context = _link_equipment_events(
-                onto, created_events_context, defined_classes, defined_properties, main_logger, 
-                args.event_buffer_minutes, population_context
-            )
-            
-            # TKT-009: Log property usage after event linking
-            if link_context and hasattr(link_context, 'log_property_usage_report'):
-                main_logger.info("TKT-009: Logging property usage after event linking")
-                link_context.log_property_usage_report()
-            elif population_context and hasattr(population_context, 'log_property_usage_report'):
-                main_logger.info("TKT-009: Logging final property usage report (using population context)")
-                population_context.log_property_usage_report()
-        else:
-            main_logger.info("No event context tuples available for event linking. Skipping event linking.")
-            # TKT-009: Still log final property usage
-            if population_context and hasattr(population_context, 'log_property_usage_report'):
-                main_logger.info("TKT-009: Logging final property usage report (no event linking performed)")
-                population_context.log_property_usage_report()
+        # TKT-BUG-001: Removed equipment event to line event linking as per requirements clarification
+        # Equipment events should only be linked to their specific Equipment via involvesResource
+        # and analyzable via the equipment's relationship to its ProductionLine (isPartOfProductionLine)
+        
+        # TKT-009: Still log final property usage
+        if population_context and hasattr(population_context, 'log_property_usage_report'):
+            main_logger.info("TKT-009: Logging final property usage report")
+            population_context.log_property_usage_report()
 
         # 10. Analyze Population & Optimize (Optional)
         if population_successful and args.analyze_population:

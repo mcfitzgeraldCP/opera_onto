@@ -363,6 +363,24 @@ def process_equipment_and_class(
         pop_logger.warning(f"Missing equipment ID for equipment named '{eq_name}'. Cannot create unique Equipment instance.")
         return None, None, None
 
+    # TKT-004: Check for equipmentModel column and value
+    equipment_model = None
+    equipment_model_map = property_mappings.get('Equipment', {}).get('data_properties', {}).get('equipmentModel')
+    if equipment_model_map and equipment_model_map.get('column'):
+        equipment_model_col = equipment_model_map.get('column')
+        if equipment_model_col in row:
+            equipment_model = row.get(equipment_model_col, '').strip()
+            pop_logger.info(f"TKT-004: Found equipmentModel value '{equipment_model}' in column '{equipment_model_col}' for equipment '{eq_name}'")
+        else:
+            pop_logger.warning(f"TKT-004: equipmentModel column '{equipment_model_col}' not found in row data for equipment '{eq_name}'")
+    else:
+        # Fall back to direct column lookup
+        equipment_model = row.get('EQUIPMENT_MODEL', '').strip() if 'EQUIPMENT_MODEL' in row else None
+        if equipment_model:
+            pop_logger.info(f"TKT-004: Found equipmentModel value '{equipment_model}' in EQUIPMENT_MODEL column for equipment '{eq_name}'")
+        else:
+            pop_logger.warning(f"TKT-004: EQUIPMENT_MODEL column not found in row data for equipment '{eq_name}'")
+
     # --- EQUIPMENT CLASS IDENTIFICATION ---
     
     # Create/retrieve equipment class from equipment name/type
@@ -386,7 +404,7 @@ def process_equipment_and_class(
         parsed_class = parse_equipment_class(
             equipment_name=eq_name,
             equipment_type=eq_type,
-            equipment_model=row.get('EQUIPMENT_MODEL', '') # Add potential model information
+            equipment_model=equipment_model # Pass the equipment model value to the parser
         )
         if parsed_class:
             eq_class_base_name = parsed_class

@@ -231,6 +231,33 @@ def process_single_data_row_pass2(
                     exclude_structural=True
                 )
 
+        # TKT-004: Establish asset hierarchy links based on individuals created for this row
+        plant_ind = individuals_in_row.get("Plant")
+        area_ind = individuals_in_row.get("Area")
+        pcell_ind = individuals_in_row.get("ProcessCell")
+        line_ind = individuals_in_row.get("ProductionLine")
+
+        # Set Area.locatedInPlant = Plant
+        if plant_ind and area_ind:
+            locatedInPlant_prop = context.get_prop("locatedInPlant")
+            if locatedInPlant_prop:
+                context.set_prop(area_ind, "locatedInPlant", plant_ind)
+                row_proc_logger.debug(f"TKT-004: Set Area {area_ind.name} locatedInPlant to Plant {plant_ind.name}")
+        
+        # Set ProcessCell.partOfArea = Area
+        if area_ind and pcell_ind:
+            partOfArea_prop = context.get_prop("partOfArea")
+            if partOfArea_prop:
+                context.set_prop(pcell_ind, "partOfArea", area_ind)
+                row_proc_logger.debug(f"TKT-004: Set ProcessCell {pcell_ind.name} partOfArea to Area {area_ind.name}")
+        
+        # Set ProductionLine.locatedInProcessCell = ProcessCell
+        if pcell_ind and line_ind:
+            locatedInProcessCell_prop = context.get_prop("locatedInProcessCell")
+            if locatedInProcessCell_prop:
+                context.set_prop(line_ind, "locatedInProcessCell", pcell_ind)
+                row_proc_logger.debug(f"TKT-004: Set ProductionLine {line_ind.name} locatedInProcessCell to ProcessCell {pcell_ind.name}")
+
         row_proc_logger.debug(f"Row {row_num} - Pass 2 End.")
 
     except Exception as e:

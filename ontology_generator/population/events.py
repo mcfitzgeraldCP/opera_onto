@@ -14,7 +14,6 @@ from ontology_generator.population.core import (
     PopulationContext, get_or_create_individual, apply_data_property_mappings
 )
 from ontology_generator.config import COUNTRY_TO_LANGUAGE, DEFAULT_LANGUAGE
-from ontology_generator.population.linking import link_equipment_events_to_line_events
 
 # Type Alias for registry
 IndividualRegistry = Dict[Tuple[str, str], Thing] # Key: (entity_type_str, unique_id_str), Value: Individual Object
@@ -79,6 +78,55 @@ def process_shift(
 
     if shift_ind and pass_num == 1:
         apply_data_property_mappings(shift_ind, property_mappings["Shift"], row, context, "Shift", pop_logger)
+        
+        # TKT-BUG-003: Parse and store datetime objects for efficient temporal lookup
+        try:
+            # Convert string times to datetime objects for temporal comparison
+            # We'll try different datetime formats
+            start_datetime = None
+            end_datetime = None
+            
+            # Common datetime formats to try
+            formats = [
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M",
+                "%d/%m/%Y %H:%M:%S",
+                "%d/%m/%Y %H:%M",
+                "%m/%d/%Y %H:%M:%S",
+                "%m/%d/%Y %H:%M"
+            ]
+            
+            # Try to parse start time
+            if start_time_str:
+                for fmt in formats:
+                    try:
+                        start_datetime = datetime.strptime(start_time_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+            
+            # Try to parse end time
+            if end_time_str:
+                for fmt in formats:
+                    try:
+                        end_datetime = datetime.strptime(end_time_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+            
+            # Store the parsed datetimes with the individual for efficient lookup
+            if start_datetime or end_datetime:
+                temporal_data = {
+                    "shift_id": shift_id,
+                    "start_datetime": start_datetime,
+                    "end_datetime": end_datetime
+                }
+                context.store_individual_data(shift_ind, temporal_data)
+                pop_logger.debug(f"Stored temporal data for shift {shift_id}: {start_datetime} to {end_datetime}")
+        except Exception as e:
+            pop_logger.warning(f"Failed to parse shift times for temporal lookup: {e}")
 
     return shift_ind
 
@@ -390,9 +438,20 @@ def process_event_record(
     # Extract start time for uniqueness if available
     start_time_str = "Unknown"
     start_time_prop = context.get_prop("startTime")
+    
+    # TKT-BUG-003: Extract event start time as datetime object
+    event_start_datetime = None
     if start_time_prop and hasattr(time_interval_ind, "startTime"):
         start_time_val = time_interval_ind.startTime
         start_time_str = str(start_time_val).replace(":", "").replace(" ", "T").replace("+", "plus")
+        if isinstance(start_time_val, datetime):
+            event_start_datetime = start_time_val
+        else:
+            # Try to parse the time string
+            try:
+                event_start_datetime = datetime.fromisoformat(str(start_time_val))
+            except (ValueError, TypeError):
+                pop_logger.debug(f"Row {row_num}: Could not parse event start time as datetime: {start_time_val}")
     
     # Extract state description for labeling if available
     state_desc = "Unknown State"
@@ -429,6 +488,16 @@ def process_event_record(
     if event_ind and pass_num == 1:
         # Apply standard data property mappings
         apply_data_property_mappings(event_ind, property_mappings["EventRecord"], row, context, "EventRecord", pop_logger)
+        
+        # TKT-BUG-002: Add Crew ID association to EventRecord
+        crew_id_value = row.get('CREW_ID')
+        if crew_id_value and str(crew_id_value).strip():
+            occurred_during_crew_prop = context.get_prop("occurredDuringCrew")
+            if occurred_during_crew_prop:
+                context.set_prop(event_ind, "occurredDuringCrew", str(crew_id_value).strip())
+                pop_logger.debug(f"Row {row_num}: Added CREW_ID '{crew_id_value}' to event via occurredDuringCrew property")
+            else:
+                pop_logger.warning(f"Row {row_num}: Property 'occurredDuringCrew' not found. Cannot set crew ID.")
         
         # --- CRITICAL OBJECT PROPERTY LINKING FOR EVENT CONTEXT ---
         
@@ -474,13 +543,53 @@ def process_event_record(
             pop_logger.warning(f"Row {row_num}: Required property 'involvesResource' not found. Cannot link event to resource.")
         
         # 5. Link to Shift if available
-        if shift_ind:
-            # Check for occursInShift property existence
-            occurs_in_shift_prop = context.get_prop("duringShift")
-            if occurs_in_shift_prop:
+        # TKT-BUG-003: Implement temporal lookup for shift selection
+        occurs_in_shift_prop = context.get_prop("duringShift")
+        if occurs_in_shift_prop:
+            matching_shift = None
+            
+            # Check if we have a valid event start time to use for lookup
+            if event_start_datetime:
+                cls_Shift = context.get_class("Shift")
+                if cls_Shift:
+                    # Find all shifts in the ontology
+                    all_shifts = list(context.onto.search(type=cls_Shift))
+                    pop_logger.debug(f"Row {row_num}: Checking {len(all_shifts)} shifts for temporal containment of event")
+                    
+                    # Iterate through shifts and find one that contains the event's start time
+                    for candidate_shift in all_shifts:
+                        # Skip shifts with no stored data
+                        if not hasattr(candidate_shift, "name") or not candidate_shift.name:
+                            continue
+                            
+                        # Try to get stored temporal data for this shift
+                        shift_data = context._individual_data_cache.get(candidate_shift.name, {})
+                        shift_start = shift_data.get("start_datetime")
+                        shift_end = shift_data.get("end_datetime")
+                        
+                        # If we have valid shift time bounds
+                        if shift_start and shift_end:
+                            # Check if event start time is within shift bounds
+                            if shift_start <= event_start_datetime < shift_end:
+                                matching_shift = candidate_shift
+                                pop_logger.debug(f"Row {row_num}: Found matching shift: {candidate_shift.name} ({shift_start} to {shift_end})")
+                                break
+            
+            # If we found a temporally matching shift, use it instead of the row's direct shift
+            if matching_shift:
+                context.set_prop(event_ind, "duringShift", matching_shift)
+                
+                # Log if we're replacing the row's shift with a better temporal match
+                if shift_ind and matching_shift != shift_ind:
+                    pop_logger.info(f"Row {row_num}: TKT-BUG-003: Replaced incorrect row shift with temporally matching shift {matching_shift.name}")
+            elif shift_ind:  
+                # Fallback: Use the row's shift if available and we couldn't find a temporal match
                 context.set_prop(event_ind, "duringShift", shift_ind)
+                pop_logger.warning(f"Row {row_num}: TKT-BUG-003: Could not find temporally matching shift for event, using row's shift as fallback")
             else:
-                pop_logger.warning(f"Row {row_num}: Property 'duringShift' not found. Cannot link event to shift.")
+                pop_logger.warning(f"Row {row_num}: TKT-BUG-003: No matching shift found for event starting at {event_start_datetime}")
+        else:
+            pop_logger.warning(f"Row {row_num}: Property 'duringShift' not found. Cannot link event to shift.")
         
         # 6. Link to Material if available and context equipment/line supports it
         if material_ind:
