@@ -147,7 +147,10 @@ def process_single_data_row_pass1(
         if event_context_out: 
             event_context = event_context_out
             # TKT-003: Validate event has correct resource type association
-            event_ind, resource_ind, resource_type = event_context
+            if len(event_context) == 4:
+                event_ind, resource_ind, resource_type, line_ind_from_event = event_context
+            else:
+                event_ind, resource_ind, resource_type = event_context
             if equipment_type != resource_type:
                 row_proc_logger.warning(f"Row {row_num} - TKT-003: EQUIPMENT_TYPE '{equipment_type}' does not match linked resource type '{resource_type}'. Event linking may be incorrect.")
         else:
