@@ -556,6 +556,28 @@ def process_equipment_and_class(
                         # Set bidirectional links
                         context.set_prop(eq_ind, "isPartOfProductionLine", line_ind)
                         
+                        # TKT-010: Set associatedLineId property for later reference
+                        # Check if the property exists
+                        associated_line_id_prop = context.get_prop("associatedLineId")
+                        if associated_line_id_prop:
+                            # Get line ID from line individual
+                            line_id_prop = context.get_prop("lineId")
+                            if line_id_prop and hasattr(line_ind, line_id_prop.python_name):
+                                line_id_val = getattr(line_ind, line_id_prop.python_name)
+                                if isinstance(line_id_val, list) and line_id_val:
+                                    line_id_val = line_id_val[0]  # Use first item if it's a list
+                                
+                                if line_id_val:
+                                    context.set_prop(eq_ind, "associatedLineId", line_id_val)
+                                    pop_logger.debug(f"TKT-010: Set associatedLineId={line_id_val} for equipment {eq_id}")
+                            else:
+                                # Fallback: Try to find LINE_NAME in row data
+                                if "LINE_NAME" in row:
+                                    line_name_val = row.get("LINE_NAME")
+                                    if line_name_val:
+                                        context.set_prop(eq_ind, "associatedLineId", line_name_val)
+                                        pop_logger.debug(f"TKT-010: Set associatedLineId={line_name_val} from LINE_NAME column for equipment {eq_id}")
+                        
                         # Check for existence of hasEquipmentPart property before attempting to set it
                         has_part_prop = context.get_prop("hasEquipmentPart")
                         if has_part_prop:
@@ -566,6 +588,14 @@ def process_equipment_and_class(
                     else:
                         pop_logger.warning(f"Required property mapping 'isPartOfProductionLine' not found. Cannot link equipment to line.")
                     
+                    # TKT-010: Even if we don't have a line_ind, try to set associatedLineId from LINE_NAME column
+                    # This gives post-processing a chance to link by ID later
+                    associated_line_id_prop = context.get_prop("associatedLineId")
+                    if associated_line_id_prop and "LINE_NAME" in row:
+                        line_name_val = row.get("LINE_NAME")
+                        if line_name_val:
+                            context.set_prop(eq_ind, "associatedLineId", line_name_val)
+                            pop_logger.debug(f"TKT-010: Set associatedLineId={line_name_val} from LINE_NAME column for equipment {eq_id} (no line_ind available)")
         except Exception as e:
             pop_logger.error(f"Error creating Equipment '{eq_id}': {e}")
     

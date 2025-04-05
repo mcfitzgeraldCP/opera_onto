@@ -35,7 +35,8 @@ def setup_equipment_instance_relationships(onto: Ontology,
                                           defined_classes: Dict[str, ThingClass],
                                           defined_properties: Dict[str, PropertyClass],
                                           property_is_functional: Dict[str, bool],
-                                          equipment_class_positions: Dict[str, int]):
+                                          equipment_class_positions: Dict[str, int],
+                                          population_context: Optional[object] = None) -> Tuple[int, Optional[object]]:
     """
     Establish upstream/downstream relationships between equipment *instances* within the same production line.
     
@@ -53,6 +54,7 @@ def setup_equipment_instance_relationships(onto: Ontology,
         defined_properties: Dictionary of defined properties
         property_is_functional: Dictionary indicating whether properties are functional
         equipment_class_positions: Dictionary mapping equipment class names to sequence positions
+        population_context: Optional PopulationContext for property usage tracking
         
     Returns:
         Tuple of (number of relationships created, context with property usage tracking)
@@ -296,12 +298,12 @@ def setup_equipment_instance_relationships(onto: Ontology,
                 
                 try:
                     # Create forward relationship (isImmediatelyUpstreamOf) - TKT-004: Pass context
-                    _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False, context=context)
+                    _set_property_value(upstream_eq, prop_isImmediatelyUpstreamOf, downstream_eq, is_functional=False, context=context or population_context)
                     pop_logger.debug(f"TKT-006: Created relationship: {up_id} (pos {upstream_pos}) isImmediatelyUpstreamOf {down_id} (pos {downstream_pos})")
                     
                     # Create inverse relationship (isImmediatelyDownstreamOf) if property exists - TKT-004: Pass context
                     if prop_isImmediatelyDownstreamOf:
-                        _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False, context=context)
+                        _set_property_value(downstream_eq, prop_isImmediatelyDownstreamOf, upstream_eq, is_functional=False, context=context or population_context)
                         pop_logger.debug(f"TKT-006: Created inverse relationship: {down_id} isImmediatelyDownstreamOf {up_id}")
                     
                     relationships_created += 1
@@ -343,7 +345,7 @@ def setup_equipment_instance_relationships(onto: Ontology,
                                 try:
                                     # Since isParallelWith is symmetric, we only need to set it in one direction
                                     # The OWL reasoner will infer the other direction - TKT-004: Pass context
-                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False, context=context)
+                                    _set_property_value(eq1, prop_isParallelWith, eq2, is_functional=False, context=context or population_context)
                                     pop_logger.debug(f"TKT-007: Created parallel relationship: {eq1_id} isParallelWith {eq2_id} (position {pos})")
                                     parallel_relationships += 1
                                 except Exception as e:

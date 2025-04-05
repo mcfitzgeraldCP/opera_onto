@@ -23,6 +23,8 @@ def run_all_tests():
         ("ontology_generator.tests.test_registry_sync", "test_registry_synchronization"),
         # TKT-001: Add test for property definition
         ("ontology_generator.tests.test_property_definition", "test_property_definition"),
+        # TKT-008: Add test for event linking fixes
+        ("ontology_generator.tests.test_tkt008", "test_tkt008"),
     ]
     
     passed = 0

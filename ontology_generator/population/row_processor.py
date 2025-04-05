@@ -302,42 +302,44 @@ def process_structural_relationships(
         eq_line_mapping = property_mappings["Equipment"]["object_properties"].get("isPartOfProductionLine")
         
         if eq_line_mapping and equipment_individuals and line_individuals:
-            # The column that contains the Line ID for Equipment
-            line_id_column = eq_line_mapping.get("column")
+            # Check for the isPartOfProductionLine and hasEquipmentPart properties
+            is_part_of_line_prop = context.get_prop("isPartOfProductionLine")
+            has_equipment_part_prop = context.get_prop("hasEquipmentPart")
             
-            if line_id_column:
-                # First, build a lookup map for lines by their ID
-                lines_by_id = {}
-                line_id_prop = "lineId" # Property name expected to hold the ID value
+            if not is_part_of_line_prop:
+                log.warning(f"Required property mapping 'isPartOfProductionLine' not found. Cannot link equipment to lines.")
+            elif not has_equipment_part_prop:
+                log.warning(f"Required property mapping 'hasEquipmentPart' not found. Cannot link lines to equipment.")
+            else:
+                # Track link counts
+                equipment_line_links = 0
                 
-                # Check if the lineId property exists
-                line_id_obj_prop = context.get_prop(line_id_prop)
-                if not line_id_obj_prop:
-                    log.warning(f"Required property mapping '{line_id_prop}' not found. Cannot create line lookup map for structural relationships.")
-                else:
-                    for line_ind in line_individuals:
-                        # Get the line's ID value from its properties
-                        if hasattr(line_ind, line_id_prop) and getattr(line_ind, line_id_prop):
-                            line_id = getattr(line_ind, line_id_prop)
-                            if isinstance(line_id, list) and line_id:
-                                for lid in line_id:
-                                    lines_by_id[str(lid)] = line_ind
-                            else:
-                                lines_by_id[str(line_id)] = line_ind
+                # TKT-010: Check for both column and target_link_context in the mapping
+                line_id_column = eq_line_mapping.get("column")
+                target_link_context = eq_line_mapping.get("target_link_context")
                 
-                # Check for the isPartOfProductionLine and hasEquipmentPart properties
-                is_part_of_line_prop = context.get_prop("isPartOfProductionLine")
-                has_equipment_part_prop = context.get_prop("hasEquipmentPart")
-                
-                if not is_part_of_line_prop:
-                    log.warning(f"Required property mapping 'isPartOfProductionLine' not found. Cannot link equipment to lines.")
-                elif not has_equipment_part_prop:
-                    log.warning(f"Required property mapping 'hasEquipmentPart' not found. Cannot link lines to equipment.")
-                else:
-                    # Track link counts
-                    equipment_line_links = 0
+                # Method 1: Link via column value (original implementation)
+                if line_id_column:
+                    # First, build a lookup map for lines by their ID
+                    lines_by_id = {}
+                    line_id_prop = "lineId" # Property name expected to hold the ID value
                     
-                    # Link equipment to lines
+                    # Check if the lineId property exists
+                    line_id_obj_prop = context.get_prop(line_id_prop)
+                    if not line_id_obj_prop:
+                        log.warning(f"Required property mapping '{line_id_prop}' not found. Cannot create line lookup map for structural relationships.")
+                    else:
+                        for line_ind in line_individuals:
+                            # Get the line's ID value from its properties
+                            if hasattr(line_ind, line_id_prop) and getattr(line_ind, line_id_prop):
+                                line_id = getattr(line_ind, line_id_prop)
+                                if isinstance(line_id, list) and line_id:
+                                    for lid in line_id:
+                                        lines_by_id[str(lid)] = line_ind
+                                else:
+                                    lines_by_id[str(line_id)] = line_ind
+                    
+                    # Link equipment to lines using column values
                     for eq_ind in equipment_individuals:
                         # TKT-002: Use the get_individual_data method to retrieve stored data for equipment
                         eq_data = context.get_individual_data(eq_ind) or {}
@@ -366,12 +368,89 @@ def process_structural_relationships(
                                 context.set_prop(line_ind, "hasEquipmentPart", eq_ind)
                                 links_created += 1
                                 equipment_line_links += 1
-                                log.debug(f"Linked Equipment {eq_ind.name} to Line {line_ind.name} via isPartOfProductionLine/hasEquipmentPart")
+                                log.debug(f"Linked Equipment {eq_ind.name} to Line {line_ind.name} via isPartOfProductionLine/hasEquipmentPart (column approach)")
                                 
                                 # Record the link type for statistics
                                 links_by_type["Equipment->Line"] = links_by_type.get("Equipment->Line", 0) + 1
+                
+                # Method 2: TKT-010 - Link via target_link_context (new implementation)
+                elif target_link_context:
+                    log.info(f"TKT-010: Using target_link_context '{target_link_context}' for isPartOfProductionLine relationships")
                     
-                    log.info(f"Created {equipment_line_links} Equipment-Line links")
+                    # For each equipment, find and link to the appropriate line using associated data
+                    for eq_ind in equipment_individuals:
+                        # Get the stored data for this equipment
+                        eq_data = context.get_individual_data(eq_ind) or {}
+                        
+                        # Use the target_link_context to determine which line this equipment belongs to
+                        # For example, if target_link_context is "ProductionLine", we need to find the line
+                        # that this equipment should be linked to based on associated data
+                        
+                        # Approach 1: Direct column lookup for line ID if available (e.g., LINE_NAME)
+                        candidate_line = None
+                        
+                        # Check for a stored "associatedLineId" property on equipment (may have been set during population)
+                        if hasattr(eq_ind, "associatedLineId") and getattr(eq_ind, "associatedLineId"):
+                            line_identifier = getattr(eq_ind, "associatedLineId")
+                            if isinstance(line_identifier, list) and line_identifier:
+                                line_identifier = line_identifier[0]
+                            
+                            # Find matching line by lineId
+                            for line_ind in line_individuals:
+                                if hasattr(line_ind, "lineId") and getattr(line_ind, "lineId"):
+                                    line_id = getattr(line_ind, "lineId")
+                                    if isinstance(line_id, list) and line_id:
+                                        line_id = line_id[0]
+                                    
+                                    if str(line_id) == str(line_identifier):
+                                        candidate_line = line_ind
+                                        log.debug(f"TKT-010: Found line {line_ind.name} with ID {line_id} matching equipment's associatedLineId {line_identifier}")
+                                        break
+                        
+                        # Approach 2: Check for LINE_NAME in stored equipment data
+                        if not candidate_line and "LINE_NAME" in eq_data:
+                            line_name_value = eq_data.get("LINE_NAME")
+                            if line_name_value:
+                                for line_ind in line_individuals:
+                                    if hasattr(line_ind, "lineId") and getattr(line_ind, "lineId"):
+                                        line_id = getattr(line_ind, "lineId")
+                                        if isinstance(line_id, list) and line_id:
+                                            line_id = line_id[0]
+                                        
+                                        if str(line_id) == str(line_name_value):
+                                            candidate_line = line_ind
+                                            log.debug(f"TKT-010: Found line {line_ind.name} with ID {line_id} matching equipment's LINE_NAME {line_name_value}")
+                                            break
+                        
+                        # If we found a candidate line, create the link
+                        if candidate_line:
+                            # Check if the equipment is already linked to this line
+                            current_line = getattr(eq_ind, is_part_of_line_prop.python_name, None)
+                            equipment_already_linked = False
+                            
+                            if current_line:
+                                if isinstance(current_line, list):
+                                    equipment_already_linked = candidate_line in current_line
+                                else:
+                                    equipment_already_linked = current_line == candidate_line
+                            
+                            if not equipment_already_linked:
+                                # Create bidirectional links
+                                context.set_prop(eq_ind, "isPartOfProductionLine", candidate_line)
+                                context.set_prop(candidate_line, "hasEquipmentPart", eq_ind)
+                                links_created += 1
+                                equipment_line_links += 1
+                                log.info(f"TKT-010: Linked Equipment {eq_ind.name} to Line {candidate_line.name} via isPartOfProductionLine/hasEquipmentPart (context approach)")
+                                
+                                # Record the link type for statistics
+                                links_by_type["Equipment->Line (Context)"] = links_by_type.get("Equipment->Line (Context)", 0) + 1
+                        else:
+                            log.debug(f"TKT-010: Could not find appropriate line for equipment {eq_ind.name} using context approach")
+                
+                else:
+                    log.warning(f"TKT-010: No column or target_link_context specified for isPartOfProductionLine property mapping. Cannot link equipment to lines.")
+                
+                log.info(f"Created {equipment_line_links} Equipment-Line links")
     
     # TKT-002: Generate property usage report after all structural relationships are processed
     log.info("TKT-002: Generating property usage report")

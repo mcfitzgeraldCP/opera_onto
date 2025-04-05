@@ -17,7 +17,8 @@ def link_equipment_events_to_line_events(onto: Ontology,
                                         created_events_context: List[Tuple[Thing, Thing, str, Thing]],
                                         defined_classes: Dict[str, ThingClass],
                                         defined_properties: Dict[str, PropertyClass],
-                                        event_buffer_minutes: Optional[int] = None) -> Tuple[int, Optional[PopulationContext]]:
+                                        event_buffer_minutes: Optional[int] = None,
+                                        population_context: Optional[PopulationContext] = None) -> Tuple[int, Optional[PopulationContext]]:
     """
     Second pass function to link equipment EventRecords to their containing line EventRecords,
     using relaxed temporal containment logic.
@@ -33,6 +34,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
         defined_properties: Dictionary of defined properties
         event_buffer_minutes: Optional time buffer in minutes for temporal linking,
                              overrides the default value if provided
+        population_context: Optional PopulationContext for property usage tracking
         
     Returns:
         A tuple containing:
@@ -44,7 +46,7 @@ def link_equipment_events_to_line_events(onto: Ontology,
     # --- Get required classes and properties ---
     # TKT-004: Create a PopulationContext for property usage tracking
     property_is_functional = {}  # We'll fill this as needed
-    context = PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
+    context = population_context if population_context is not None else PopulationContext(onto, defined_classes, defined_properties, property_is_functional)
     
     cls_EventRecord = defined_classes.get("EventRecord")
     cls_ProductionLine = defined_classes.get("ProductionLine")
@@ -603,6 +605,11 @@ def link_equipment_events_to_line_events(onto: Ontology,
     
     # --- Report Results ---
     link_logger.info(f"Equipment Event Linking Complete: Created {links_created} links between equipment and line events")
+    
+    # Avoid division by zero when reporting percentages
+    linked_percentage = (linked_events / total_equipment_events * 100) if total_equipment_events > 0 else 0
+    failed_percentage = (failed_events / total_equipment_events * 100) if total_equipment_events > 0 else 0
+    
     link_logger.info(f"Linking stats: {linked_events}/{total_equipment_events} equipment events linked ({failed_events} failed)")
     
     # Report which linking methods were used - helps understand temporal matching patterns
@@ -617,26 +624,43 @@ def link_equipment_events_to_line_events(onto: Ontology,
     link_logger.info(f"\nTKT-003: Event Linking Verification")
     link_logger.info(f"  • Total line events processed: {line_events_count}")
     link_logger.info(f"  • Total equipment events processed: {equipment_events_count}")
-    link_logger.info(f"  • Equipment events successfully linked: {linked_events} ({linked_events/max(1, equipment_events_count)*100:.1f}%)")
+    
+    # Safeguard against division by zero
+    if equipment_events_count > 0:
+        link_logger.info(f"  • Equipment events successfully linked: {linked_events} ({linked_events/equipment_events_count*100:.1f}%)")
+    else:
+        link_logger.info(f"  • Equipment events successfully linked: {linked_events} (0.0%)")
+    
     link_logger.info(f"  • Equipment events without line association: {len(equipment_without_line)}")
     
     # Print a summary breakdown of the linking results to stdout for visibility
     print(f"\n=== EVENT LINKING RESULTS ===")
     print(f"Total equipment events: {total_equipment_events}")
-    print(f"Events successfully linked: {linked_events} ({linked_events/total_equipment_events*100:.1f}%)")
-    print(f"Failed to link: {failed_events} ({failed_events/total_equipment_events*100:.1f}%)")
+    
+    # Safeguard against division by zero in print statements
+    if total_equipment_events > 0:
+        print(f"Events successfully linked: {linked_events} ({linked_events/total_equipment_events*100:.1f}%)")
+        print(f"Failed to link: {failed_events} ({failed_events/total_equipment_events*100:.1f}%)")
+    else:
+        print(f"Events successfully linked: {linked_events} (0.0%)")
+        print(f"Failed to link: {failed_events} (0.0%)")
     
     if failed_events > 0:
         print("\nFailure breakdown:")
         for category, count in sorted(failure_categories.items(), key=lambda x: x[1], reverse=True):
             if count > 0:
-                print(f"  • {category}: {count} ({count/failed_events*100:.1f}%)")
+                # Safeguard against division by zero
+                percentage = count/failed_events*100 if failed_events > 0 else 0
+                print(f"  • {category}: {count} ({percentage:.1f}%)")
         
         if nearest_misses:
             print(f"\nNear misses (within 5x buffer): {len(nearest_misses)}")
-            print(f"  Average gap: {timedelta(seconds=avg_gap)}")
-            if suggested_buffer > 0:
-                print(f"  Consider increasing buffer from {TIME_BUFFER_MINUTES} to {suggested_buffer} minutes")
+            # Only calculate average gap if there are near misses
+            if nearest_misses:
+                avg_gap = sum((m["gap"].total_seconds() for m in nearest_misses), 0) / len(nearest_misses)
+                print(f"  Average gap: {timedelta(seconds=avg_gap)}")
+                if suggested_buffer > 0:
+                    print(f"  Consider increasing buffer from {TIME_BUFFER_MINUTES} to {suggested_buffer} minutes")
     
     print(f"=== END EVENT LINKING RESULTS ===\n")
     

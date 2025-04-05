@@ -92,8 +92,9 @@ class PopulationContext:
         Returns:
             The property object or None if not found
         """
-        # TKT-002: Track access counts for all properties
-        self._property_access_count[name] = self._property_access_count.get(name, 0) + 1
+        # TKT-009: Fix - Always track access counts even for properties that don't exist
+        if name in self.defined_properties:
+            self._property_access_count[name] = self._property_access_count.get(name, 0) + 1
         
         if name in self._property_cache:
             return self._property_cache[name]
@@ -126,8 +127,8 @@ class PopulationContext:
             # Error logged by get_prop
             return
             
-        # TKT-002: Track usage count when property is successfully retrieved and used
-        self._property_usage_count[prop_name] = self._property_usage_count.get(prop_name, 0) + 1
+        # TKT-009: Fix - Track usage count only when we actually set the property value
+        # Will be incremented inside _set_property_value when value is actually set
         
         is_functional = self.property_is_functional.get(prop_name, False) # Assume non-functional if not specified
 
@@ -239,13 +240,11 @@ def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_f
         return  # Don't set None values
 
     prop_name = prop.python_name  # Use Python name for attribute access
-
-    # TKT-004: Track property usage in context if provided
-    if context is not None and hasattr(context, '_property_usage_count'):
-        prop_name_for_counter = prop.name  # Use the property's original name for the counter
-        context._property_usage_count[prop_name_for_counter] = context._property_usage_count.get(prop_name_for_counter, 0) + 1
+    original_prop_name = prop.name  # Store original name for tracking
 
     try:
+        value_was_set = False  # Track if we actually set a value
+        
         if is_functional:
             # Functional: Use setattr, potentially overwriting. Check if different first.
             current_value = getattr(individual, prop_name, None)
@@ -254,6 +253,7 @@ def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_f
             if current_value != value:
                 setattr(individual, prop_name, value)
                 pop_logger.debug(f"Set functional property {individual.name}.{prop.name} = {repr(value)}")
+                value_was_set = True
         else:
             # Non-Functional: Use append, check if value already exists.
             # Initialize the attribute if it doesn't exist yet
@@ -267,6 +267,11 @@ def _set_property_value(individual: Thing, prop: PropertyClass, value: Any, is_f
             if value not in current_values:
                 current_values.append(value)
                 pop_logger.debug(f"Appended non-functional property {individual.name}.{prop.name} = {repr(value)}")
+                value_was_set = True
+
+        # TKT-009: Fix - Track usage count only if we actually changed something
+        if value_was_set and context is not None and hasattr(context, '_property_usage_count'):
+            context._property_usage_count[original_prop_name] = context._property_usage_count.get(original_prop_name, 0) + 1
 
     except Exception as e:
         pop_logger.error(f"Error setting property '{prop.name}' on individual '{individual.name}' with value '{repr(value)}': {e}", exc_info=False)
@@ -348,6 +353,12 @@ def get_or_create_individual(
     Returns:
         The existing or newly created individual, or None if creation fails.
     """
+    # TKT-011: Check if this is trying to create a ProductionLineOrEquipment individual,
+    # which should only be a structural class and not have direct instances
+    if onto_class and onto_class.name == "ProductionLineOrEquipment":
+        pop_logger.warning(f"Attempt to create individual of abstract class ProductionLineOrEquipment with base '{individual_name_base}'. This class should not have direct instances.")
+        return None
+        
     if not onto_class or not individual_name_base:
         pop_logger.error(f"Missing onto_class ({onto_class}) or individual_name_base ({individual_name_base}) for get_or_create.")
         return None

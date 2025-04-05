@@ -466,10 +466,16 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             elif expected_type in ['DataProperty', 'DatatypeProperty'] and not (isinstance(prop_obj, DataProperty) or issubclass(prop_obj, DataProperty)):
                 logger.warning(f"TKT-002: Property '{prop_name}' is not an instance of DataProperty as specified")
     
-    # Log total property counts
-    object_props = [p for p in defined_properties.values() if isinstance(p, ObjectProperty)]
-    data_props = [p for p in defined_properties.values() if isinstance(p, DataProperty)]
-    logger.info(f"TKT-002: Defined {len(defined_properties)} total properties ({len(object_props)} object properties, {len(data_props)} data properties)")
+    # TKT-009: Fix - Correctly count and log object properties and data properties
+    object_props = []
+    data_props = []
+    for prop_name, prop_obj in defined_properties.items():
+        if isinstance(prop_obj, ObjectProperty) or (hasattr(prop_obj, 'is_a') and any(issubclass(p, ObjectProperty) for p in prop_obj.is_a)):
+            object_props.append(prop_name)
+        elif isinstance(prop_obj, DataProperty) or (hasattr(prop_obj, 'is_a') and any(issubclass(p, DataProperty) for p in prop_obj.is_a)):
+            data_props.append(prop_name)
+            
+    logger.info(f"TKT-009: Defined {len(defined_properties)} total properties ({len(object_props)} object properties, {len(data_props)} data properties)")
     
     logger.info("Ontology structure definition complete.")
     return defined_classes, defined_properties, property_is_functional

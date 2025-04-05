@@ -19,7 +19,7 @@ proc_logger = logging.getLogger(__name__)
 # Define a return type structure for clarity
 RowProcessingResult = Tuple[
     bool,  # Success status
-    Optional[Tuple[Thing, Thing, Thing, Thing]], # event_context: (event_ind, resource_ind, time_interval_ind, line_ind_associated)
+    Optional[Tuple[Thing, Thing, str, Thing]], # event_context: (event_ind, resource_ind, resource_type, line_ind_associated)
     Optional[Tuple[str, Thing, Optional[int]]] # eq_class_info: (eq_class_name, eq_class_ind, position)
 ]
 
@@ -156,7 +156,7 @@ def process_single_data_row(row: Dict[str, Any],
 
         # 8. Process Event Record and Links
         event_ind: Optional[Thing] = None
-        event_context_result: Optional[Tuple[Thing, Thing, Thing, Thing]] = None
+        event_context_result: Optional[Tuple[Thing, Thing, str, Thing]] = None
         if resource_individual and time_interval_ind: # Need resource and interval for meaningful event
             event_ind, event_context_tuple = process_event_record(
                 row=row,
@@ -198,8 +198,12 @@ def process_single_data_row(row: Dict[str, Any],
 
                 # Check if associated_line_ind is indeed a ProductionLine instance
                 if prod_line_class and isinstance(associated_line_ind, prod_line_class):
-                    event_context_result = (event_ind, resource_ind_from_tuple, time_interval_ind, associated_line_ind)
-                    proc_logger.debug(f"Row {row_num}: Stored context for Event {event_ind.name} (Resource: {resource_ind_from_tuple.name}, Line: {associated_line_ind.name})")
+                    # Determine the resource type string (either "Line" or "Equipment")
+                    resource_type_str = "Line" if isinstance(resource_ind_from_tuple, prod_line_class) else "Equipment"
+                    
+                    # Create the tuple with the correct format: (event_ind, resource_ind, resource_type_str, associated_line_ind)
+                    event_context_result = (event_ind, resource_ind_from_tuple, resource_type_str, associated_line_ind)
+                    proc_logger.debug(f"Row {row_num}: Stored context for Event {event_ind.name} (Resource: {resource_ind_from_tuple.name}, Type: {resource_type_str}, Line: {associated_line_ind.name})")
                 else:
                     proc_logger.warning(f"Row {row_num}: Could not determine associated ProductionLine for Event {event_ind.name} (Resource: {resource_ind_from_tuple.name}). Skipping context for isPartOfLineEvent linking.")
         elif not resource_individual:
@@ -226,7 +230,7 @@ def populate_ontology_from_data(onto: Ontology,
                                 property_is_functional: Dict[str, bool],
                                 specification: List[Dict[str, str]],
                                 property_mappings: Dict[str, Dict[str, Dict[str, Any]]] = None
-                              ) -> Tuple[int, Dict[str, ThingClass], Dict[str, int], List[Tuple[Thing, Thing, Thing, Thing]], Dict[Tuple[str, str], Thing], PopulationContext]:
+                              ) -> Tuple[int, Dict[str, ThingClass], Dict[str, int], List[Tuple[Thing, Thing, str, Thing]], Dict[Tuple[str, str], Thing], PopulationContext]:
     """
     Populates the ontology from data rows, creating individuals and establishing links.
     
@@ -244,7 +248,8 @@ def populate_ontology_from_data(onto: Ontology,
         - failed_rows_count: Number of rows that failed to process
         - created_eq_classes: Dictionary of equipment classes created
         - eq_class_positions: Dictionary of equipment class positions
-        - created_events_context: Context tuples for event linking
+        - created_events_context: List of tuples (event_ind, resource_ind, resource_type, line_ind_associated)
+                              where resource_type is a string ("Line" or "Equipment")
         - all_created_individuals_by_uid: Registry of all created individuals
         - population_context: The PopulationContext used during population (for property reporting)
     """
@@ -261,7 +266,7 @@ def populate_ontology_from_data(onto: Ontology,
     # Initialize counters and containers
     failed_rows_count = 0
     total_rows = len(data_rows)
-    created_events_context: List[Tuple[Thing, Thing, Thing, Thing]] = []
+    created_events_context: List[Tuple[Thing, Thing, str, Thing]] = []
     created_eq_classes: Dict[str, ThingClass] = {}  # Key: class name, Value: class individual
     eq_class_positions: Dict[str, int] = {}  # Key: class name, Value: sequence position
     all_created_individuals_by_uid: Dict[Tuple[str, str], Thing] = {}  # Registry for get_or_create lookups

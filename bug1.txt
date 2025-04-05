@@ -17,363 +17,435 @@ Do you understand?
 Log file
 ==============================================================================
 
- - INFO - create_ontology - Logging configured.
- - INFO - create_ontology - Standard logging enabled (INFO level).
- - INFO - create_ontology - Warning suppression filter applied for 17 message patterns.
- - INFO - create_ontology - --- Ontology Generation Process Started ---
- - INFO - create_ontology - --- Starting Ontology Generation ---
- - INFO - create_ontology - Specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V26.csv
- - INFO - create_ontology - Data file: Data/mx_toothpaste_finishing_sample_100lines.csv
- - INFO - create_ontology - Output OWL file: test.owl
- - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
- - INFO - create_ontology - Save format: rdfxml
- - INFO - create_ontology - Run reasoner: False
- - INFO - create_ontology - Reasoner report max entities: 10
- - INFO - create_ontology - Reasoner report verbose: False
- - INFO - create_ontology - Analyze population: True
- - INFO - create_ontology - Strict adherence: False
- - INFO - create_ontology - Skip classes: None
- - INFO - create_ontology - Optimize ontology: False
- - INFO - create_ontology - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V26.csv
- - INFO - ontology_definition - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V26.csv
- - INFO - ontology_definition - Successfully parsed 87 rows from specification.
- - INFO - create_ontology - Parsing property mappings from specification...
- - INFO - ontology_definition - Parsing property mappings from specification
- - INFO - create_ontology - Parsed property mappings for 14 entities
- - INFO - create_ontology - Validating property mappings...
- - INFO - ontology_definition - Validating property mappings...
- - INFO - ontology_definition - Found mappings for 14 entities
- - INFO - ontology_definition - Entity: Area - 3 data properties, 2 object properties
- - INFO - ontology_definition - Entity: Equipment - 7 data properties, 5 object properties
- - INFO - ontology_definition - Entity: EquipmentClass - 1 data properties, 1 object properties
- - INFO - ontology_definition - Entity: EventRecord - 19 data properties, 10 object properties
- - INFO - ontology_definition - Entity: Material - 7 data properties, 2 object properties
- - INFO - ontology_definition - Entity: OperationalReason - 5 data properties, 0 object properties
- - INFO - ontology_definition - Entity: OperationalState - 1 data properties, 0 object properties
- - INFO - ontology_definition - Entity: PersonnelClass - 1 data properties, 0 object properties
- - INFO - ontology_definition - Entity: Plant - 1 data properties, 1 object properties
- - INFO - ontology_definition - Entity: ProcessCell - 1 data properties, 2 object properties
- - INFO - ontology_definition - Entity: ProductionLine - 1 data properties, 2 object properties
- - INFO - ontology_definition - Entity: ProductionRequest - 4 data properties, 1 object properties
- - INFO - ontology_definition - Entity: Shift - 4 data properties, 0 object properties
- - INFO - ontology_definition - Entity: TimeInterval - 2 data properties, 0 object properties
- - INFO - ontology_definition - Property mapping validation complete. Found 14 entities, 57 data properties, 26 object properties.
- - INFO - ontology_definition - Validation PASSED
- - INFO - create_ontology - Property mapping validation passed.
- - INFO - create_ontology - Initializing in-memory World.
- - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
- - INFO - create_ontology - Defining ontology structure (TBox)...
- - INFO - ontology_definition - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
- - INFO - ontology_definition - TKT-002: Found 84 unique properties in specification
- - INFO - ontology_definition - Adding instance-level equipment sequence properties
- - INFO - ontology_definition - Defined property: sequencePosition
- - INFO - ontology_definition - Defined property: isImmediatelyUpstreamOf
- - INFO - ontology_definition - Defined property: isImmediatelyDownstreamOf
- - INFO - ontology_definition - Defined property: isPartOfProductionLine
- - INFO - ontology_definition - Defined property: memberOfClass
- - INFO - ontology_definition - Adding missing equipmentClassId property for EquipmentClass
- - INFO - ontology_definition - Defined property: equipmentClassId
- - ERROR - ontology_definition - Error defining property 'aeModelCategory': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'allMaintenanceTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'autonomousMaintenanceTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'businessExternalTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'originalChangeoverType': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'changeoverType': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'complexity': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'personnelClassId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'downtimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'downtimeDriver': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'effectiveRuntimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'equipmentId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'equipmentModel': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'equipmentName': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'processCellId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'areaCategoryCode': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'areaId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'goodProductionQuantity': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'endTime': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'startTime': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'lineId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'materialId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'materialUOM': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'alternativeModel': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'notEnteredTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'operationType': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'areaPhysicalCategoryName': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'plannedMaintenanceTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'plantId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'plantAvailableTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'plantDecisionTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'plantExperimentationTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'conversionFactor': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'productionAvailableTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'requestDescription': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'requestId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'requestRate': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'requestRateUOM': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'rampUpFlag': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'rejectProductionQuantity': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'runTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'shiftDurationMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'shiftEndTime': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'shiftId': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'shiftStartTime': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'materialDescription': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'sizeType': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'reportedDurationMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'targetProductUOM': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'standardUOM': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'altReasonDescription': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'reasonDescription': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'stateDescription': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'waitingTimeMinutes': name 'DatatypeProperty' is not defined
- - ERROR - ontology_definition - Error defining property 'associatedLineId': name 'DatatypeProperty' is not defined
- - WARNING - ontology_definition - TKT-002: 55 properties in specification were not defined: aeModelCategory, allMaintenanceTimeMinutes, altReasonDescription, alternativeModel, areaCategoryCode, areaId, areaPhysicalCategoryName, associatedLineId, autonomousMaintenanceTimeMinutes, businessExternalTimeMinutes, changeoverType, complexity, conversionFactor, downtimeDriver, downtimeMinutes, effectiveRuntimeMinutes, endTime, equipmentId, equipmentModel, equipmentName, goodProductionQuantity, lineId, materialDescription, materialId, materialUOM, notEnteredTimeMinutes, operationType, originalChangeoverType, personnelClassId, plannedMaintenanceTimeMinutes, plantAvailableTimeMinutes, plantDecisionTimeMinutes, plantExperimentationTimeMinutes, plantId, processCellId, productionAvailableTimeMinutes, rampUpFlag, reasonDescription, rejectProductionQuantity, reportedDurationMinutes, requestDescription, requestId, requestRate, requestRateUOM, runTimeMinutes, shiftDurationMinutes, shiftEndTime, shiftId, shiftStartTime, sizeType, standardUOM, startTime, stateDescription, targetProductUOM, waitingTimeMinutes
- - WARNING - ontology_definition - TKT-002: Property 'sequencePosition' defined as DataPropertyClass but specification calls for DatatypeProperty
- - WARNING - ontology_definition - TKT-002: Property 'isImmediatelyUpstreamOf' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'isImmediatelyDownstreamOf' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'isPartOfProductionLine' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'memberOfClass' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'equipmentClassId' defined as DataPropertyClass but specification calls for DatatypeProperty
- - WARNING - ontology_definition - TKT-002: Property 'hasProcessCell' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'locatedInPlant' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'involvesResource' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'hasArea' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'containsProductionLine' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'partOfArea' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'hasEquipmentPart' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'locatedInProcessCell' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'resourceInvolvedIn' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'hasInstance' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'isParallelWith' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'hasDetailedEquipmentEvent' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'isPartOfLineEvent' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'occursDuring' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'duringShift' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'eventHasState' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'eventHasReason' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'producedMaterial' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'consumedMaterial' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'associatedRequest' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'isMaterialProducedIn' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'isMaterialConsumedIn' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - WARNING - ontology_definition - TKT-002: Property 'hasAssociatedEvent' defined as ObjectPropertyClass but specification calls for ObjectProperty
- - INFO - ontology_definition - TKT-002: Defined 29 total properties (0 object properties, 0 data properties)
- - INFO - ontology_definition - Ontology structure definition complete.
- - INFO - create_ontology - TBox definition complete.
- - INFO - create_ontology - Reading operational data from: Data/mx_toothpaste_finishing_sample_100lines.csv
- - INFO - ontology_definition - Reading data file: Data/mx_toothpaste_finishing_sample_100lines.csv
- - INFO - ontology_definition - Successfully read 100 data rows.
- - INFO - create_ontology - Read 100 data rows.
- - INFO - create_ontology - Populating ontology from data (ABox)...
- - INFO - ontology_generator.population.processing - Created population context with 15 classes and 29 properties
- - WARNING - ontology_population - TKT-002: Property 'plantId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'areaCategoryCode' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'areaId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'areaPhysicalCategoryName' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'processCellId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'lineId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'materialId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'materialUOM' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'conversionFactor' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'materialDescription' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'sizeType' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'targetProductUOM' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'standardUOM' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'requestDescription' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'requestId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'requestRate' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'requestRateUOM' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'shiftDurationMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'shiftEndTime' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'shiftId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'shiftStartTime' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'stateDescription' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'changeoverType' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'altReasonDescription' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'reasonDescription' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'endTime' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'startTime' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'aeModelCategory' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'allMaintenanceTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'autonomousMaintenanceTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'businessExternalTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'downtimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'effectiveRuntimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'goodProductionQuantity' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'notEnteredTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'operationType' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'plannedMaintenanceTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'plantAvailableTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'plantDecisionTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'plantExperimentationTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'productionAvailableTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'rampUpFlag' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'rejectProductionQuantity' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'runTimeMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'reportedDurationMinutes' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'waitingTimeMinutes' not found in defined properties.
- - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO009_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
- - WARNING - ontology_population - TKT-002: Property 'complexity' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'equipmentId' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'equipmentName' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'alternativeModel' not found in defined properties.
- - WARNING - ontology_population - TKT-002: Property 'associatedLineId' not found in defined properties.
- - INFO - ontology_population - TKT-005: Linked equipment '152.0' to its class 'Filler' via memberOfClass property
- - WARNING - ontology_population - TKT-002: Property 'originalChangeoverType' not found in defined properties.
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO006_Filler' using method: Config Map
- - WARNING - ontology_population - TKT-003: Individual with name 'EquipmentClass_Filler' already exists in ontology but not registry (Key: ('EquipmentClass', 'Filler')). Adding to registry and returning existing one.
- - INFO - ontology_population - TKT-005: Linked equipment '225.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00G_CasePacker' using method: Config Map
- - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
- - INFO - ontology_population - TKT-005: Linked equipment '193.0' to its class 'CasePacker' via memberOfClass property
- - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
- - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO004_CasePacker' using method: Config Map
- - WARNING - ontology_population - TKT-003: Individual with name 'EquipmentClass_CasePacker' already exists in ontology but not registry (Key: ('EquipmentClass', 'CasePacker')). Adding to registry and returning existing one.
- - INFO - ontology_population - TKT-005: Linked equipment '146.0' to its class 'CasePacker' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO002_CasePacker' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '165.0' to its class 'CasePacker' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO001_CasePacker2' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '309.0' to its class 'CasePacker' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'EquipmentClass_Cartoner' already exists in ontology but not registry (Key: ('EquipmentClass', 'Cartoner')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__206.0' already exists in ontology but not registry (Key: ('Equipment', '_206.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-002: Property 'downtimeDriver' not found in defined properties.
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO002_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '164.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
- - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00E_Bundler' using method: Config Map
- - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
- - INFO - ontology_population - TKT-005: Linked equipment '177.0' to its class 'Bundler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO002_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '166.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00E_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '178.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00E_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '180.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO004_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '143.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00G_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '192.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00F_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '185.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00I_Bundler' using method: Config Map
- - WARNING - ontology_population - TKT-003: Individual with name 'EquipmentClass_Bundler' already exists in ontology but not registry (Key: ('EquipmentClass', 'Bundler')). Adding to registry and returning existing one.
- - INFO - ontology_population - TKT-005: Linked equipment '205.0' to its class 'Bundler' via memberOfClass property
- - INFO - ontology_population - Found equipment class 'Palletizer' via pattern '_Palletizer' in config map
- - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO00E_Palletizer' using method: Config Map
- - INFO - ontology_population - TKT-005: Setting equipmentClassId='Palletizer' for EquipmentClass individual 'Palletizer'
- - INFO - ontology_population - TKT-005: Linked equipment '181.0' to its class 'Palletizer' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO003_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '171.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00H_CasePacker' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '200.0' to its class 'CasePacker' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__205.0' already exists in ontology but not registry (Key: ('Equipment', '_205.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__152.0' already exists in ontology but not registry (Key: ('Equipment', '_152.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO009_CasePacker' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '151.0' to its class 'CasePacker' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00J_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '769.0' to its class 'Filler' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__178.0' already exists in ontology but not registry (Key: ('Equipment', '_178.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__200.0' already exists in ontology but not registry (Key: ('Equipment', '_200.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO004_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '145.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO004_Bundler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '144.0' to its class 'Bundler' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__151.0' already exists in ontology but not registry (Key: ('Equipment', '_151.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO001_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '159.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00I_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '208.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO009_Bundler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '149.0' to its class 'Bundler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00F_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '187.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00H_Filler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '201.0' to its class 'Filler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00J_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '767.0' to its class 'Cartoner' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__193.0' already exists in ontology but not registry (Key: ('Equipment', '_193.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__164.0' already exists in ontology but not registry (Key: ('Equipment', '_164.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00I_CasePacker' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '207.0' to its class 'CasePacker' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__171.0' already exists in ontology but not registry (Key: ('Equipment', '_171.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'EquipmentClass_Palletizer' already exists in ontology but not registry (Key: ('EquipmentClass', 'Palletizer')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__181.0' already exists in ontology but not registry (Key: ('Equipment', '_181.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__165.0' already exists in ontology but not registry (Key: ('Equipment', '_165.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__192.0' already exists in ontology but not registry (Key: ('Equipment', '_192.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__143.0' already exists in ontology but not registry (Key: ('Equipment', '_143.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO003_CasePacker' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '172.0' to its class 'CasePacker' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO006_CasePacker' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '227.0' to its class 'CasePacker' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00H_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '199.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00F_Bundler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '184.0' to its class 'Bundler' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__149.0' already exists in ontology but not registry (Key: ('Equipment', '_149.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__166.0' already exists in ontology but not registry (Key: ('Equipment', '_166.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO001_Palletizer' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '160.0' to its class 'Palletizer' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__146.0' already exists in ontology but not registry (Key: ('Equipment', '_146.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO003_Bundler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '170.0' to its class 'Bundler' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO002_Bundler' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '163.0' to its class 'Bundler' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__184.0' already exists in ontology but not registry (Key: ('Equipment', '_184.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__227.0' already exists in ontology but not registry (Key: ('Equipment', '_227.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__170.0' already exists in ontology but not registry (Key: ('Equipment', '_170.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__144.0' already exists in ontology but not registry (Key: ('Equipment', '_144.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__207.0' already exists in ontology but not registry (Key: ('Equipment', '_207.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__177.0' already exists in ontology but not registry (Key: ('Equipment', '_177.0')). Adding to registry and returning existing one.
- - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO009_Cartoner' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '150.0' to its class 'Cartoner' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO00G_Palletizer' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '195.0' to its class 'Palletizer' via memberOfClass property
- - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO009_Palletizer' using method: Config Map
- - INFO - ontology_population - TKT-005: Linked equipment '153.0' to its class 'Palletizer' via memberOfClass property
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__201.0' already exists in ontology but not registry (Key: ('Equipment', '_201.0')). Adding to registry and returning existing one.
- - WARNING - ontology_population - TKT-003: Individual with name 'Equipment__767.0' already exists in ontology but not registry (Key: ('Equipment', '_767.0')). Adding to registry and returning existing one.
- - INFO - ontology_generator.population.processing - Ontology population complete: Processed 100 rows with 0 failures.
- - INFO - ontology_generator.population.processing - Created 5 unique equipment classes
- - INFO - ontology_generator.population.processing - Collected 100 event contexts for linking
- - INFO - create_ontology - All data rows were processed successfully.
- - INFO - create_ontology - Prepared population context for later property usage reporting.
- - INFO - create_ontology - Ontology population complete. Created/used 339 total individuals.
- - INFO - create_ontology - Processing structural relationships between entities...
- - INFO - create_ontology - Starting post-processing of structural relationships...
- - INFO - create_ontology - TKT-005: Skipping Equipment.memberOfClass structural relationships (handled in Pass 1 via process_equipment_and_class)
- - INFO - create_ontology - Processing Equipment.isPartOfProductionLine structural relationships...
- - INFO - create_ontology - TKT-002: Generating property usage report
- - INFO - ontology_population - TKT-002: Property Usage Report
- - INFO - ontology_population -   Total properties defined: 29
- - INFO - ontology_population -   Properties accessed: 0/29 (0.0%)
- - INFO - ontology_population -   Properties used (set on individuals): 0/29 (0.0%)
- - INFO - ontology_population -   Unused properties: 29 properties were never used
- - INFO - ontology_population -   Most used properties: 
- - INFO - create_ontology - Post-processing complete: Created 0 structural links in total
- - INFO - create_ontology - Structural relationship processing complete. Created 0 links.
- - INFO - create_ontology - Structural relationship processing complete.
- - INFO - create_ontology - Analyzing ontology population status...
- - INFO - ontology_analysis - Starting analysis of ontology population
- - INFO - ontology_analysis - Analysis complete. Found 15 classes, 0 empty classes
- - INFO - create_ontology - Ontology Population Analysis Complete
+2025-04-04 21:37:11,667 - INFO - create_ontology - Logging configured.
+2025-04-04 21:37:11,667 - INFO - create_ontology - Standard logging enabled (INFO level).
+2025-04-04 21:37:11,667 - INFO - create_ontology - Warning suppression filter applied for 17 message patterns.
+2025-04-04 21:37:11,667 - INFO - create_ontology - --- Ontology Generation Process Started ---
+2025-04-04 21:37:11,667 - INFO - create_ontology - --- Starting Ontology Generation ---
+2025-04-04 21:37:11,667 - INFO - create_ontology - Specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V26.csv
+2025-04-04 21:37:11,667 - INFO - create_ontology - Data file: Data/mx_toothpaste_finishing_sample_100lines.csv
+2025-04-04 21:37:11,667 - INFO - create_ontology - Output OWL file: test.owl
+2025-04-04 21:37:11,667 - INFO - create_ontology - Ontology IRI: http://example.com/manufacturing_ontology.owl
+2025-04-04 21:37:11,667 - INFO - create_ontology - Save format: rdfxml
+2025-04-04 21:37:11,667 - INFO - create_ontology - Run reasoner: False
+2025-04-04 21:37:11,667 - INFO - create_ontology - Reasoner report max entities: 10
+2025-04-04 21:37:11,667 - INFO - create_ontology - Reasoner report verbose: False
+2025-04-04 21:37:11,667 - INFO - create_ontology - Analyze population: True
+2025-04-04 21:37:11,667 - INFO - create_ontology - Strict adherence: False
+2025-04-04 21:37:11,667 - INFO - create_ontology - Skip classes: None
+2025-04-04 21:37:11,667 - INFO - create_ontology - Optimize ontology: False
+2025-04-04 21:37:11,667 - INFO - create_ontology - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V26.csv
+2025-04-04 21:37:11,667 - INFO - ontology_definition - Parsing specification file: Ontology_specifications/OPERA_ISA95_OWL_ONT_V26.csv
+2025-04-04 21:37:11,667 - INFO - ontology_definition - Successfully parsed 87 rows from specification.
+2025-04-04 21:37:11,667 - INFO - create_ontology - Parsing property mappings from specification...
+2025-04-04 21:37:11,667 - INFO - ontology_definition - Parsing property mappings from specification
+2025-04-04 21:37:11,668 - INFO - create_ontology - Parsed property mappings for 14 entities
+2025-04-04 21:37:11,668 - INFO - create_ontology - Validating property mappings...
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Validating property mappings...
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Found mappings for 14 entities
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: Area - 3 data properties, 2 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: Equipment - 7 data properties, 5 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: EquipmentClass - 1 data properties, 1 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: EventRecord - 19 data properties, 10 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: Material - 7 data properties, 2 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: OperationalReason - 5 data properties, 0 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: OperationalState - 1 data properties, 0 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: PersonnelClass - 1 data properties, 0 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: Plant - 1 data properties, 1 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: ProcessCell - 1 data properties, 2 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: ProductionLine - 1 data properties, 2 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: ProductionRequest - 4 data properties, 1 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: Shift - 4 data properties, 0 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Entity: TimeInterval - 2 data properties, 0 object properties
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Property mapping validation complete. Found 14 entities, 57 data properties, 26 object properties.
+2025-04-04 21:37:11,668 - INFO - ontology_definition - Validation PASSED
+2025-04-04 21:37:11,668 - INFO - create_ontology - Property mapping validation passed.
+2025-04-04 21:37:11,668 - INFO - create_ontology - Initializing in-memory World.
+2025-04-04 21:37:11,669 - INFO - create_ontology - Ontology object created in memory: get_ontology("http://example.com/manufacturing_ontology.owl#")
+2025-04-04 21:37:11,669 - INFO - create_ontology - Defining ontology structure (TBox)...
+2025-04-04 21:37:11,669 - INFO - ontology_definition - Defining ontology structure in: http://example.com/manufacturing_ontology.owl#
+2025-04-04 21:37:11,669 - INFO - ontology_definition - TKT-002: Found 84 unique properties in specification
+2025-04-04 21:37:11,670 - INFO - ontology_definition - Adding instance-level equipment sequence properties
+2025-04-04 21:37:11,670 - INFO - ontology_definition - Defined property: sequencePosition
+2025-04-04 21:37:11,670 - INFO - ontology_definition - Defined property: isImmediatelyUpstreamOf
+2025-04-04 21:37:11,670 - INFO - ontology_definition - Defined property: isImmediatelyDownstreamOf
+2025-04-04 21:37:11,670 - INFO - ontology_definition - Defined property: isPartOfProductionLine
+2025-04-04 21:37:11,670 - INFO - ontology_definition - Defined property: memberOfClass
+2025-04-04 21:37:11,670 - INFO - ontology_definition - Adding missing equipmentClassId property for EquipmentClass
+2025-04-04 21:37:11,671 - INFO - ontology_definition - Defined property: equipmentClassId
+2025-04-04 21:37:11,676 - INFO - ontology_definition - TKT-002: All properties from specification were successfully defined
+2025-04-04 21:37:11,676 - INFO - ontology_definition - TKT-002: Defined 84 total properties (0 object properties, 0 data properties)
+2025-04-04 21:37:11,676 - INFO - ontology_definition - Ontology structure definition complete.
+2025-04-04 21:37:11,676 - INFO - create_ontology - TBox definition complete.
+2025-04-04 21:37:11,676 - INFO - create_ontology - Reading operational data from: Data/mx_toothpaste_finishing_sample_100lines.csv
+2025-04-04 21:37:11,676 - INFO - ontology_definition - Reading data file: Data/mx_toothpaste_finishing_sample_100lines.csv
+2025-04-04 21:37:11,677 - INFO - ontology_definition - Successfully read 100 data rows.
+2025-04-04 21:37:11,677 - INFO - create_ontology - Read 100 data rows.
+2025-04-04 21:37:11,677 - INFO - create_ontology - Populating ontology from data (ABox)...
+2025-04-04 21:37:11,678 - INFO - ontology_generator.population.processing - Created population context with 15 classes and 84 properties
+2025-04-04 21:37:11,681 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,681 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO009_Filler' using method: Config Map
+2025-04-04 21:37:11,681 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,681 - INFO - ontology_population - TKT-005: Linked equipment '152.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,683 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,683 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO006_Filler' using method: Config Map
+2025-04-04 21:37:11,683 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,683 - INFO - ontology_population - TKT-005: Linked equipment '225.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,685 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,685 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00G_CasePacker' using method: Config Map
+2025-04-04 21:37:11,686 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,686 - INFO - ontology_population - TKT-005: Linked equipment '193.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,688 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,688 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
+2025-04-04 21:37:11,688 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,688 - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,690 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,690 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO004_CasePacker' using method: Config Map
+2025-04-04 21:37:11,690 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,690 - INFO - ontology_population - TKT-005: Linked equipment '146.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,692 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,692 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO002_CasePacker' using method: Config Map
+2025-04-04 21:37:11,692 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,693 - INFO - ontology_population - TKT-005: Linked equipment '165.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,694 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,694 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO001_CasePacker2' using method: Config Map
+2025-04-04 21:37:11,694 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,694 - INFO - ontology_population - TKT-005: Linked equipment '309.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,697 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,697 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
+2025-04-04 21:37:11,697 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,698 - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,699 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,699 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO002_Cartoner' using method: Config Map
+2025-04-04 21:37:11,699 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,699 - INFO - ontology_population - TKT-005: Linked equipment '164.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,700 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,700 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00E_Bundler' using method: Config Map
+2025-04-04 21:37:11,700 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,701 - INFO - ontology_population - TKT-005: Linked equipment '177.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,702 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,702 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO002_Filler' using method: Config Map
+2025-04-04 21:37:11,702 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,702 - INFO - ontology_population - TKT-005: Linked equipment '166.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,704 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,704 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00E_Cartoner' using method: Config Map
+2025-04-04 21:37:11,704 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,704 - INFO - ontology_population - TKT-005: Linked equipment '178.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,705 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,705 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00E_Filler' using method: Config Map
+2025-04-04 21:37:11,705 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,706 - INFO - ontology_population - TKT-005: Linked equipment '180.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,707 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,707 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO004_Filler' using method: Config Map
+2025-04-04 21:37:11,707 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,707 - INFO - ontology_population - TKT-005: Linked equipment '143.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,709 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,709 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00G_Cartoner' using method: Config Map
+2025-04-04 21:37:11,709 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,709 - INFO - ontology_population - TKT-005: Linked equipment '192.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,710 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,710 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00F_Cartoner' using method: Config Map
+2025-04-04 21:37:11,710 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,711 - INFO - ontology_population - TKT-005: Linked equipment '185.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,712 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,712 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00I_Bundler' using method: Config Map
+2025-04-04 21:37:11,712 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,712 - INFO - ontology_population - TKT-005: Linked equipment '205.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,713 - INFO - ontology_population - Found equipment class 'Palletizer' via pattern '_Palletizer' in config map
+2025-04-04 21:37:11,713 - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO00E_Palletizer' using method: Config Map
+2025-04-04 21:37:11,713 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Palletizer' for EquipmentClass individual 'Palletizer'
+2025-04-04 21:37:11,714 - INFO - ontology_population - TKT-005: Linked equipment '181.0' to its class 'Palletizer' via memberOfClass property
+2025-04-04 21:37:11,715 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,715 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO003_Cartoner' using method: Config Map
+2025-04-04 21:37:11,715 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,715 - INFO - ontology_population - TKT-005: Linked equipment '171.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,717 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,717 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00H_CasePacker' using method: Config Map
+2025-04-04 21:37:11,717 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,717 - INFO - ontology_population - TKT-005: Linked equipment '200.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,719 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,719 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00I_Bundler' using method: Config Map
+2025-04-04 21:37:11,719 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,719 - INFO - ontology_population - TKT-005: Linked equipment '205.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,721 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,721 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO009_Filler' using method: Config Map
+2025-04-04 21:37:11,721 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,721 - INFO - ontology_population - TKT-005: Linked equipment '152.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,722 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,722 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO009_CasePacker' using method: Config Map
+2025-04-04 21:37:11,722 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,722 - INFO - ontology_population - TKT-005: Linked equipment '151.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,724 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,724 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO009_Filler' using method: Config Map
+2025-04-04 21:37:11,724 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,724 - INFO - ontology_population - TKT-005: Linked equipment '152.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,725 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,725 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00J_Filler' using method: Config Map
+2025-04-04 21:37:11,725 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,726 - INFO - ontology_population - TKT-005: Linked equipment '769.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,727 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,727 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
+2025-04-04 21:37:11,727 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,727 - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,728 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,728 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00E_Cartoner' using method: Config Map
+2025-04-04 21:37:11,728 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,728 - INFO - ontology_population - TKT-005: Linked equipment '178.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,729 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,729 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00H_CasePacker' using method: Config Map
+2025-04-04 21:37:11,729 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,729 - INFO - ontology_population - TKT-005: Linked equipment '200.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,731 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,731 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO004_Cartoner' using method: Config Map
+2025-04-04 21:37:11,731 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,731 - INFO - ontology_population - TKT-005: Linked equipment '145.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,733 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,733 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO004_Bundler' using method: Config Map
+2025-04-04 21:37:11,733 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,733 - INFO - ontology_population - TKT-005: Linked equipment '144.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,734 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,734 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO009_CasePacker' using method: Config Map
+2025-04-04 21:37:11,734 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,734 - INFO - ontology_population - TKT-005: Linked equipment '151.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,736 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,736 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO001_Filler' using method: Config Map
+2025-04-04 21:37:11,736 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,736 - INFO - ontology_population - TKT-005: Linked equipment '159.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,737 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,738 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00H_CasePacker' using method: Config Map
+2025-04-04 21:37:11,738 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,738 - INFO - ontology_population - TKT-005: Linked equipment '200.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,738 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,739 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00I_Filler' using method: Config Map
+2025-04-04 21:37:11,739 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,739 - INFO - ontology_population - TKT-005: Linked equipment '208.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,740 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,740 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO009_Filler' using method: Config Map
+2025-04-04 21:37:11,740 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,740 - INFO - ontology_population - TKT-005: Linked equipment '152.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,742 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,742 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
+2025-04-04 21:37:11,743 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,743 - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,744 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,744 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO009_Bundler' using method: Config Map
+2025-04-04 21:37:11,744 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,744 - INFO - ontology_population - TKT-005: Linked equipment '149.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,746 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,746 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00F_Filler' using method: Config Map
+2025-04-04 21:37:11,746 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,746 - INFO - ontology_population - TKT-005: Linked equipment '187.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,748 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,748 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00H_Filler' using method: Config Map
+2025-04-04 21:37:11,748 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,749 - INFO - ontology_population - TKT-005: Linked equipment '201.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,750 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,750 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00J_Cartoner' using method: Config Map
+2025-04-04 21:37:11,751 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,751 - INFO - ontology_population - TKT-005: Linked equipment '767.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,752 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,752 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00G_CasePacker' using method: Config Map
+2025-04-04 21:37:11,752 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,752 - INFO - ontology_population - TKT-005: Linked equipment '193.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,753 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,753 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO002_Cartoner' using method: Config Map
+2025-04-04 21:37:11,753 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,753 - INFO - ontology_population - TKT-005: Linked equipment '164.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,754 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,754 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO009_Filler' using method: Config Map
+2025-04-04 21:37:11,754 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,755 - INFO - ontology_population - TKT-005: Linked equipment '152.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,756 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,756 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO002_Cartoner' using method: Config Map
+2025-04-04 21:37:11,756 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,756 - INFO - ontology_population - TKT-005: Linked equipment '164.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,757 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,757 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00I_CasePacker' using method: Config Map
+2025-04-04 21:37:11,757 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,758 - INFO - ontology_population - TKT-005: Linked equipment '207.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,762 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,762 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO003_Cartoner' using method: Config Map
+2025-04-04 21:37:11,762 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,762 - INFO - ontology_population - TKT-005: Linked equipment '171.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,763 - INFO - ontology_population - Found equipment class 'Palletizer' via pattern '_Palletizer' in config map
+2025-04-04 21:37:11,763 - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO00E_Palletizer' using method: Config Map
+2025-04-04 21:37:11,763 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Palletizer' for EquipmentClass individual 'Palletizer'
+2025-04-04 21:37:11,763 - INFO - ontology_population - TKT-005: Linked equipment '181.0' to its class 'Palletizer' via memberOfClass property
+2025-04-04 21:37:11,764 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,764 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO009_CasePacker' using method: Config Map
+2025-04-04 21:37:11,764 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,764 - INFO - ontology_population - TKT-005: Linked equipment '151.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,765 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,765 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO002_Cartoner' using method: Config Map
+2025-04-04 21:37:11,765 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,765 - INFO - ontology_population - TKT-005: Linked equipment '164.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,767 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,767 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO002_CasePacker' using method: Config Map
+2025-04-04 21:37:11,767 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,767 - INFO - ontology_population - TKT-005: Linked equipment '165.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,769 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,769 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
+2025-04-04 21:37:11,769 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,769 - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,770 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,770 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00G_Cartoner' using method: Config Map
+2025-04-04 21:37:11,770 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,770 - INFO - ontology_population - TKT-005: Linked equipment '192.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,771 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,771 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO004_Filler' using method: Config Map
+2025-04-04 21:37:11,771 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,771 - INFO - ontology_population - TKT-005: Linked equipment '143.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,772 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,772 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO003_CasePacker' using method: Config Map
+2025-04-04 21:37:11,772 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,773 - INFO - ontology_population - TKT-005: Linked equipment '172.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,774 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,774 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO006_CasePacker' using method: Config Map
+2025-04-04 21:37:11,774 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,774 - INFO - ontology_population - TKT-005: Linked equipment '227.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,775 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,775 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00H_Cartoner' using method: Config Map
+2025-04-04 21:37:11,775 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,776 - INFO - ontology_population - TKT-005: Linked equipment '199.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,777 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,777 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO002_Cartoner' using method: Config Map
+2025-04-04 21:37:11,777 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,777 - INFO - ontology_population - TKT-005: Linked equipment '164.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,778 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,778 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00F_Bundler' using method: Config Map
+2025-04-04 21:37:11,778 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,779 - INFO - ontology_population - TKT-005: Linked equipment '184.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,780 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,780 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO009_Bundler' using method: Config Map
+2025-04-04 21:37:11,780 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,780 - INFO - ontology_population - TKT-005: Linked equipment '149.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,781 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,781 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO002_Filler' using method: Config Map
+2025-04-04 21:37:11,781 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,781 - INFO - ontology_population - TKT-005: Linked equipment '166.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,782 - INFO - ontology_population - Found equipment class 'Palletizer' via pattern '_Palletizer' in config map
+2025-04-04 21:37:11,782 - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO001_Palletizer' using method: Config Map
+2025-04-04 21:37:11,782 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Palletizer' for EquipmentClass individual 'Palletizer'
+2025-04-04 21:37:11,782 - INFO - ontology_population - TKT-005: Linked equipment '160.0' to its class 'Palletizer' via memberOfClass property
+2025-04-04 21:37:11,783 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,783 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO004_CasePacker' using method: Config Map
+2025-04-04 21:37:11,783 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,783 - INFO - ontology_population - TKT-005: Linked equipment '146.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,784 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,784 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO003_Bundler' using method: Config Map
+2025-04-04 21:37:11,784 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,785 - INFO - ontology_population - TKT-005: Linked equipment '170.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,787 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,787 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO002_Bundler' using method: Config Map
+2025-04-04 21:37:11,787 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,787 - INFO - ontology_population - TKT-005: Linked equipment '163.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,788 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,788 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00F_Bundler' using method: Config Map
+2025-04-04 21:37:11,788 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,788 - INFO - ontology_population - TKT-005: Linked equipment '184.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,790 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,790 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO006_CasePacker' using method: Config Map
+2025-04-04 21:37:11,790 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,790 - INFO - ontology_population - TKT-005: Linked equipment '227.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,791 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,792 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO003_Bundler' using method: Config Map
+2025-04-04 21:37:11,792 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,792 - INFO - ontology_population - TKT-005: Linked equipment '170.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,793 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,793 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO004_CasePacker' using method: Config Map
+2025-04-04 21:37:11,793 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,793 - INFO - ontology_population - TKT-005: Linked equipment '146.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,794 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,794 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
+2025-04-04 21:37:11,794 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,794 - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,795 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,795 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO004_Bundler' using method: Config Map
+2025-04-04 21:37:11,795 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,795 - INFO - ontology_population - TKT-005: Linked equipment '144.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,799 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,799 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO00I_CasePacker' using method: Config Map
+2025-04-04 21:37:11,799 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,799 - INFO - ontology_population - TKT-005: Linked equipment '207.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,800 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,800 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00I_Cartoner' using method: Config Map
+2025-04-04 21:37:11,800 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,800 - INFO - ontology_population - TKT-005: Linked equipment '206.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,802 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,802 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO009_Filler' using method: Config Map
+2025-04-04 21:37:11,802 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,802 - INFO - ontology_population - TKT-005: Linked equipment '152.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,803 - INFO - ontology_population - Found equipment class 'Bundler' via pattern '_Bundler' in config map
+2025-04-04 21:37:11,803 - INFO - ontology_population - Successfully parsed equipment class 'Bundler' from 'FIPCO00E_Bundler' using method: Config Map
+2025-04-04 21:37:11,803 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Bundler' for EquipmentClass individual 'Bundler'
+2025-04-04 21:37:11,803 - INFO - ontology_population - TKT-005: Linked equipment '177.0' to its class 'Bundler' via memberOfClass property
+2025-04-04 21:37:11,806 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,806 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO009_Cartoner' using method: Config Map
+2025-04-04 21:37:11,806 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,807 - INFO - ontology_population - TKT-005: Linked equipment '150.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,808 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,808 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO004_Filler' using method: Config Map
+2025-04-04 21:37:11,808 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,808 - INFO - ontology_population - TKT-005: Linked equipment '143.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,811 - INFO - ontology_population - Found equipment class 'Palletizer' via pattern '_Palletizer' in config map
+2025-04-04 21:37:11,811 - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO00G_Palletizer' using method: Config Map
+2025-04-04 21:37:11,811 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Palletizer' for EquipmentClass individual 'Palletizer'
+2025-04-04 21:37:11,811 - INFO - ontology_population - TKT-005: Linked equipment '195.0' to its class 'Palletizer' via memberOfClass property
+2025-04-04 21:37:11,812 - INFO - ontology_population - Found equipment class 'Palletizer' via pattern '_Palletizer' in config map
+2025-04-04 21:37:11,812 - INFO - ontology_population - Successfully parsed equipment class 'Palletizer' from 'FIPCO009_Palletizer' using method: Config Map
+2025-04-04 21:37:11,812 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Palletizer' for EquipmentClass individual 'Palletizer'
+2025-04-04 21:37:11,812 - INFO - ontology_population - TKT-005: Linked equipment '153.0' to its class 'Palletizer' via memberOfClass property
+2025-04-04 21:37:11,813 - INFO - ontology_population - Found equipment class 'CasePacker' via pattern '_CasePacker' in config map
+2025-04-04 21:37:11,813 - INFO - ontology_population - Successfully parsed equipment class 'CasePacker' from 'FIPCO004_CasePacker' using method: Config Map
+2025-04-04 21:37:11,813 - INFO - ontology_population - TKT-005: Setting equipmentClassId='CasePacker' for EquipmentClass individual 'CasePacker'
+2025-04-04 21:37:11,813 - INFO - ontology_population - TKT-005: Linked equipment '146.0' to its class 'CasePacker' via memberOfClass property
+2025-04-04 21:37:11,814 - INFO - ontology_population - Found equipment class 'Filler' via pattern '_Filler' in config map
+2025-04-04 21:37:11,814 - INFO - ontology_population - Successfully parsed equipment class 'Filler' from 'FIPCO00H_Filler' using method: Config Map
+2025-04-04 21:37:11,814 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Filler' for EquipmentClass individual 'Filler'
+2025-04-04 21:37:11,814 - INFO - ontology_population - TKT-005: Linked equipment '201.0' to its class 'Filler' via memberOfClass property
+2025-04-04 21:37:11,816 - INFO - ontology_population - Found equipment class 'Cartoner' via pattern '_Cartoner' in config map
+2025-04-04 21:37:11,816 - INFO - ontology_population - Successfully parsed equipment class 'Cartoner' from 'FIPCO00J_Cartoner' using method: Config Map
+2025-04-04 21:37:11,816 - INFO - ontology_population - TKT-005: Setting equipmentClassId='Cartoner' for EquipmentClass individual 'Cartoner'
+2025-04-04 21:37:11,816 - INFO - ontology_population - TKT-005: Linked equipment '767.0' to its class 'Cartoner' via memberOfClass property
+2025-04-04 21:37:11,817 - INFO - ontology_generator.population.processing - Ontology population complete: Processed 100 rows with 0 failures.
+2025-04-04 21:37:11,817 - INFO - ontology_generator.population.processing - Created 5 unique equipment classes
+2025-04-04 21:37:11,817 - INFO - ontology_generator.population.processing - Collected 100 event contexts for linking
+2025-04-04 21:37:11,817 - INFO - create_ontology - All data rows were processed successfully.
+2025-04-04 21:37:11,817 - INFO - create_ontology - Prepared population context for later property usage reporting.
+2025-04-04 21:37:11,817 - INFO - create_ontology - Ontology population complete. Created/used 339 total individuals.
+2025-04-04 21:37:11,817 - INFO - create_ontology - Processing structural relationships between entities...
+2025-04-04 21:37:11,817 - INFO - create_ontology - Starting post-processing of structural relationships...
+2025-04-04 21:37:11,817 - INFO - create_ontology - TKT-005: Skipping Equipment.memberOfClass structural relationships (handled in Pass 1 via process_equipment_and_class)
+2025-04-04 21:37:11,817 - INFO - create_ontology - Processing Equipment.isPartOfProductionLine structural relationships...
+2025-04-04 21:37:11,817 - INFO - create_ontology - TKT-002: Generating property usage report
+2025-04-04 21:37:11,817 - INFO - ontology_population - TKT-002: Property Usage Report
+2025-04-04 21:37:11,817 - INFO - ontology_population -   Total properties defined: 84
+2025-04-04 21:37:11,817 - INFO - ontology_population -   Properties accessed: 0/84 (0.0%)
+2025-04-04 21:37:11,817 - INFO - ontology_population -   Properties used (set on individuals): 0/84 (0.0%)
+2025-04-04 21:37:11,817 - INFO - ontology_population -   Unused properties: 84 properties were never used
+2025-04-04 21:37:11,817 - INFO - ontology_population -   Most used properties: 
+2025-04-04 21:37:11,817 - INFO - create_ontology - Post-processing complete: Created 0 structural links in total
+2025-04-04 21:37:11,817 - INFO - create_ontology - Structural relationship processing complete. Created 0 links.
+2025-04-04 21:37:11,817 - INFO - create_ontology - Structural relationship processing complete.
+2025-04-04 21:37:11,817 - INFO - create_ontology - Analyzing ontology population status...
+2025-04-04 21:37:11,817 - INFO - ontology_analysis - Starting analysis of ontology population
+2025-04-04 21:37:11,819 - INFO - ontology_analysis - Analysis complete. Found 15 classes, 0 empty classes
+2025-04-04 21:37:11,819 - INFO - create_ontology - Ontology Population Analysis Complete
 
 ================================================================================
 ONTOLOGY POPULATION REPORT
+================================================================================
+
 SUMMARY:
   • Total Classes: 15
   • Populated Classes: 15 (100.0%)
   • Empty Classes: 0 (0.0%)
   • Total Individuals: 399
+
 SPECIFICATION ANALYSIS:
   • Classes in Specification: 15
   • Classes Implemented in Ontology: 15
+
 POPULATED CLASSES (Class: Count)
   • EventRecord: 101
   • TimeInterval: 101
@@ -386,8 +458,10 @@ POPULATED CLASSES (Class: Count)
       ... and 5 more
   • OperationalState: 10
       Examples: OperationalState, OperationalState_DOWNTIME, OperationalState_PLANNED, OperationalState_RUNNING, OperationalState_BUSINESS_EXTERNAL
+      ... and 5 more
   • Shift: 10
       Examples: Shift, Shift_Shift2_2025-02-07_14_00_00.000_-0500, Shift_Shift1_2025-02-06_06_00_00.000_-0500, Shift_Shift2_2025-02-05_14_00_00.000_-0500, Shift_Shift2_2025-02-06_14_00_00.000_-0500
+      ... and 5 more
   • EquipmentClass: 6
       Examples: EquipmentClass, EquipmentClass_Filler, EquipmentClass_CasePacker, EquipmentClass_Cartoner, EquipmentClass_Bundler
       ... and 1 more
@@ -401,28 +475,177 @@ POPULATED CLASSES (Class: Count)
       Examples: PersonnelClass
   • ProductionLineOrEquipment: 1
       Examples: ProductionLineOrEquipment
+
 OPTIMIZATION RECOMMENDATIONS:
- - INFO - create_ontology - Setting up equipment sequence relationships...
- - INFO - ontology_population - Setting up INSTANCE-LEVEL equipment relationships within production lines...
- - WARNING - ontology_population - Equipment class positions dictionary is empty. We'll still process equipment instances that have sequence positions set directly.
- - ERROR - ontology_population - Missing required components for equipment sequencing: equipmentId
- - INFO - create_ontology - Created None equipment instance relationships.
- - INFO - create_ontology - Linking equipment events to line events...
- - INFO - event_linking - Starting second pass: Linking equipment events to line events (Enhanced Relaxed Temporal Logic)...
- - ERROR - event_linking - Missing essential classes or properties (EventRecord, ProductionLine, Equipment, isPartOfLineEvent, startTime, endTime) for linking. Aborting.
- - INFO - create_ontology - Created 0 links between equipment events and line events
- - INFO - create_ontology - TKT-002: Generating final property usage report
- - INFO - ontology_population -   Properties accessed: 65/29 (224.1%)
- - INFO - ontology_population -   Properties used (set on individuals): 12/29 (41.4%)
- - INFO - ontology_population -   Unused properties: 17 properties were never used
- - WARNING - ontology_population -   TKT-002: 53 undefined properties were requested: aeModelCategory, allMaintenanceTimeMinutes, altReasonDescription, alternativeModel, areaCategoryCode, areaId, areaPhysicalCategoryName, associatedLineId, autonomousMaintenanceTimeMinutes, businessExternalTimeMinutes, changeoverType, complexity, conversionFactor, downtimeDriver, downtimeMinutes, effectiveRuntimeMinutes, endTime, equipmentId, equipmentName, goodProductionQuantity, lineId, materialDescription, materialId, materialUOM, notEnteredTimeMinutes, operationType, originalChangeoverType, plannedMaintenanceTimeMinutes, plantAvailableTimeMinutes, plantDecisionTimeMinutes, plantExperimentationTimeMinutes, plantId, processCellId, productionAvailableTimeMinutes, rampUpFlag, reasonDescription, rejectProductionQuantity, reportedDurationMinutes, requestDescription, requestId, requestRate, requestRateUOM, runTimeMinutes, shiftDurationMinutes, shiftEndTime, shiftId, shiftStartTime, sizeType, standardUOM, startTime, stateDescription, targetProductUOM, waitingTimeMinutes
- - INFO - ontology_population -   Most used properties: involvesResource (200), occursDuring (200), duringShift (200), eventHasState (200), eventHasReason (200)
- - INFO - create_ontology - Attempting to save final ontology to: test.owl
- - INFO - create_ontology - Saving ontology in 'rdfxml' format...
- - INFO - create_ontology - Ontology saved successfully.
- - INFO - create_ontology - --- Ontology Generation Finished --- Total time: 0.20 seconds
- - INFO - create_ontology - Message suppression summary: 384 messages suppressed (0 warnings, 384 info messages)
- - INFO - create_ontology - Ontology generation process completed.
+2025-04-04 21:37:11,819 - INFO - create_ontology - Setting up equipment sequence relationships...
+2025-04-04 21:37:11,819 - INFO - create_ontology - Found 5 equipment classes and 0 sequence positions
+2025-04-04 21:37:11,819 - INFO - ontology_population - Setting up INSTANCE-LEVEL equipment relationships within production lines...
+2025-04-04 21:37:11,819 - WARNING - ontology_population - Equipment class positions dictionary is empty. Using DEFAULT_EQUIPMENT_SEQUENCE as fallback.
+2025-04-04 21:37:11,819 - INFO - ontology_population - Using 7 equipment class positions for processing.
+2025-04-04 21:37:11,819 - INFO - ontology_population - Grouping equipment instances by production line...
+2025-04-04 21:37:11,819 - INFO - ontology_population - Equipment distribution summary:
+2025-04-04 21:37:11,819 - INFO - ontology_population -   • Total equipment found: 40
+2025-04-04 21:37:11,819 - INFO - ontology_population -   • Equipment linked to lines: 40
+2025-04-04 21:37:11,819 - INFO - ontology_population -   • Equipment linked to equipment classes: 40
+2025-04-04 21:37:11,819 - INFO - ontology_population -   • Production lines with equipment: 12
+2025-04-04 21:37:11,819 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO009
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO009 (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 152.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 150.0 [2]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 149.0 [3]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   4. 151.0 [5]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   5. 153.0 [7]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 4 instance relationships for line FIPCO009.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO006
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO006 (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 225.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 227.0 [5]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 1 instance relationships for line FIPCO006.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00G
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO00G (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 192.0 [2]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 193.0 [5]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 195.0 [7]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 2 instance relationships for line FIPCO00G.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00I
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO00I (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 208.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 206.0 [2]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 205.0 [3]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   4. 207.0 [5]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 3 instance relationships for line FIPCO00I.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO004
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO004 (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 143.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 145.0 [2]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 144.0 [3]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   4. 146.0 [5]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 3 instance relationships for line FIPCO004.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO002
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO002 (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 166.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 164.0 [2]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 163.0 [3]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   4. 165.0 [5]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 3 instance relationships for line FIPCO002.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO001
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO001 (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 159.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 309.0 [5]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 160.0 [7]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 2 instance relationships for line FIPCO001.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00E
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO00E (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 180.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 178.0 [2]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 177.0 [3]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   4. 181.0 [7]
+2025-04-04 21:37:11,820 - INFO - ontology_population - Established 3 instance relationships for line FIPCO00E.
+2025-04-04 21:37:11,820 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00F
+2025-04-04 21:37:11,820 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO00F (format: id [position]):
+2025-04-04 21:37:11,820 - INFO - ontology_population -   1. 187.0 [1]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   2. 185.0 [2]
+2025-04-04 21:37:11,820 - INFO - ontology_population -   3. 184.0 [3]
+2025-04-04 21:37:11,821 - INFO - ontology_population - Established 2 instance relationships for line FIPCO00F.
+2025-04-04 21:37:11,821 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO003
+2025-04-04 21:37:11,821 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO003 (format: id [position]):
+2025-04-04 21:37:11,821 - INFO - ontology_population -   1. 171.0 [2]
+2025-04-04 21:37:11,821 - INFO - ontology_population -   2. 170.0 [3]
+2025-04-04 21:37:11,821 - INFO - ontology_population -   3. 172.0 [5]
+2025-04-04 21:37:11,821 - INFO - ontology_population - Established 2 instance relationships for line FIPCO003.
+2025-04-04 21:37:11,821 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00H
+2025-04-04 21:37:11,821 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO00H (format: id [position]):
+2025-04-04 21:37:11,821 - INFO - ontology_population -   1. 201.0 [1]
+2025-04-04 21:37:11,821 - INFO - ontology_population -   2. 199.0 [2]
+2025-04-04 21:37:11,821 - INFO - ontology_population -   3. 200.0 [5]
+2025-04-04 21:37:11,821 - INFO - ontology_population - Established 2 instance relationships for line FIPCO00H.
+2025-04-04 21:37:11,821 - INFO - ontology_population - Processing equipment instance relationships for line: FIPCO00J
+2025-04-04 21:37:11,821 - INFO - ontology_population - TKT-006: Sorted equipment on line FIPCO00J (format: id [position]):
+2025-04-04 21:37:11,821 - INFO - ontology_population -   1. 769.0 [1]
+2025-04-04 21:37:11,821 - INFO - ontology_population -   2. 767.0 [2]
+2025-04-04 21:37:11,821 - INFO - ontology_population - Established 1 instance relationships for line FIPCO00J.
+
+=== EQUIPMENT INSTANCE RELATIONSHIP REPORT ===
+Found 40 equipment instances with sequencePosition
+2025-04-04 21:37:11,821 - INFO - ontology_population - Established 28 equipment instance relationships across 12 production lines.
+Established 28 equipment instance relationships on 12 lines:
+  • Line FIPCO001: 2 relationships
+  • Line FIPCO002: 3 relationships
+  • Line FIPCO003: 2 relationships
+  • Line FIPCO004: 3 relationships
+  • Line FIPCO006: 1 relationships
+  • Line FIPCO009: 4 relationships
+  • Line FIPCO00E: 3 relationships
+  • Line FIPCO00F: 2 relationships
+  • Line FIPCO00G: 2 relationships
+  • Line FIPCO00H: 2 relationships
+  • Line FIPCO00I: 3 relationships
+  • Line FIPCO00J: 1 relationships
+
+Instance sequencing approach:
+  • Equipment instances are sorted by sequencePosition, then by equipmentId
+  • Sorted instances on the same line are linked via isImmediatelyUpstreamOf/isImmediatelyDownstreamOf
+2025-04-04 21:37:11,821 - INFO - ontology_population - TKT-007: No parallel equipment relationships were established.
+
+No parallel equipment relationships could be established.
+Possible reasons:
+  • No equipment instances with the same sequence position on the same line
+  • Equipment lacking sequence position information
+2025-04-04 21:37:11,821 - INFO - ontology_population - TKT-006: Successfully established 28 instance-level equipment relationships
+2025-04-04 21:37:11,821 - INFO - ontology_population - TKT-007: Successfully established 0 parallel equipment relationships
+2025-04-04 21:37:11,821 - INFO - create_ontology - Created 28 equipment instance relationships.
+2025-04-04 21:37:11,821 - INFO - create_ontology - TKT-004: Updating property usage tracking with sequence relationship data
+2025-04-04 21:37:11,821 - INFO - create_ontology - Linking equipment events to line events...
+2025-04-04 21:37:11,821 - INFO - event_linking - Starting second pass: Linking equipment events to line events (Enhanced Relaxed Temporal Logic)...
+2025-04-04 21:37:11,821 - INFO - event_linking - Using temporal linking parameters: Buffer=5 minutes, Default Duration=2 hours
+2025-04-04 21:37:11,821 - INFO - event_linking - TKT-003: Event type counts - Line events: 0, Equipment events: 0
+2025-04-04 21:37:11,822 - INFO - event_linking - Indexed 0 lines with line events.
+2025-04-04 21:37:11,822 - INFO - event_linking - Found 0 equipment events with context to potentially link.
+2025-04-04 21:37:11,822 - INFO - event_linking - Processed 100 valid intervals, skipped 0 invalid/incomplete intervals.
+2025-04-04 21:37:11,822 - INFO - event_linking - Time data statistics: Missing start times: 0, Missing end times: 14
+2025-04-04 21:37:11,822 - WARNING - event_linking - Found 12 lines with no associated events. First 5: ProductionLine_FIPCO001, ProductionLine_FIPCO00H, ProductionLine_FIPCO00F, ProductionLine_FIPCO003, ProductionLine_FIPCO00J
+2025-04-04 21:37:11,822 - INFO - event_linking - Found 14 events with missing end times - will apply enhanced linking logic
+2025-04-04 21:37:11,822 - INFO - event_linking - Attempting to link equipment events to containing line events...
+2025-04-04 21:37:11,822 - INFO - event_linking - Equipment Event Linking Complete: Created 0 links between equipment and line events
+2025-04-04 21:37:11,822 - INFO - event_linking - Linking stats: 0/0 equipment events linked (0 failed)
+2025-04-04 21:37:11,822 - INFO - event_linking - 
+TKT-003: Event Linking Verification
+2025-04-04 21:37:11,822 - INFO - event_linking -   • Total line events processed: 0
+2025-04-04 21:37:11,822 - INFO - event_linking -   • Total equipment events processed: 0
+2025-04-04 21:37:11,822 - INFO - event_linking -   • Equipment events successfully linked: 0 (0.0%)
+2025-04-04 21:37:11,822 - INFO - event_linking -   • Equipment events without line association: 0
+
+=== EVENT LINKING RESULTS ===
+Total equipment events: 0
+2025-04-04 21:37:11,822 - ERROR - create_ontology - Error during event linking: division by zero
+Traceback (most recent call last):
+  File "/Users/MikeFitzgerald/Documents/GitHub/opera_onto/ontology_generator/main.py", line 491, in _link_equipment_events
+    links_created, link_context = link_equipment_events_to_line_events(
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        onto,
+        ^^^^^
+    ...<3 lines>...
+        event_buffer_minutes
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/MikeFitzgerald/Documents/GitHub/opera_onto/ontology_generator/population/linking.py", line 626, in link_equipment_events_to_line_events
+    print(f"Events successfully linked: {linked_events} ({linked_events/total_equipment_events*100:.1f}%)")
+                                                          ~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~
+ZeroDivisionError: division by zero
+2025-04-04 21:37:11,823 - INFO - create_ontology - TKT-002: Generating final property usage report
+2025-04-04 21:37:11,823 - INFO - ontology_population - TKT-002: Property Usage Report
+2025-04-04 21:37:11,823 - INFO - ontology_population -   Total properties defined: 84
+2025-04-04 21:37:11,823 - INFO - ontology_population -   Properties accessed: 65/84 (77.4%)
+2025-04-04 21:37:11,823 - INFO - ontology_population -   Properties used (set on individuals): 67/84 (79.8%)
+2025-04-04 21:37:11,823 - INFO - ontology_population -   Unused properties: 17 properties were never used
+2025-04-04 21:37:11,823 - INFO - ontology_population -   Most used properties: aeModelCategory (200), allMaintenanceTimeMinutes (200), autonomousMaintenanceTimeMinutes (200), businessExternalTimeMinutes (200), downtimeMinutes (200)
+2025-04-04 21:37:11,823 - INFO - create_ontology - Attempting to save final ontology to: test.owl
+2025-04-04 21:37:11,823 - INFO - create_ontology - Saving ontology in 'rdfxml' format...
+2025-04-04 21:37:11,832 - INFO - create_ontology - Ontology saved successfully.
+2025-04-04 21:37:11,832 - INFO - create_ontology - --- Ontology Generation Finished --- Total time: 0.17 seconds
+2025-04-04 21:37:11,832 - INFO - create_ontology - Message suppression summary: 384 messages suppressed (0 warnings, 384 info messages)
+2025-04-04 21:37:11,832 - INFO - create_ontology - Ontology generation process completed.
 
 
 ==============================
@@ -1701,7 +1924,7 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if prop_type_str == 'ObjectProperty':
                 base_prop_type = ObjectProperty
                 parent_classes.append(ObjectProperty)
-            elif prop_type_str == 'DatatypeProperty':
+            elif prop_type_str in ['DataProperty', 'DatatypeProperty']:
                 base_prop_type = DataProperty
                 parent_classes.append(DataProperty)
             else:
@@ -1724,8 +1947,35 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
             if 'irreflexive' in characteristics_str:
                 parent_classes.append(IrreflexiveProperty)
             try:
-                exec(f"\nwith onto:\n    class {prop_name}({', '.join([p.__name__ for p in parent_classes])}):\n        pass\n")
-                new_prop = getattr(onto, prop_name)
+                with onto:
+                    if base_prop_type is ObjectProperty:
+                        if is_functional:
+                            class_def = types.new_class(prop_name, (ObjectProperty, FunctionalProperty))
+                        else:
+                            class_def = types.new_class(prop_name, (ObjectProperty,))
+                        characteristics = []
+                        if 'inversefunctional' in characteristics_str:
+                            characteristics.append(InverseFunctionalProperty)
+                        if 'transitive' in characteristics_str:
+                            characteristics.append(TransitiveProperty)
+                        if 'symmetric' in characteristics_str:
+                            characteristics.append(SymmetricProperty)
+                        if 'asymmetric' in characteristics_str:
+                            characteristics.append(AsymmetricProperty)
+                        if 'reflexive' in characteristics_str:
+                            characteristics.append(ReflexiveProperty)
+                        if 'irreflexive' in characteristics_str:
+                            characteristics.append(IrreflexiveProperty)
+                        if characteristics:
+                            new_bases = list(class_def.__bases__)
+                            new_bases.extend(characteristics)
+                            class_def.__bases__ = tuple(new_bases)
+                    elif base_prop_type is DataProperty:
+                        if is_functional:
+                            class_def = types.new_class(prop_name, (DataProperty, FunctionalProperty))
+                        else:
+                            class_def = types.new_class(prop_name, (DataProperty,))
+                    new_prop = class_def
                 domain_class_names = [dc.strip() for dc in domain_str.split('|')]
                 prop_domain = []
                 valid_domain_found = False
@@ -1816,10 +2066,10 @@ def define_ontology_structure(onto: Ontology, specification: List[Dict[str, str]
     for prop_name, prop_obj in defined_properties.items():
         if prop_name in spec_property_types:
             expected_type = spec_property_types[prop_name]
-            if expected_type == 'ObjectProperty' and (not isinstance(prop_obj, ObjectProperty)):
-                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
-            elif expected_type == 'DatatypeProperty' and (not isinstance(prop_obj, DataProperty)):
-                logger.warning(f"TKT-002: Property '{prop_name}' defined as {type(prop_obj).__name__} but specification calls for {expected_type}")
+            if expected_type == 'ObjectProperty' and (not (isinstance(prop_obj, ObjectProperty) or issubclass(prop_obj, ObjectProperty))):
+                logger.warning(f"TKT-002: Property '{prop_name}' is not an instance of ObjectProperty as specified")
+            elif expected_type in ['DataProperty', 'DatatypeProperty'] and (not (isinstance(prop_obj, DataProperty) or issubclass(prop_obj, DataProperty))):
+                logger.warning(f"TKT-002: Property '{prop_name}' is not an instance of DataProperty as specified")
     object_props = [p for p in defined_properties.values() if isinstance(p, ObjectProperty)]
     data_props = [p for p in defined_properties.values() if isinstance(p, DataProperty)]
     logger.info(f'TKT-002: Defined {len(defined_properties)} total properties ({len(object_props)} object properties, {len(data_props)} data properties)')
@@ -2147,8 +2397,15 @@ def _setup_sequence_relationships(onto, created_eq_classes, eq_class_positions, 
     try:
         from ontology_generator.population.sequence import setup_equipment_instance_relationships
         logger.info('Setting up equipment sequence relationships...')
-        ret_val = setup_equipment_instance_relationships(onto=onto, defined_classes=defined_classes, defined_properties=defined_properties, property_is_functional=property_is_functional, equipment_class_positions=eq_class_positions)
-        if isinstance(ret_val, tuple) and len(ret_val) >= 2:
+        if not isinstance(created_eq_classes, dict):
+            logger.warning('TKT-004: Expected dict for created_eq_classes, converting to empty dict')
+            created_eq_classes = {}
+        if not isinstance(eq_class_positions, dict):
+            logger.warning('TKT-004: Expected dict for eq_class_positions, converting to empty dict')
+            eq_class_positions = {}
+        logger.info(f'Found {len(created_eq_classes)} equipment classes and {len(eq_class_positions)} sequence positions')
+        ret_val = setup_equipment_instance_relationships(onto, defined_classes, defined_properties, property_is_functional, eq_class_positions)
+        if isinstance(ret_val, tuple) and len(ret_val) == 2:
             relationships_count, seq_context = ret_val
             logger.info(f'Created {relationships_count} equipment instance relationships.')
             return seq_context
@@ -2888,7 +3145,7 @@ def get_or_create_individual(onto_class: ThingClass, individual_name_base: Any, 
         if not existing_by_iri:
             existing_by_iri = onto.search_one(iri=f'*{individual_name}')
         if existing_by_iri and isinstance(existing_by_iri, onto_class):
-            pop_logger.warning(f"TKT-003: Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Adding to registry and returning existing one.")
+            pop_logger.debug(f"TKT-003: Individual with name '{individual_name}' already exists in ontology but not registry (Key: {registry_key}). Adding to registry and returning existing one.")
             registry[registry_key] = existing_by_iri
             if add_labels:
                 for label in add_labels:
@@ -2902,7 +3159,7 @@ def get_or_create_individual(onto_class: ThingClass, individual_name_base: Any, 
             double_check = onto.search_one(iri=f'{onto.base_iri}{individual_name}')
             if double_check:
                 if isinstance(double_check, onto_class):
-                    pop_logger.warning(f"TKT-003: Race condition - individual '{individual_name}' was created between checks. Adding to registry and returning.")
+                    pop_logger.debug(f"TKT-003: Race condition - individual '{individual_name}' was created between checks. Adding to registry and returning.")
                     registry[registry_key] = double_check
                     if add_labels:
                         for label in add_labels:
@@ -3741,6 +3998,11 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
                 line_events_count += 1
         time_interval_ind = None
         if prop_occursDuring:
+            if not hasattr(prop_occursDuring, 'python_name'):
+                event_id = getattr(event_ind, 'name', 'unknown')
+                link_logger.error(f"TKT-004: Property 'occursDuring' is not properly initialized - missing python_name attribute. Cannot access time interval for event {event_id}")
+                skipped_intervals += 1
+                continue
             time_interval_ind = getattr(event_ind, prop_occursDuring.python_name, None)
             if isinstance(time_interval_ind, list) and time_interval_ind:
                 time_interval_ind = time_interval_ind[0]
@@ -3752,6 +4014,16 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
         start_time = None
         end_time = None
         try:
+            if not hasattr(prop_startTime, 'python_name'):
+                event_id = getattr(event_ind, 'name', 'unknown')
+                link_logger.error(f"TKT-004: Property 'startTime' is not properly initialized - missing python_name attribute. Cannot access start time for event {event_id}")
+                skipped_intervals += 1
+                continue
+            if not hasattr(prop_endTime, 'python_name'):
+                event_id = getattr(event_ind, 'name', 'unknown')
+                link_logger.error(f"TKT-004: Property 'endTime' is not properly initialized - missing python_name attribute. Cannot access end time for event {event_id}")
+                skipped_intervals += 1
+                continue
             start_time = getattr(time_interval_ind, prop_startTime.python_name, None)
             end_time = getattr(time_interval_ind, prop_endTime.python_name, None)
             processed_intervals += 1
@@ -3776,6 +4048,11 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
         elif resource_type == 'Equipment':
             associated_line_ind = None
             if prop_isPartOfProductionLine:
+                if not hasattr(prop_isPartOfProductionLine, 'python_name'):
+                    event_id = getattr(event_ind, 'name', 'unknown')
+                    equipment_id = getattr(resource_ind, 'name', 'unknown')
+                    link_logger.error(f"TKT-004: Property 'isPartOfProductionLine' is not properly initialized - missing python_name attribute. Cannot find associated line for equipment {equipment_id} in event {event_id}")
+                    continue
                 associated_line_ind = getattr(resource_ind, prop_isPartOfProductionLine.python_name, None)
                 if isinstance(associated_line_ind, list) and associated_line_ind:
                     associated_line_ind = associated_line_ind[0]
@@ -3904,6 +4181,11 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
                         link_logger.debug(f'Match via close proximity: Equipment event {eq_interval_str} is {proximity} from Line event {line_interval_str}')
                 if link:
                     try:
+                        if not hasattr(prop_involvesResource, 'python_name'):
+                            eq_id = getattr(eq_event_ind, 'name', 'unknown')
+                            line_id = getattr(line_event_ind, 'name', 'unknown')
+                            link_logger.error(f"TKT-004: Property 'involvesResource' is not properly initialized - missing python_name attribute. Cannot verify resource types for events {eq_id} and {line_id}")
+                            continue
                         eq_resource = getattr(eq_event_ind, prop_involvesResource.python_name, None)
                         line_resource = getattr(line_event_ind, prop_involvesResource.python_name, None)
                         if isinstance(eq_resource, list) and eq_resource:
@@ -3920,13 +4202,21 @@ def link_equipment_events_to_line_events(onto: Ontology, created_events_context:
                             is_valid_resource_types = False
                         if not is_valid_resource_types:
                             continue
+                        if not hasattr(prop_isPartOfLineEvent, 'python_name'):
+                            eq_id = getattr(eq_event_ind, 'name', 'unknown')
+                            line_id = getattr(line_event_ind, 'name', 'unknown')
+                            link_logger.error(f"TKT-004: Property 'isPartOfLineEvent' is not properly initialized - missing python_name attribute. Cannot create link between events {eq_id} and {line_id}")
+                            continue
                         context.set_prop(eq_event_ind, 'isPartOfLineEvent', line_event_ind)
                         links_created += 1
                         linking_methods_used[link_method] += 1
                         link_logger.info(f'Linked ({link_method}): {eq_id} isPartOfLineEvent {line_id}')
                         if prop_hasDetailedEquipmentEvent:
-                            context.set_prop(line_event_ind, 'hasDetailedEquipmentEvent', eq_event_ind)
-                            link_logger.debug(f'Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}')
+                            if not hasattr(prop_hasDetailedEquipmentEvent, 'python_name'):
+                                link_logger.warning(f"TKT-004: Property 'hasDetailedEquipmentEvent' is not properly initialized - missing python_name attribute. Skipping inverse link.")
+                            else:
+                                context.set_prop(line_event_ind, 'hasDetailedEquipmentEvent', eq_event_ind)
+                                link_logger.debug(f'Linked Inverse: {line_id} hasDetailedEquipmentEvent {eq_id}')
                         parent_found = True
                         linked_events += 1
                         break
@@ -4341,7 +4631,10 @@ def _safe_sort_by_position(items, default_position=999999):
 def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict[str, ThingClass], defined_properties: Dict[str, PropertyClass], property_is_functional: Dict[str, bool], equipment_class_positions: Dict[str, int]):
     pop_logger.info('Setting up INSTANCE-LEVEL equipment relationships within production lines...')
     if not equipment_class_positions:
-        pop_logger.warning("Equipment class positions dictionary is empty. We'll still process equipment instances that have sequence positions set directly.")
+        pop_logger.warning('Equipment class positions dictionary is empty. Using DEFAULT_EQUIPMENT_SEQUENCE as fallback.')
+        equipment_class_positions = DEFAULT_EQUIPMENT_SEQUENCE.copy()
+    if not equipment_class_positions:
+        pop_logger.warning("Equipment class positions dictionary is still empty after fallback. We'll still process equipment instances that have sequence positions set directly.")
     else:
         pop_logger.info(f'Using {len(equipment_class_positions)} equipment class positions for processing.')
         for class_name, position in sorted(equipment_class_positions.items(), key=lambda x: x[1]):
@@ -4358,11 +4651,13 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
     prop_isImmediatelyUpstreamOf = context.get_prop('isImmediatelyUpstreamOf')
     prop_isImmediatelyDownstreamOf = context.get_prop('isImmediatelyDownstreamOf')
     prop_isParallelWith = context.get_prop('isParallelWith')
-    required_components = [cls_Equipment, cls_ProductionLine, cls_EquipmentClass, prop_isPartOfProductionLine, prop_memberOfClass, prop_equipmentClassId, prop_equipmentId, prop_sequencePosition, prop_isImmediatelyUpstreamOf]
-    missing_components = [name for i, name in enumerate(['Equipment', 'ProductionLine', 'EquipmentClass', 'isPartOfProductionLine', 'memberOfClass', 'equipmentClassId', 'equipmentId', 'sequencePosition', 'isImmediatelyUpstreamOf']) if not required_components[i]]
+    required_components = [cls_Equipment, cls_ProductionLine, cls_EquipmentClass, prop_isPartOfProductionLine, prop_memberOfClass, prop_equipmentClassId, prop_sequencePosition, prop_isImmediatelyUpstreamOf]
+    missing_components = [name for i, name in enumerate(['Equipment', 'ProductionLine', 'EquipmentClass', 'isPartOfProductionLine', 'memberOfClass', 'equipmentClassId', 'sequencePosition', 'isImmediatelyUpstreamOf']) if not required_components[i]]
+    if not prop_equipmentId:
+        pop_logger.warning("TKT-004: 'equipmentId' property not found. Using instance names instead.")
     if missing_components:
         pop_logger.error(f"Missing required components for equipment sequencing: {', '.join(missing_components)}")
-        return
+        return (0, context)
     if not prop_isParallelWith:
         pop_logger.warning("'isParallelWith' property not found. Parallel equipment relationships will not be established.")
     if not prop_isImmediatelyDownstreamOf:
@@ -4383,11 +4678,11 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
         total_equipment_with_line += 1
         equipment_class_ind = getattr(equipment_inst, prop_memberOfClass.python_name, None)
         if not equipment_class_ind:
-            eq_id = getattr(equipment_inst, prop_equipmentId.python_name, equipment_inst.name)
+            eq_id = getattr(equipment_inst, 'name', 'unknown')
             pop_logger.warning(f'Equipment {eq_id} has no memberOfClass relationship. Skipping for sequence setup.')
             continue
         if not isinstance(equipment_class_ind, cls_EquipmentClass):
-            eq_id = getattr(equipment_inst, prop_equipmentId.python_name, equipment_inst.name)
+            eq_id = getattr(equipment_inst, 'name', 'unknown')
             pop_logger.warning(f"Equipment {eq_id} linked to non-EquipmentClass '{equipment_class_ind}'. Skipping for sequence setup.")
             continue
         total_equipment_with_class += 1
@@ -4409,9 +4704,10 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
     line_parallel_counts: Dict[str, int] = {}
 
     def safe_get_equipment_id(equipment: Thing) -> str:
-        equipment_id = getattr(equipment, prop_equipmentId.python_name, None)
-        if equipment_id:
-            return str(equipment_id)
+        if prop_equipmentId:
+            equipment_id = getattr(equipment, prop_equipmentId.python_name, None)
+            if equipment_id:
+                return str(equipment_id)
         return equipment.name
     with onto:
         for line_ind, equipment_instances in line_equipment_map.items():
@@ -4446,6 +4742,13 @@ def setup_equipment_instance_relationships(onto: Ontology, defined_classes: Dict
                         if equipment_class_id in DEFAULT_EQUIPMENT_SEQUENCE:
                             position = DEFAULT_EQUIPMENT_SEQUENCE.get(equipment_class_id)
                             pop_logger.info(f'TKT-006: Found position {position} for {eq_id} using default config for class {equipment_class_id}')
+                            _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
+                            equipment_with_positions.append((equipment_inst, position, eq_id))
+                            total_equipment_with_sequence_position += 1
+                            continue
+                        if equipment_class_id in equipment_class_positions:
+                            position = equipment_class_positions.get(equipment_class_id)
+                            pop_logger.info(f'TKT-004: Found position {position} for {eq_id} using provided equipment_class_positions for class {equipment_class_id}')
                             _set_property_value(equipment_inst, prop_sequencePosition, position, is_functional=True, context=context)
                             equipment_with_positions.append((equipment_inst, position, eq_id))
                             total_equipment_with_sequence_position += 1
@@ -4569,7 +4872,7 @@ logger = logging.getLogger('test_runner')
 
 def run_all_tests():
     logger.info('=== Running all tests for ontology_generator ===')
-    tests_to_run = [('ontology_generator.utils.types', '_test_sanitize_name'), ('ontology_generator.tests.test_registry_sync', 'test_registry_synchronization')]
+    tests_to_run = [('ontology_generator.utils.types', '_test_sanitize_name'), ('ontology_generator.tests.test_registry_sync', 'test_registry_synchronization'), ('ontology_generator.tests.test_property_definition', 'test_property_definition')]
     passed = 0
     failed = 0
     for module_path, function_name in tests_to_run:
@@ -4607,6 +4910,59 @@ FILE: ontology_generator/tests/__init__.py
 ===========================================
 
 
+
+
+===========================================
+FILE: ontology_generator/tests/test_property_definition.py
+===========================================
+
+import unittest
+from typing import Dict, List
+from owlready2 import World, Ontology, ThingClass, PropertyClass, Thing, ObjectProperty, DataProperty, FunctionalProperty
+from ontology_generator.definition.structure import define_ontology_structure
+
+class TestPropertyDefinition(unittest.TestCase):
+
+    def setUp(self):
+        self.world = World()
+        self.onto = self.world.get_ontology('http://test.org/onto.owl')
+        from ontology_generator.config import XSD_TYPE_MAP
+        XSD_TYPE_MAP.update({'xsd:string': str, 'xsd:integer': int, 'xsd:float': float, 'xsd:boolean': bool})
+        self.specification: List[Dict[str, str]] = [{'Proposed OWL Entity': 'TestClass', 'Parent Class': 'Thing'}, {'Proposed OWL Entity': 'RelatedClass', 'Parent Class': 'Thing'}, {'Proposed OWL Property': 'testObjectProperty', 'OWL Property Type': 'ObjectProperty', 'Domain': 'TestClass', 'Target/Range (xsd:) / Target Class': 'RelatedClass', 'OWL Property Characteristics': 'Functional', 'Inverse Property': '', 'Notes/Considerations': 'Test object property'}, {'Proposed OWL Property': 'testDataProperty', 'OWL Property Type': 'DataProperty', 'Domain': 'TestClass', 'Target/Range (xsd:) / Target Class': 'xsd:string', 'OWL Property Characteristics': 'Functional', 'Notes/Considerations': 'Test data property'}]
+
+    def test_property_creation(self):
+        defined_classes, defined_properties, property_is_functional = define_ontology_structure(self.onto, self.specification)
+        self.assertIn('TestClass', defined_classes)
+        self.assertIn('RelatedClass', defined_classes)
+        self.assertIn('testObjectProperty', defined_properties)
+        self.assertIn('testDataProperty', defined_properties)
+        test_obj_prop = defined_properties['testObjectProperty']
+        test_data_prop = defined_properties['testDataProperty']
+        self.assertTrue(issubclass(test_obj_prop, ObjectProperty) or isinstance(test_obj_prop, ObjectProperty))
+        self.assertTrue(issubclass(test_data_prop, DataProperty) or isinstance(test_data_prop, DataProperty))
+        self.assertTrue(hasattr(test_obj_prop, 'iri'))
+        self.assertTrue(hasattr(test_data_prop, 'iri'))
+        self.assertTrue(test_obj_prop.iri.endswith('#testObjectProperty'))
+        self.assertTrue(test_data_prop.iri.endswith('#testDataProperty'))
+        self.assertEqual(len(test_obj_prop.domain), 1)
+        self.assertEqual(test_obj_prop.domain[0], defined_classes['TestClass'])
+        self.assertEqual(len(test_obj_prop.range), 1)
+        self.assertEqual(test_obj_prop.range[0], defined_classes['RelatedClass'])
+        self.assertTrue(issubclass(test_obj_prop, FunctionalProperty) or isinstance(test_obj_prop, FunctionalProperty))
+        self.assertTrue(issubclass(test_data_prop, FunctionalProperty) or isinstance(test_data_prop, FunctionalProperty))
+        self.assertTrue(hasattr(test_obj_prop, 'python_name'))
+        self.assertTrue(hasattr(test_data_prop, 'python_name'))
+        self.assertEqual(test_obj_prop.python_name, 'testObjectProperty')
+        self.assertEqual(test_data_prop.python_name, 'testDataProperty')
+if __name__ == '__main__':
+    unittest.main()
+
+def test_property_definition():
+    loader = unittest.TestLoader()
+    suite = loader.loadTestsFromTestCase(TestPropertyDefinition)
+    runner = unittest.TextTestRunner()
+    result = runner.run(suite)
+    return len(result.errors) == 0 and len(result.failures) == 0
 
 
 ===========================================

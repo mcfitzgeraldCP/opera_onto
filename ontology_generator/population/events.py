@@ -461,9 +461,15 @@ def process_event_record(
         # TKT-003: Ensure events link to the correct resource based on EQUIPMENT_TYPE
         involves_resource_prop = context.get_prop("involvesResource")
         if involves_resource_prop:
-            # Set involvesResource to only the appropriate resource type (equipment or line)
-            context.set_prop(event_ind, "involvesResource", resource_ind)
-            pop_logger.debug(f"Row {row_num}: Linked event to {resource_type} '{resource_ind.name}' via involvesResource")
+            # TKT-011: We explicitly set involvesResource to either Equipment or ProductionLine
+            # Even though the range is ProductionLineOrEquipment, we never create individuals of
+            # the abstract ProductionLineOrEquipment class itself, only concrete subclasses
+            if not resource_ind:
+                pop_logger.warning(f"Row {row_num}: Missing resource individual to link with involvesResource property.")
+            else:
+                # Set involvesResource to only the appropriate resource type (equipment or line)
+                context.set_prop(event_ind, "involvesResource", resource_ind)
+                pop_logger.debug(f"Row {row_num}: Linked event to {resource_type} '{resource_ind.name}' via involvesResource")
         else:
             pop_logger.warning(f"Row {row_num}: Required property 'involvesResource' not found. Cannot link event to resource.")
         
@@ -495,7 +501,12 @@ def process_event_record(
                 pop_logger.warning(f"Row {row_num}: Property 'associatedRequest' not found. Cannot link event to production request.")
     
     # Create event context tuple for post-processing
-    event_context = (event_ind, resource_ind, resource_type) if event_ind else None
+    event_context = (event_ind, resource_ind, resource_type, None) if event_ind else None
+    
+    # For equipment events, add the line association
+    if event_ind and resource_type == "Equipment" and line_ind:
+        # Update the tuple to include line_ind as fourth element
+        event_context = (event_ind, resource_ind, resource_type, line_ind)
     
     return event_ind, event_context
 
