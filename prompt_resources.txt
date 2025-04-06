@@ -1,3 +1,15 @@
+
+=============================
+Log filter for unique events:
+=============================
+
+sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\},[0-9]\{3\}//' Logs/log.txt | awk '!seen[$0]++' > filter_log.txt
+
+
+================================================================
+Source code stripper flattener - removes comments and docstrings
+================================================================
+
 #!/bin/bash
 
 OUTPUT_FILE="ontology_generator_minimal.txt"
@@ -52,3 +64,9 @@ find "$ROOT_DIR" -type f -name "*.py" -not -path "*/\.*" -not -path "*/__pycache
 done
 
 echo "Minimal serialization complete. Output saved to $OUTPUT_FILE" 
+
+
+
+
+
+

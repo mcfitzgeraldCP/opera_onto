@@ -1,0 +1,8 @@
+add semantic versioning to codebase - ask gemini
+add updateable doc gen - ask gemini
+doc gen updates readme too
+changelog
+repo structure enhancement
+create cursor rules
+unit test Strategy
+commit writer
