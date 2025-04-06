@@ -1,37 +1,56 @@
 # Ontology Generator Tests
 
-This directory contains tests for various components of the ontology generator.
+This directory contains tests for the ontology generator library.
 
 ## Running Tests
 
-To run all tests, execute the run_tests.py script from the project root:
+To run all tests, execute pytest from the project root:
 
 ```bash
-python -m ontology_generator.run_tests
+python -m pytest
 ```
 
-## Test Descriptions
-
-### Registry Synchronization Test (TKT-003)
-
-This test verifies the fix for TKT-003 (Individual Registry Synchronization Issue) by:
-
-1. Creating an individual directly in the ontology (bypassing the registry)
-2. Attempting to create the same individual via get_or_create_individual
-3. Verifying the registry is properly synchronized and no duplicate is created
-
-Run this test individually:
+You can also run specific test files or directories:
 
 ```bash
-python -m ontology_generator.tests.test_registry_sync
+# Run a specific test file
+python -m pytest tests/utils/test_types.py
+
+# Run tests in a specific directory
+python -m pytest tests/definition/
+
+# Run tests with a specific name pattern
+python -m pytest -k "test_sanitize"
 ```
 
-### Sanitize Name Tests
+## Test Structure
 
-These tests verify the behavior of the sanitize_name function in utils.types, which is used to generate consistent individual names and registry keys.
+The test directory structure mirrors the source code structure:
 
-Run these tests individually:
+```
+tests/
+├── definition/ - Tests for ontology definition components
+├── population/ - Tests for ontology population components
+├── utils/ - Tests for utility functions
+└── analysis/ - Tests for ontology analysis components
+```
+
+## Development
+
+### Adding Tests
+
+When adding new tests:
+
+1. Place tests in the appropriate directory matching the source code structure
+2. Name test files with a `test_` prefix
+3. Name test functions with a `test_` prefix
+4. Use pytest fixtures for common setup/teardown operations
+
+### Test Dependencies
+
+The test suite uses pytest and related packages, which are listed in the project's dev dependencies.
+Install them with:
 
 ```bash
-python -m ontology_generator.utils.types
+pip install -e ".[dev]"
 ``` 

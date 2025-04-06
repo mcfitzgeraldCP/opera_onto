@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2024-04-06
+### Changed
+- TKT-BUG-002: Adopted pytest framework and restructured test suite
+  - Added pytest and pytest-mock as development dependencies
+  - Restructured tests/ directory to mirror src/ontology_generator/
+  - Converted unittest tests to pytest style
+  - Moved inline test from utils/types.py to proper test file
+  - Updated test documentation
+  - Configured pytest options in pyproject.toml
+
 ## [1.1.0] - 2024-04-06
 ### Changed
 - TKT-BUG-001: Refactored project structure to standard src layout

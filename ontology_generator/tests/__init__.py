@@ -1,7 +1,7 @@
 """
 Test package for ontology_generator.
 
-This package contains tests for the ontology_generator package.
+This package contains tests for the ontology_generator modules.
 """
 
 import sys

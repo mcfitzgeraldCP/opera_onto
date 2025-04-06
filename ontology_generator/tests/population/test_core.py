@@ -1,20 +1,16 @@
 """
-Tests for Individual Registry Synchronization functionality (TKT-003 fix).
+Tests for Individual Registry Synchronization functionality.
 
 This module tests the synchronization mechanism that ensures individuals
 are correctly registered across passes during ontology population.
 """
-import unittest
-import sys
-import os
-from typing import Dict, List, Any
+import pytest
+import logging
+from typing import Dict, Tuple, List, Any
 from owlready2 import (
     World, Ontology, ThingClass, PropertyClass, Thing,
     ObjectProperty, DataProperty, FunctionalProperty
 )
-
-# Add src directory to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 # Imports from ontology_generator
 from ontology_generator.population.core import PopulationContext
@@ -28,6 +24,7 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("test_registry_sync")
 
+
 def test_registry_synchronization():
     """
     Test the registry synchronization mechanism of get_or_create_individual.
@@ -35,11 +32,11 @@ def test_registry_synchronization():
     Verifies that individuals created outside the registry are properly
     synchronized when later accessed via get_or_create_individual.
     """
-    logger.info("Starting TKT-003 registry synchronization test")
+    logger.info("Starting registry synchronization test")
     
     # Create a new world and ontology for testing
     world = World()
-    onto = world.get_ontology("http://test.org/tkt003-test")
+    onto = world.get_ontology("http://test.org/registry-sync-test")
     
     # Create a class for testing
     with onto:
@@ -103,9 +100,4 @@ def test_registry_synchronization():
     logger.info(f"Individual has added label: {has_label}")
     assert has_label, "The individual should have the label 'Test Label'"
     
-    logger.info("TKT-003 registry synchronization test completed successfully!")
-    return True
-
-if __name__ == "__main__":
-    success = test_registry_synchronization()
-    sys.exit(0 if success else 1) 
+    logger.info("Registry synchronization test completed successfully!") 
