@@ -2,12 +2,12 @@ Installation
 ============
 
 Requirements
------------
+===========
 - Python 3.8 or higher
 - pip (Python package installer)
 
 Installation Steps
-----------------
+================
 1. Clone the repository:
 
    .. code-block:: bash
@@ -29,7 +29,7 @@ Installation Steps
       pip install -e .
 
 Dependencies
------------
+===========
 The package will automatically install all required dependencies. Key dependencies include:
 
 - owlready2
@@ -38,7 +38,7 @@ The package will automatically install all required dependencies. Key dependenci
 - logging
 
 Optional Dependencies
--------------------
+===================
 For development and documentation:
 
 .. code-block:: bash
