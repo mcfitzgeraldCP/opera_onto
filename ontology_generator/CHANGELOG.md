@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Fixed test failures in unit tests:
+  - Updated test_apply_data_property_mappings to use mock.ANY for type-agnostic assertion
+  - Modified test_create_selective_classes_logs to handle variable log message formats
+  - Refactored test_opera_property_characteristics to be more resilient to implementation differences in property characteristics
 
 ## [1.1.5] - 2024-04-06
 ### Added
