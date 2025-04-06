@@ -6,6 +6,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2024-04-06
+### Added
+- TKT-BUG-006: Added unit tests for population core functionality
+  - Implemented comprehensive tests for PopulationContext class methods
+  - Added tests for get_or_create_individual with various scenarios
+  - Added tests for _set_property_value for both functional and non-functional properties
+  - Implemented tests for apply_data_property_mappings and apply_object_property_mappings
+  - Added tests for helper functions like set_prop_if_col_exists
+  - Updated code structure to use pytest fixtures and mocking
+
+## [1.1.4] - 2024-04-06
+### Added
+- TKT-BUG-005: Added unit tests for ontology structure definition (definition.structure)
+  - Expanded test_structure.py with tests for define_ontology_structure and create_selective_classes functions
+  - Added tests using real data examples from OPERA specifications
+  - Implemented tests for class hierarchy, property characteristics, and selective class creation
+  - Added testing for handling missing domain/range class definitions
+  - Added validation tests for automatically added properties
+
+## [1.1.3] - 2024-04-06
+### Added
+- TKT-BUG-004: Added unit tests for specification parsing (definition.parser)
+  - Created mock-based tests for parse_specification, parse_property_mappings, validate_property_mappings, and read_data
+  - Added test cases for handling valid inputs, error conditions, and edge cases
+  - Implemented validation tests for property mapping structure and requirements
+
+## [1.1.2] - 2024-04-06
+### Added
+- TKT-BUG-003: Implemented comprehensive unit tests for core utilities (utils.types)
+  - Added extensive parameterized tests for safe_cast covering various data types and edge cases
+  - Enhanced tests for sanitize_name with additional test cases
+  - Added mock tests for logging behavior in safe_cast
+
 ## [1.1.1] - 2024-04-06
 ### Changed
 - TKT-BUG-002: Adopted pytest framework and restructured test suite
