@@ -3,14 +3,18 @@ Boilerplate direction - applicable to all prompts
 =================================================
 
 
+Review the issues in the log file and create a prioritized list of fix and improvement tickets using the ticket template.
+Consider the ontology_generator source code and also the ontology specification as both might have issues that inter relate.
+
+IMPORTANT - Ask clarifying questions and for supporting information like documentation for third party libraries, etc.
+
+
+
 
 ==============
-Ticket Format
+Ticket template
 ==============
--
-
-- Location to put ancilalry ouptut of bugfixes of docs and metadata reporting etc - like which folder to put in so as not to generate cruft
-- unit test (if necessary)
+there is an markdown template to follow, note that it has a separate directions doc and a guide for version bumping
 
 
 =================================
