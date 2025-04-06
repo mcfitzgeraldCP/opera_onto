@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ontology_generator"
+version = "1.1.0"  # Bumping minor version for structural change
+description = "A modular Python application for generating OWL ontologies from CSV specifications and data"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "owlready2",
+    # Add other dependencies here
+]
+
+[project.scripts]
+ontology-generator = "ontology_generator.main:main"
+finds-unused-properties = "scripts.finds_unused_properties:main"
+ontology-analyzer = "scripts.ontology_analyzer:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.pytest]
+testpaths = ["tests"]
+python_files = "test_*.py" 

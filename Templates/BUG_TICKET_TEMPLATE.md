@@ -1,71 +1,87 @@
 ---
-name: Bug Report
-about: Create a report to help us improve the Ontology Generator
+name: Bug Ticket
+about: Technical issue documentation for the Ontology Generator project
 labels: bug
 ---
 
-# Bug Report
+# Bug Ticket: [ID: TKT-BUG-XXX]
 
 ## Title
-[Feature/Component] - Brief description of the issue
+[Component] - Technical issue description
 
-## Description
-**Summary**: [Clear and concise description of the bug]
-**Impact**: [How this affects functionality/user experience]
-**Reproducibility**: [e.g., "100%", "Intermittent - 3/5 attempts"]
+## Issue Information
+**Priority**: [Critical/High/Medium/Low]
+**Summary**: [Clear, concise description of the technical issue]
+**Impact**: [How this affects functionality/development]
+**Affected Modules**: [List the affected files/modules]
 
-## Environment
-- Python Version: [e.g., 3.8.12]
-- OS: [e.g., macOS 12.1]
-- Package Version: [e.g., 1.0.1]
-- Additional Context: [Any specific environment details relevant to the bug]
+## Environment Context
+_Only include if relevant to the issue:_
+- Python/Package Version: [if version-specific]
+- OS: [only if OS-dependent]
+- Recent Changes: [any relevant recent changes]
 
-## Steps to Reproduce
-1. [First Step]
-2. [Second Step]
-3. [...]
+## Technical Details
+### Issue Description
+[Detailed technical explanation focusing on code/data issues rather than UI/UX]
 
-## Behavior
-**Expected**: [What should happen]
-**Actual**: [What actually happens]
-
-## Debug Information
-**Error Message**: 
-```
-[Paste error message/stack trace here]
-```
-
-**Relevant Logs**: 
-```
-[Paste relevant log entries here]
-```
-
-**Code Context**: 
+### Debug Information
 ```python
-[Relevant code snippet if applicable]
+# Error Message/Stack Trace
+[Paste relevant error output]
+
+# Code Context
+[Relevant code snippet showing the issue]
+
+# Example:
+result = ontology.define_property(name="example:property", namespace="custom")
+# AttributeError: 'NoneType' object has no attribute 'iri'
 ```
+
+### Tasks
+- [ ] [Specific technical task to fix the issue]
+- [ ] [Additional tasks as needed]
+- [ ] [Verification steps]
+
+## Testing Requirements
+- [ ] Unit tests (core functionality changes)
+- [ ] Integration tests (cross-component issues)
+- [ ] Manual verification (simple fixes)
+- [ ] Test data: [Specify test data if applicable]
+
+## Acceptance Criteria
+- [ ] [Specific verifiable outcome 1]
+- [ ] [Specific verifiable outcome 2]
+- [ ] [Additional criteria as needed]
 
 ## Version Impact Assessment
 **Current Version:** [e.g., 1.0.1]
 **Recommended Bump:** [MAJOR|MINOR|PATCH]
-**Reasoning:** [Brief explanation of why this level was chosen]
+**Reasoning:** [Brief explanation for version choice]
 
-### Version Control Checklist
+**Guidelines:**
+- MAJOR (x.y.z): Breaking API changes, incompatible ontology structure
+- MINOR (x.Y.z): New backward-compatible features, optional ontology elements
+- PATCH (x.y.Z): Bug fixes, performance improvements, non-breaking changes
+
+**Checklist:**
 - [ ] Update __init__.py version
 - [ ] Update CHANGELOG.md
 - [ ] Create git tag after merge
 
-## Testing Requirements
-[Choose applicable items based on the bug's nature]
-- [ ] Unit tests needed (for core functionality changes)
-- [ ] Integration tests needed (for cross-component issues)
-- [ ] Manual verification sufficient (for UI/logging/documentation issues)
-- [ ] Test data/cases: [Specify test scenarios if applicable]
+## Commit Example
+```
+fix(component): Brief description
 
-## Proposed Solution
-[Initial thoughts on fix or investigation direction]
+Detailed explanation of the issue and fix.
+
+Version: x.y.z
+Changelog: Fixed
+Ticket: TKT-BUG-XXX
+
+- Technical details for changelog entry
+```
 
 ## Related Information
 - Related Issues: [Links to related issues]
-- Documentation: [Links to relevant docs]
-- Previous Occurrences: [Similar past issues if any] 
+- Documentation: [Links to relevant docs] 

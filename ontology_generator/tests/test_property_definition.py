@@ -5,11 +5,16 @@ This module tests the property definition functionality to ensure that
 properties are correctly defined with all required attributes.
 """
 import unittest
+import sys
+import os
 from typing import Dict, List
 from owlready2 import (
     World, Ontology, ThingClass, PropertyClass, Thing,
     ObjectProperty, DataProperty, FunctionalProperty
 )
+
+# Add src directory to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from ontology_generator.definition.structure import define_ontology_structure
 

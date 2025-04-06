@@ -1,21 +1,26 @@
 """
-Test script for TKT-003: Individual Registry Synchronization Issue
+Tests for Individual Registry Synchronization functionality (TKT-003 fix).
 
-This script verifies that the fix for TKT-003 works correctly by:
-1. Creating an individual directly in the ontology (bypassing the registry)
-2. Attempting to create the same individual via get_or_create_individual
-3. Verifying the registry is properly synchronized and no duplicate is created
+This module tests the synchronization mechanism that ensures individuals
+are correctly registered across passes during ontology population.
 """
-import os
+import unittest
 import sys
-import logging
-from typing import Dict, Tuple, Any
+import os
+from typing import Dict, List, Any
+from owlready2 import (
+    World, Ontology, ThingClass, PropertyClass, Thing,
+    ObjectProperty, DataProperty, FunctionalProperty
+)
 
-# Add parent directory to Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Add src directory to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from owlready2 import World, Ontology, Thing, ThingClass
-from ontology_generator.population.core import get_or_create_individual
+# Imports from ontology_generator
+from ontology_generator.population.core import PopulationContext
+from ontology_generator.population.row_processor import (
+    get_or_create_individual
+)
 from ontology_generator.utils.types import sanitize_name
 
 # Configure logging

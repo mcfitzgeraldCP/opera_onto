@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2024-04-06
+### Changed
+- TKT-BUG-001: Refactored project structure to standard src layout
+  - Moved library code to src/ontology_generator/
+  - Moved standalone utility scripts to scripts/
+  - Updated imports throughout the codebase
+  - Added pyproject.toml for better packaging
+  - Removed custom test runner (run_tests.py)
+
 ## [1.0.1] - 2024-04-06
 ### Fixed
 - TKT-001: Fixed property definition failure in define_ontology_structure by replacing dynamic property object creation with proper Owlready2 class declarations
